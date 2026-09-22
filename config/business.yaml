@@ -1,0 +1,58 @@
+# Summit Air demo configuration.
+#
+# Every value here is invented for a fictional business and none of it describes a real HVAC
+# company. It lives in config rather than in the prompt so that the business can be changed without
+# touching agent behavior.
+
+business:
+  name: Summit Air
+  timezone: America/New_York
+  technicians: 40          # supplied in the assignment. Not 40 available appointments.
+
+coverage:
+  counties: [Westchester, Rockland, Putnam]
+  state: NY
+  # Unknown or conflicting locality routes to dispatch review rather than a guess.
+  unknown_locality: review
+
+hours:
+  office: { days: [mon, tue, wed, thu, fri], start: "08:00", end: "17:00" }
+  phone_intake: 24/7       # not a promise of 24/7 technicians
+  arrival_windows:
+    - { start: "08:00", end: "12:00" }
+    - { start: "12:00", end: "16:00" }
+  service_days: [mon, tue, wed, thu, fri]
+  closures: []             # explicit dates override the weekly pattern
+
+services:
+  bookable:                # residential diagnostics and maintenance only
+    - furnace
+    - heat_pump
+    - boiler
+    - central_ac
+    - ductless_ac
+  review_only:              # captured and routed to dispatch, never auto-booked
+    - commercial
+    - install
+    - replacement
+    - warranty
+    - billing
+    - reschedule_existing
+    - unknown_equipment
+
+pricing:
+  pricebook: none          # never quote fees, discounts, warranty coverage or repair prices
+
+booking:
+  max_windows_offered: 2   # callers cannot hold a longer list in their head
+  one_active_booking_per_call: true
+
+transfer:
+  destination_env: DISPATCH_TRANSFER_NUMBER
+  on_no_answer: handoff_task   # never claim a person was reached without evidence
+
+review:
+  owner: dispatch
+  due_minutes:
+    urgent: 15
+    routine: 120           # routine clock advances only during office hours
