@@ -1,0 +1,7 @@
+{
+  "dispatch_rule": {
+    "name": "summit-air-inbound",
+    "rule": { "dispatchRuleIndividual": { "roomPrefix": "call-" } },
+    "roomConfig": { "agents": [{ "agentName": "summit-air" }] }
+  }
+}
