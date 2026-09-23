@@ -6,6 +6,7 @@ requires-python = ">=3.11, <3.15"
 
 dependencies = [
     "livekit-agents~=1.8",
+    "livekit-plugins-deepgram~=1.8",
     "livekit-plugins-noise-cancellation~=0.3",
     "python-dotenv",
 ]
@@ -22,9 +23,15 @@ package = false
 constraint-dependencies = ["yarl<1.24"]
 
 [tool.pytest.ini_options]
+pythonpath = ["src"]
+markers = ["llm: calls a real model through LiveKit Inference and spends credit"]
+addopts = "-m 'not llm'"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint.isort]
+known-first-party = ["agent", "receptionist", "store"]
