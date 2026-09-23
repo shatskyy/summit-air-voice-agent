@@ -50,7 +50,9 @@ async def conversation(model, call):
 
 
 async def test_offers_the_windows_the_tool_returned(model, call, judge):
-    """Replays test call 1, where the model got availability back and said "I'll be here when you're ready"."""
+    """The question from test calls 1 and 2, where Gemma answered its own filler line instead of the
+    result. This build has no filler (the tools are local and fast), so this checks the question and
+    the prompt, not that mechanism. Only a phone call can confirm the mechanism is gone."""
     async with conversation(model, call) as session:
         result = await session.run(
             user_input="My AC stopped cooling. It's a house and it's just me. Do you have anything tomorrow morning?"

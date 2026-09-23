@@ -7,14 +7,22 @@ nothing about audio, latency or interruptions.
 
 ## Phone calls
 
-| Date | Room | Requirement | What the caller did | What happened | Result |
+All three ran on the connection-test build (a four-line prompt, and one fake tool that paused 4 s
+behind a filler line).
+
+| Date | Room | Model | Requirement | What happened | Result |
 |---|---|---|---|---|---|
-| 2026-09-23 | `RM_pExY8NcvVat5` | Does it work? | Asked "Do you have anything tomorrow?" on the connection-test build | The call connected, with first reply latency of 0.8 to 1.6 s. Two defects: the agent ignored the availability result ("I'll be here when you're ready"), then said "Let me get a technician scheduled" with no tool behind it. The caller asked when the technician was coming | Connects: pass. Conversation: fail. Both defects are addressed in the prompt and pass in `tests/test_agent.py`; phone retest pending |
-| 2026-09-23 | `RM_ncqsUBRDD8Er` | Does it work? | Spoke over the greeting | The greeting started about 4 s after the call arrived, because no worker process was warm. Barge-in cut the greeting correctly, and availability was offered from the tool result | Connects: pass. Greeting delay: one warm process is now configured; phone retest pending |
+| 2026-09-23 17:23 | `RM_pExY8NcvVat5` | Gemma 4 31B | Does it work? | Connected, with first replies in 0.8 to 1.6 s. Asked "anything tomorrow?", the agent answered its own filler line ("I'll be here when you're ready") instead of the window the tool returned. Then it said "Let me get a technician scheduled" with no tool behind it, and the caller asked when the technician was coming | Connects: pass. Conversation: fail |
+| 2026-09-23 17:27 | not captured | Gemma 4 31B | Does it work? | Same question, same failure: "Just let me know when you're ready" | Fail, 2 of 2 on Gemma |
+| 2026-09-23 17:36 | `RM_ncqsUBRDD8Er` | GPT-4.1 mini | Does it work? | The greeting started about 4 s after the call arrived (no warm process), and the caller spoke over it; barge-in yielded. The window from the tool was read out straight away | Connects: pass. Conversation: pass |
+
+Changed since: the fake tool and its filler are gone, since the real tools answer in milliseconds.
+The prompt now forbids announcing an action without its tool, and one process is kept warm. Each
+fix needs a phone retest on the new build.
 
 ## Text tests (`uv run pytest -m llm`)
 
-Run on 2026-09-23 to choose the model. Each test ran against both candidates.
+Run on 2026-09-23 against the new prompt, with no filler line. Each test ran against both candidates.
 
 | Test | Gemma 4 31B | GPT-4.1 mini |
 |---|---|---|
@@ -24,4 +32,8 @@ Run on 2026-09-23 to choose the model. Each test ran against both candidates.
 | A price question gets the diagnostic fee and nothing more | Pass | Pass |
 | A caller who wants a person gets a callback without argument | Pass | Pass |
 
-Gemma answers the phone. GPT-4.1 mini is the fallback if Gemma errors.
+**The model choice is open.** On the phone, with the old filler, Gemma dropped the tool result twice
+and GPT-4.1 mini read it once. In text, on the new build, Gemma passed all five, and GPT-4.1 mini four
+of five. Gemma is also faster to its first token (0.24 to 0.37 s against 0.58 s on these calls). The
+tiebreaker is one phone call per model on the new build. Whichever wins answers the phone, and the
+other is its fallback.

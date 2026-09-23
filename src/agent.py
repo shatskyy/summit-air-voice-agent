@@ -43,9 +43,13 @@ logger = logging.getLogger("summit-air")
 
 AGENT_NAME = "summit-air"
 
-# Model IDs are configuration so a failed test call can swap one without a code change.
-LLM_MODEL = os.getenv("LLM_MODEL", "google/gemma-4-31b-it")
-FALLBACK_LLM_MODEL = os.getenv("FALLBACK_LLM_MODEL", "openai/gpt-4.1-mini")
+# Model IDs are configuration so a failed test call can swap one without a code change. The two
+# candidates back each other up: whichever is primary, the other is the fallback.
+CANDIDATE_LLMS = ("google/gemma-4-31b-it", "openai/gpt-4.1-mini")
+LLM_MODEL = os.getenv("LLM_MODEL", CANDIDATE_LLMS[0])
+FALLBACK_LLM_MODEL = os.getenv(
+    "FALLBACK_LLM_MODEL", next(m for m in CANDIDATE_LLMS if m != LLM_MODEL)
+)
 TTS_VOICE = os.getenv("TTS_VOICE", "aura-2-thalia-en")
 
 
