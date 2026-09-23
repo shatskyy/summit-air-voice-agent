@@ -37,9 +37,9 @@ The voice model runs the conversation. It does not get to decide what is true ab
 |---|---|
 | Agent framework | [LiveKit Agents](https://github.com/livekit/agents), Python |
 | Telephony | Twilio number on a SIP trunk into LiveKit Cloud |
-| Speech to text | AssemblyAI streaming, with territory and HVAC keyterms |
-| Language model | Fast non-reasoning model, pinned after test calls |
-| Text to speech | Cartesia |
+| Speech to text | AssemblyAI Universal-3.5 Pro streaming, with territory and HVAC keyterms |
+| Language model | Gemma 4 31B, thinking off, pinned after test calls |
+| Text to speech | Inworld TTS-2 Flash |
 | Store | Supabase Postgres |
 
 Why each of these, and what was rejected: [docs/decisions.md](docs/decisions.md).

@@ -38,6 +38,20 @@ validate an address before anything is booked. It also guarantees ordering: the 
 **Cost.** Speech-to-speech models currently feel more natural at turn-taking. This build compensates
 with a semantic turn detector and a longer end-of-turn allowance while the caller is dictating digits.
 
+**Components.** Each is chosen for accuracy on entities first, then latency, then cost, and pinned
+only after test calls.
+
+| Layer | Choice | Why | Considered |
+|---|---|---|---|
+| Speech to text | AssemblyAI Universal-3.5 Pro | Lowest word error rate in independent streaming benchmarks, strongest reported entity accuracy, supports keyterm prompting | Deepgram Flux ends turns faster but is weaker on names, numbers and addresses |
+| Language model | Gemma 4 31B, thinking off | 96.6% pass rate at 489 ms median on Daily's multi-turn voice agent benchmark, at a fraction of the cost of comparable models | GPT-4.1 scores the same at five times the price and is the fallback; GPT-4.1 mini and GPT-4o mini score 85% and 83% |
+| Text to speech | Inworld TTS-2 Flash | Fastest time to first audio in independent benchmarks, quality comparable to the leaders, low cost per character | Gemini Flash TTS does not stream in this framework; Cartesia Sonic ranks highest on quality but starts slower and costs more |
+
+**Considered: Gemini Live as a speech-to-speech alternative.** It is inexpensive and handles
+turn-taking natively. It was not adopted because its tools are non-blocking by default, so it can
+keep talking before a booking write returns; the caller's words reach code as a side transcript,
+which turns the hazard interrupt into a race; and it offers no keyterm biasing for town names.
+
 **Would reverse it.** Test calls showing a speech-to-speech model matches the cascade on exact address,
 ZIP and phone capture without confirming ahead of the write.
 
@@ -77,6 +91,11 @@ call and tells the caller exactly what happens next.
 
 **Why.** For a home-services business, the handoff is where an answering service earns or loses trust.
 A caller who asks for a person should reach one without being argued with.
+
+**How.** A SIP REFER through the trunk. The transfer request does not complete until the destination
+answers; if nobody answers within the ringing timeout it fails, the caller is still connected to
+the agent, and the agent files the handoff task. That is what makes "a person picked up" something
+the agent knows rather than assumes.
 
 **Cost.** A second provider to configure, and LiveKit's own phone numbers could not be used because
 they do not support transfer.
