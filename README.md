@@ -141,10 +141,11 @@ sqlite3 data/summit-air.db "select ref, kind, reason, due_at from tasks order by
   chirping smoke detector both match), and the safety script is worded to be harmless when it does.
 - **One machine.** The worker and the database share one host. If it loses power or network, the
   number stops answering.
-- **Latency is still being measured.** Replies took 0.8 to 1.6 s on the first calls and 1.3 to 3.7 s
-  on call 4, the first on Deepgram speech.
-- **Gemma leads on text evidence, pending a phone call.** Both candidates pass all five model tests;
-  Gemma is faster to its first sentence. See [ADR-002](docs/decisions.md).
+- **Latency.** Replies took 0.9 to 1.8 s end to end on call 6, after the turn-detector fix. An answer
+  the detector thinks is unfinished can still wait up to 2 s.
+- **Speech is one vendor.** Deepgram handles both listening and speaking. On call 6 its speech
+  connection dropped mid-sentence; the caller asked again and got the full answer. There is no
+  mid-sentence failover.
 
 ## Before this could take real calls
 
