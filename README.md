@@ -140,7 +140,8 @@ sqlite3 data/summit-air.db "select ref, kind, reason, due_at from tasks order by
   number stops answering.
 - **Latency is still being measured.** Replies took 0.8 to 1.6 s on the first calls and 1.3 to 3.7 s
   on call 4, the first on Deepgram speech.
-- **The model choice is open.** See [`docs/scenarios.md`](docs/scenarios.md).
+- **Gemma leads on text evidence, pending a phone call.** Both candidates pass all five model tests;
+  Gemma is faster to its first sentence. See [ADR-002](docs/decisions.md).
 
 ## Before this could take real calls
 

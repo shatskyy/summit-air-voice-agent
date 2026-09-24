@@ -73,7 +73,7 @@ back, and the maximum wait drops from 3 s to 2 s.
 | Layer | Choice | Why |
 |---|---|---|
 | Speech to text | Deepgram Nova-3, with keyterms | Runs on Deepgram's signup credit (see revision below). On call 4 it captured a dictated address and ZIP exactly, but heard "AC" as "IC", so "AC" is now a keyterm |
-| Language model | Gemma 4 31B and GPT-4.1 mini, each the other's fallback | Gemma: 96.6% pass at 489 ms median on Daily's multi-turn voice agent benchmark, and 5 of 5 on this repo's model tests. GPT-4.1 mini: 4 of 5, but on the connection-test build it read a tool result on the phone that Gemma dropped twice. One phone call per model on the current build decides which leads |
+| Language model | Gemma 4 31B leads, GPT-4.1 mini as its fallback | On 2026-09-24 both passed all 5 of this repo's model tests, including the replay of the call where Gemma dropped a tool result behind the since-removed filler line. Replaying call 5's turns, Gemma's first sentence arrived at 0.33 s median against 0.64 s for GPT-4.1 mini. The next phone call on Gemma confirms it; if Gemma drops a tool result on the phone again, GPT-4.1 mini leads |
 | Text to speech | Deepgram Aura-2 | Same account and credit as speech to text |
 
 **Revision, 2026-09-23.** The first choice was AssemblyAI Universal-3.5 Pro for speech to text (the

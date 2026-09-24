@@ -50,8 +50,6 @@ Run on 2026-09-23 against the new prompt, with no filler line. Each test ran aga
 | A price question gets the diagnostic fee and nothing more | Pass | Pass |
 | A caller who wants a person gets a callback without argument | Pass | Pass |
 
-**The model choice is open.** On the phone, with the old filler, Gemma dropped the tool result twice
-and GPT-4.1 mini read it once. In text, on the new build, Gemma passed all five, and GPT-4.1 mini four
-of five. Gemma is also faster to its first token (0.24 to 0.37 s against 0.58 s on these calls). The
-tiebreaker is one phone call per model on the new build. Whichever wins answers the phone, and the
-other is its fallback.
+**Rerun 2026-09-24, after the prompt and tool fixes:** both models pass all five, including the
+call-1 replay. Gemma leads, since its first sentence arrives at 0.33 s median against 0.64 s on call
+5's turns. GPT-4.1 mini is its fallback. The next phone call on Gemma confirms the choice.
