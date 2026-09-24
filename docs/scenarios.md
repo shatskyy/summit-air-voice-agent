@@ -7,8 +7,9 @@ nothing about audio, latency or interruptions.
 
 ## Phone calls
 
-All three ran on the connection-test build (a four-line prompt, and one fake tool that paused 4 s
-behind a filler line).
+### Connection-test build (calls 1 to 3)
+
+A four-line prompt, and one fake tool that paused 4 s behind a filler line.
 
 | Date | Room | Model | Requirement | What happened | Result |
 |---|---|---|---|---|---|
@@ -19,6 +20,14 @@ behind a filler line).
 Changed since: the fake tool and its filler are gone, since the real tools answer in milliseconds.
 The prompt now forbids announcing an action without its tool, and one process is kept warm. Each
 fix needs a phone retest on the new build.
+
+### Receptionist build (call 4 on)
+
+The prompt in `src/prompt.md`, the real tools, and Deepgram speech (Nova-3 in, Aura-2 out).
+
+| Date | Room | Model | Requirement | What happened | Result |
+|---|---|---|---|---|---|
+| 2026-09-24 15:00 | `RM_ZQMnzXZZSRev` | GPT-4.1 mini | Collect name, address and availability; book | A routine booking. The address, spoken as "fourteen Maple Avenue, White Plains, ten six zero one", was read back as "14 Maple Avenue in White Plains, ZIP code 10601", confirmed, and stored exactly. The reference was spoken only after the write returned, and matches booking 1001. Two defects: the caller went from the vulnerability question straight to the address, and the agent never asked their name, so the booking was stored as "Caller". Speech-to-text heard "My AC is broken" as "My IC is broken", and the agent guessed "indoor coil" instead of asking. A final transcript that arrived late also split "Hi." from the problem into two turns. Replies took 1.3 to 3.7 s end to end, slower than on call 3 | Booking and address: pass. Name: fail. Recognition: fail |
 
 ## Text tests (`uv run pytest -m llm`)
 
