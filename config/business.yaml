@@ -10,8 +10,8 @@ business:
 
 coverage:
   counties: [Westchester, Rockland, Putnam]
-  # ponytail: ZIP prefixes approximate the three counties (109 also covers part of Orange County,
-  # and Patterson's 12563 is missed). A real deployment uses the customer's territory map.
+  # Known shortcut: ZIP prefixes approximate the three counties (109 also covers part of Orange
+  # County, and Patterson's 12563 is missed). A real deployment uses the customer's territory map.
   zip_prefixes: ["105", "106", "107", "108", "109"]
 
 hours:

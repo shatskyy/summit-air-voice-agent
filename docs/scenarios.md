@@ -1,9 +1,10 @@
 # Test calls and results
 
 Every phone test gets a row here. Each row names the assignment requirement it checks, what the
-caller did, what happened, and the room ID that finds the transcript and any booking or task in the
-database. Text tests are listed separately, because they check turn logic and tool routing and say
-nothing about audio, latency or interruptions.
+caller did, what happened, and the LiveKit room ID, which finds the call in the worker log and the
+LiveKit dashboard. From call 4 on, the log's room name also keys the call's transcript, bookings and
+tasks in the database. Text tests are listed separately, because they check turn logic and tool
+routing and say nothing about audio, latency or interruptions.
 
 ## Phone calls
 

@@ -35,8 +35,9 @@ DEFAULT_DB = Path(os.getenv("SUMMIT_AIR_DB", ROOT / "data" / "summit-air.db"))
 # and it discloses automation before anything else.
 GREETING = "Thanks for calling Summit Air. This is the automated assistant. How can I help?"
 
-# ponytail: a keyword list over-triggers by design ("I don't smell gas" matches). The script below is
-# worded to be harmless when that happens; a classifier is the upgrade if false alarms cost calls.
+# Known shortcut: a keyword list over-triggers by design ("I don't smell gas" matches). The script
+# below is worded to be harmless when that happens; a classifier is the upgrade if false alarms cost
+# calls.
 HAZARD = re.compile(
     r"smell\w*\W+(?:\w+\W+){0,3}gas\b|\bgas\W+(?:smell|odou?r|leak)|\bleak\w*\W+gas\b|rotten eggs?"
     r"|carbon monoxide|monoxide|\bco\W+(?:alarm|detector)"

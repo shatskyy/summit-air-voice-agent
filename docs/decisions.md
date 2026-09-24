@@ -1,51 +1,79 @@
 # Architecture decisions
 
-Each record states what was decided, why, what it costs, and what evidence would reverse it.
+Each record states what was decided, why, what it costs, and what evidence would reverse it. A
+decision that was later reversed stays here, marked superseded or deferred, with the reason it
+changed.
 
-## ADR-001: LiveKit Agents, self-hosted worker
+| ADR | Decision | Status |
+|---|---|---|
+| [001](#adr-001-livekit-agents-one-always-on-worker) | LiveKit Agents, one always-on worker | Accepted, host revised 2026-09-23 |
+| [002](#adr-002-cascaded-speech-pipeline) | Cascaded speech pipeline | Accepted, components revised 2026-09-23 |
+| [003](#adr-003-confirm-only-after-a-durable-write) | Confirm only after a durable write | Accepted, mechanism simplified 2026-09-23 |
+| [004](#adr-004-emergencies-are-detected-in-code) | Emergencies are detected in code | Accepted |
+| [005](#adr-005-live-transfer-deferred) | Live transfer through the Twilio trunk | Deferred 2026-09-23 |
+| [006](#adr-006-business-rules-in-configuration-not-in-the-prompt) | Business rules in configuration | Accepted |
+| [007](#adr-007-postgres-as-the-booking-store-superseded) | Postgres as the booking store | Superseded by 008 |
+| [008](#adr-008-sqlite-on-the-workers-host) | SQLite on the worker's host | Accepted 2026-09-23 |
 
-**Status:** Accepted
+## ADR-001: LiveKit Agents, one always-on worker
 
-**Decision.** Build on LiveKit Agents in Python. Run the agent worker as a single always-on process
-connected to LiveKit Cloud.
+**Status:** Accepted. Host revised 2026-09-23.
 
-**Why.** Tools execute inside the agent process, so booking logic, validation and the database client
-sit next to the conversation with no public HTTP endpoint that can create or change a booking. With a
+**Decision.** Build on LiveKit Agents in Python, with the agent worker running as a single always-on
+process connected to LiveKit Cloud. For the review window the process runs on a home machine under
+a launchd job that restarts it if it exits and keeps the machine awake while on power.
+
+**Why.** Tools execute inside the agent process, so booking logic, validation and the database sit
+next to the conversation with no public HTTP endpoint that can create or change a booking. With a
 managed platform such as Retell or Vapi, the same logic would live in a separately hosted webhook
 service that needs its own authentication, signature verification and uptime, and the prompt would
-live in a dashboard rather than in this repository. Keeping the worker always on avoids the cold start
-a scale-to-zero host adds to the first call after idle.
+live in a dashboard rather than in this repository.
 
-**Cost.** More to own than a managed platform: turn-taking configuration, provider choices and process
-lifecycle are this repository's responsibility.
+The worker stays up because the free cloud deployment scales to zero and takes 10 to 20 seconds to
+start on the first call after idle, and a caller hearing that much silence hangs up. Keeping a cloud
+instance warm needs a paid plan, and a hosted server costs money too; the home machine costs nothing
+for one week. The worker also keeps one process warm, because on call 3, with none, the greeting
+started about 4 s after the call arrived and the caller spoke over it.
+
+**Cost.** More to own than a managed platform: turn-taking, provider choices and process lifecycle
+are this repository's responsibility. The home machine is a single point of failure.
 
 **Would reverse it.** A real call that cannot reliably reach the agent after a focused configuration
-fix. The fallback is Retell with an exported prompt and a small booking service.
+fix. The SIP path worked on the first call, so this has not happened. In production the worker moves
+to managed hosting with a warm instance.
 
 ## ADR-002: Cascaded speech pipeline
 
-**Status:** Accepted
+**Status:** Accepted. Components revised 2026-09-23.
 
 **Decision.** Speech to text, then a language model, then text to speech, rather than a
 speech-to-speech model.
 
 **Why.** The riskiest thing this agent does is capture a street address, ZIP code and callback number
 correctly over telephone audio. A cascaded pipeline produces a transcript at every turn, supports
-keyterm biasing for the territory's town names and HVAC vocabulary, and lets deterministic code
-validate an address before anything is booked. It also guarantees ordering: the model cannot say
-"you're booked" before the booking tool has returned.
+keyterm biasing for the territory's town names and HVAC vocabulary, and lets code validate the ZIP
+before anything is booked. It also guarantees ordering: the model cannot say "you're booked" before
+the booking tool has returned.
 
 **Cost.** Speech-to-speech models currently feel more natural at turn-taking. This build compensates
-with a semantic turn detector and a longer end-of-turn allowance while the caller is dictating digits.
+with a semantic turn detector that waits up to 3 s when a sentence sounds unfinished.
 
-**Components.** Each is chosen for accuracy on entities first, then latency, then cost, and pinned
-only after test calls.
+**Components.**
 
-| Layer | Choice | Why | Considered |
-|---|---|---|---|
-| Speech to text | AssemblyAI Universal-3.5 Pro | Lowest word error rate in independent streaming benchmarks, strongest reported entity accuracy, supports keyterm prompting | Deepgram Flux ends turns faster but is weaker on names, numbers and addresses |
-| Language model | Gemma 4 31B, thinking off | 96.6% pass rate at 489 ms median on Daily's multi-turn voice agent benchmark, at a fraction of the cost of comparable models | GPT-4.1 scores the same at five times the price and is the fallback; GPT-4.1 mini and GPT-4o mini score 85% and 83% |
-| Text to speech | Inworld TTS-2 Flash | Fastest time to first audio in independent benchmarks, quality comparable to the leaders, low cost per character | Gemini Flash TTS does not stream in this framework; Cartesia Sonic ranks highest on quality but starts slower and costs more |
+| Layer | Choice | Why |
+|---|---|---|
+| Speech to text | Deepgram Nova-3, with keyterms | Runs on Deepgram's signup credit (see revision below). On call 4 it captured a dictated address and ZIP exactly, but heard "AC" as "IC", so "AC" is now a keyterm |
+| Language model | Gemma 4 31B and GPT-4.1 mini, each the other's fallback | Gemma: 96.6% pass at 489 ms median on Daily's multi-turn voice agent benchmark, and 5 of 5 on this repo's model tests. GPT-4.1 mini: 4 of 5, but on the connection-test build it read a tool result on the phone that Gemma dropped twice. One phone call per model on the current build decides which leads |
+| Text to speech | Deepgram Aura-2 | Same account and credit as speech to text |
+
+**Revision, 2026-09-23.** The first choice was AssemblyAI Universal-3.5 Pro for speech to text (the
+lowest word error rate and strongest entity accuracy in independent streaming benchmarks) and Inworld
+TTS-2 Flash for text to speech (the fastest time to first audio), both through LiveKit Inference.
+After the first test calls, speech turned out to be the biggest cost against LiveKit Inference's free
+credit, which covers only about 20 to 30 calls with everything on it. That risked the number going
+dead during the review. Moving speech to Deepgram leaves the credit to the model. Both original
+choices remain as the fallback when no Deepgram key is set. The original model fallback, GPT-4.1,
+was replaced by the two candidates backing each other up.
 
 **Considered: Gemini Live as a speech-to-speech alternative.** It is inexpensive and handles
 turn-taking natively. It was not adopted because its tools are non-blocking by default, so it can
@@ -57,63 +85,106 @@ ZIP and phone capture without confirming ahead of the write.
 
 ## ADR-003: Confirm only after a durable write
 
-**Status:** Accepted
+**Status:** Accepted. Mechanism simplified 2026-09-23.
 
-**Decision.** The agent may confirm a booking only after the booking tool returns a stored identifier.
-Bookings accept only a slot the agent actually offered, recheck capacity inside the write, and carry an
-idempotency key so a retry returns the existing booking.
+**Decision.** The agent may confirm a booking only after the booking tool returns a stored reference.
+The tool accepts only a window that was offered on this call, a ZIP code inside the service area,
+and a real name. Interruptions are disabled for the duration of the write.
 
 **Why.** An answering service fails most expensively when it tells a caller something that did not
-happen. A timed-out write is treated as unknown and looked up, never retried blindly.
+happen. On call 1, before any booking tool existed, the agent said "Let me get a technician
+scheduled" with nothing behind it, and the caller asked when the technician was coming. On call 4 the
+reference was spoken only after the row committed, and it matched.
+
+**How.** One SQL statement does three jobs. The `bookings` table allows one row per call, and the
+insert checks capacity inside the same statement, so a retry returns the existing booking, a caller
+who changes windows mid-call moves that same booking, and a full window is refused while leaving any
+existing booking untouched.
+
+**Revision, 2026-09-23.** The first design treated a timed-out write as unknown: look the booking
+up before retrying. That machinery was cut when the store became a local file (ADR-008). A local
+write has no network hop, so it cannot succeed on the far side of a timeout. It comes back
+committed or it raises an error. The lookup returns if the store goes remote again.
 
 ## ADR-004: Emergencies are detected in code
 
 **Status:** Accepted
 
-**Decision.** Every caller turn is checked against a fixed list of hazard signals (gas smell, rotten
-egg odor, carbon monoxide alarm, smoke). A match interrupts the agent and plays a fixed safety script
-immediately. The dispatch record is written in the background afterwards.
+**Decision.** Every finished caller turn is checked against a fixed pattern list of hazard signals:
+gas smell or leak, rotten eggs, carbon monoxide or a CO alarm, smoke, fire or flames, a burning smell
+and sparks. On the first match in a call, the agent writes an emergency task (a local write that
+takes milliseconds), cuts off anything already being said, speaks a fixed safety script that cannot
+be interrupted, and skips the model's reply for that turn. The on-call page goes out in the
+background, so a slow or failed page never delays the script.
 
-**Why.** Safety guidance must never wait on a tool call and must not depend on the model choosing to
-follow an instruction. Softer urgency, such as no heat in cold weather with an elderly occupant, stays
-with the model and is tested, because it depends on context a keyword list cannot judge.
+**Why.** Safety guidance must never wait on a model choosing to follow an instruction. Softer
+urgency, such as no heat in cold weather with an elderly occupant, stays with the model and is
+tested, because it depends on context a pattern list cannot judge.
 
-**Cost.** A keyword list can over-trigger. A false alarm costs a cautious sentence; a miss costs far
-more.
+**Cost.** A pattern list over-triggers. "I don't smell gas" and a chirping smoke detector both match,
+so the script is worded to be harmless when that happens and ends by asking whether it applies. A
+false alarm costs a cautious sentence; a miss costs far more. A classifier is the upgrade if false
+alarms start to cost calls.
 
-## ADR-005: Live transfer through a Twilio SIP trunk
+**Evidence.** Offline tests cover the patterns, the phrases that must not match (a furnace that
+"won't fire up"), and one emergency task per call. Not yet tested on the phone.
 
-**Status:** Accepted
+## ADR-005: Live transfer, deferred
 
-**Decision.** Callers can be transferred to a person, over a Twilio number connected to LiveKit by SIP
-trunk. If the transfer is not answered, the agent creates an owned handoff task with a summary of the
-call and tells the caller exactly what happens next.
+**Status:** Deferred 2026-09-23. It was accepted on 2026-09-22.
 
-**Why.** For a home-services business, the handoff is where an answering service earns or loses trust.
-A caller who asks for a person should reach one without being argued with.
+**Original decision.** Transfer callers to a person with a SIP REFER over the Twilio trunk. A cold
+transfer waits for the destination to answer, and if nobody does, the caller stays with the agent,
+which files a handoff task. That was meant to make "a person picked up" something the agent knows
+rather than assumes.
 
-**How.** A SIP REFER through the trunk. The transfer request does not complete until the destination
-answers; if nobody answers within the ringing timeout it fails, the caller is still connected to
-the agent, and the agent files the handoff task. That is what makes "a person picked up" something
-the agent knows rather than assumes.
+**Why it was deferred.** The only transfer destination this demo has is one person's cell phone, and
+during the review window that person is at work or on the review call. An unanswered cell rolls to
+carrier voicemail, and the phone network reports voicemail as an answered call. The REFER would
+succeed, the caller would hear a personal voicemail greeting, and the agent would believe a person
+had picked up. That breaks the claim this repository is built on.
 
-**Cost.** A second provider to configure, and LiveKit's own phone numbers could not be used because
-they do not support transfer.
+**What ships instead.** A request for a person becomes a callback task with a stated target, and
+urgent and emergency calls page the on-call phone. A caller who is told when they will hear back
+knows what happens next, and one transferred into a phone nobody answers does not.
+
+**Would reinstate it.** A destination that never goes to voicemail, such as a staffed queue or a
+hunt group. The Twilio trunk already carries inbound calls, so REFER needs no new provider.
 
 ## ADR-006: Business rules in configuration, not in the prompt
 
 **Status:** Accepted
 
-**Decision.** Territory, hours, windows, services and dispatch targets live in
-[`config/business.yaml`](../config/business.yaml).
+**Decision.** The service area (counties and ZIP prefixes), office hours, arrival windows, capacity,
+fees, callback targets and speech keyterms live in [`config/business.yaml`](../config/business.yaml).
+The prompt is rendered from them, with today's date and the caller's number, at the start of every
+call.
 
 **Why.** Onboarding another operator should mean changing configuration, not rewriting the agent.
 
-## ADR-007: Postgres as the booking store
+## ADR-007: Postgres as the booking store (superseded)
 
-**Status:** Accepted
+**Status:** Superseded by ADR-008 on 2026-09-23. It was accepted on 2026-09-22.
 
-**Decision.** Slots, bookings and dispatch tasks are stored in Postgres (Supabase).
+**Original decision.** Store slots, bookings and dispatch tasks in Supabase Postgres, because the
+agent host's disk was assumed to be ephemeral, and Postgres provides transactions and uniqueness
+constraints.
 
-**Why.** The agent host's filesystem is not a durable place to keep reservations. Postgres provides
-transactions, uniqueness constraints for idempotency, and row-level capacity checks.
+## ADR-008: SQLite on the worker's host
+
+**Status:** Accepted 2026-09-23
+
+**Decision.** Slots, bookings, dispatch tasks and call records live in one SQLite file on the
+worker's host, and `src/store.py` is the only file with SQL in it.
+
+**Why.** Postgres was chosen because the host's disk was assumed to be ephemeral. The worker now
+runs on a machine with a persistent disk (ADR-001), so Postgres would add an account, credentials and
+a network hop for no benefit. Every call runs in its own process, and every write is one statement,
+so SQLite's file lock serializes the writes. That is what makes the capacity check in ADR-003 safe.
+
+**Cost.** The schedule lives on one machine and cannot be shared across hosts.
+
+**Would reverse it.** Hosting with an ephemeral disk, or more than one worker host. The booking
+statement is standard `INSERT ... ON CONFLICT ... RETURNING`, which Postgres also runs. The capacity
+check would need a row lock or a counter with a check constraint, because under Postgres's default
+isolation two concurrent inserts can both pass the count.
