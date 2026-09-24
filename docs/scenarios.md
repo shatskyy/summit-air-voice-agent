@@ -29,6 +29,12 @@ The prompt in `src/prompt.md`, the real tools, and Deepgram speech (Nova-3 in, A
 |---|---|---|---|---|---|
 | 2026-09-24 15:00 | `RM_ZQMnzXZZSRev` | GPT-4.1 mini | Collect name, address and availability; book | A routine booking. The address, spoken as "fourteen Maple Avenue, White Plains, ten six zero one", was read back as "14 Maple Avenue in White Plains, ZIP code 10601", confirmed, and stored exactly. The reference was spoken only after the write returned, and matches booking 1001. Two defects: the caller went from the vulnerability question straight to the address, and the agent never asked their name, so the booking was stored as "Caller". Speech-to-text heard "My AC is broken" as "My IC is broken", and the agent guessed "indoor coil" instead of asking. A final transcript that arrived late also split "Hi." from the problem into two turns. Replies took 1.3 to 3.7 s end to end, slower than on call 3 | Booking and address: pass. Name: fail. Recognition: fail |
 
+Fixes since call 4, each pending a phone retest:
+
+- **Recognition.** "AC" and "air conditioner" are keyterms, and the prompt asks what an unfamiliar
+  word meant instead of guessing. The end-of-turn wait rose from 0.5 to 0.7 s so a late final
+  transcript joins its sentence, at up to 0.2 s on each reply.
+
 ## Text tests (`uv run pytest -m llm`)
 
 Run on 2026-09-23 against the new prompt, with no filler line. Each test ran against both candidates.

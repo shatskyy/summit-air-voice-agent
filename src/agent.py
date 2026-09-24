@@ -124,6 +124,9 @@ async def entrypoint(ctx: JobContext) -> None:
         turn_handling=TurnHandlingOptions(
             # v1-mini runs locally, so turn detection spends no inference credit.
             turn_detection=inference.TurnDetector(version="v1-mini"),
+            # Deepgram's final transcript can land after a 0.5 s wait, splitting one sentence into
+            # two turns (call 4). 0.7 s gives it room at a small cost on every reply.
+            endpointing={"min_delay": 0.7, "max_delay": 3.0},
             interruption={"mode": "adaptive"},
         ),
         user_away_timeout=12.0,
