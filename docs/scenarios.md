@@ -30,13 +30,18 @@ The prompt in `src/prompt.md`, the real tools, and Deepgram speech (Nova-3 in, A
 |---|---|---|---|---|---|
 | 2026-09-24 15:00 | `RM_ZQMnzXZZSRev` | GPT-4.1 mini | Collect name, address and availability; book | A routine booking. The address, spoken as "fourteen Maple Avenue, White Plains, ten six zero one", was read back as "14 Maple Avenue in White Plains, ZIP code 10601", confirmed, and stored exactly. The reference was spoken only after the write returned, and matches booking 1001. Two defects: the caller went from the vulnerability question straight to the address, and the agent never asked their name, so the booking was stored as "Caller". Speech-to-text heard "My AC is broken" as "My IC is broken", and the agent guessed "indoor coil" instead of asking. A final transcript that arrived late also split "Hi." from the problem into two turns. Replies took 1.3 to 3.7 s end to end, slower than on call 3 | Booking and address: pass. Name: fail. Recognition: fail |
 
-Fixes since call 4, each pending a phone retest:
+| 2026-09-24 17:16 | `RM_V3qC4JuQ9Lbg` | GPT-4.1 mini | Retest of call 4's fixes; out-of-area address | "Hi. My AC is broken." arrived as one correct turn. The caller skipped the name again, and the agent went back for it before booking. The caller gave ZIP 10003 (Manhattan): the agent read it back, offered two windows and took a choice before `book_appointment` refused the ZIP, then filed a callback task correctly. The town the caller gave (Chappaqua) was stored with 10003 and never read back. The agent ended the call in the same turn as the task, and its goodbye ran on into the full opening greeting. Most replies took about 3.1 s end to end | Name, recognition: pass. Out-of-area: late. Hang-up: fail. Latency: fail |
 
-- **Recognition.** "AC" and "air conditioner" are keyterms, and the prompt asks what an unfamiliar
-  word meant instead of guessing. The end-of-turn wait rose from 0.5 to 0.7 s so a late final
-  transcript joins its sentence, at up to 0.2 s on each reply.
-- **Name.** `book_appointment` refuses an empty or placeholder name and tells the model to ask for
-  it, and the prompt says to go back for anything a caller skipped by answering out of order.
+Fixes since call 5, each pending a phone retest:
+
+- **Latency.** The local turn detector scored complete short answers under its threshold, so every
+  such turn waited the full 3 s. The hosted detector is back and the cap is 2 s
+  ([ADR-002](decisions.md)).
+- **Address.** `check_address` refuses an out-of-area ZIP before any window is offered, and the
+  readback includes the town. `book_appointment` refuses an address that was never checked.
+- **Hang-up.** The goodbye is a fixed line spoken by code. The model ends the call only after the
+  caller says they need nothing else.
+- **Model.** Gemma leads, with GPT-4.1 mini as fallback (text tests below).
 
 ## Text tests (`uv run pytest -m llm`)
 
