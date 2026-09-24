@@ -34,8 +34,9 @@ count. The caller's number comes from caller ID and is confirmed rather than dic
 
 | Tool | Returns |
 |---|---|
+| `check_address` | Whether the ZIP is in the service area, and the street, town and ZIP to read back. Run before any window is offered; an out-of-area ZIP ends scheduling |
 | `check_availability` | Up to two open windows from the requested date, recorded as offered on this call |
-| `book_appointment` | A reference number and the confirmed day, window and address, or a refusal with the next step: window not offered, ZIP outside the area, no name yet, or the window just filled |
+| `book_appointment` | A reference number and the confirmed day, window and address, or a refusal with the next step: window not offered, ZIP outside the area, address never checked, no name yet, or the window just filled |
 | `create_dispatch_task` | A task number and a callback target time. Emergency and urgent tasks also page the on-call phone |
 | `end_call` | Nothing; says goodbye and hangs up |
 

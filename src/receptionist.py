@@ -60,6 +60,7 @@ class Call:
     caller_number: str | None = None
     db: Path = DEFAULT_DB
     offered: dict[str, str] = field(default_factory=dict)  # slot id -> how it was spoken
+    checked_zip: str | None = None  # the in-area ZIP check_address passed on this call
     hazard_task: int | None = None
     away_count: int = 0
 
@@ -228,6 +229,35 @@ class SummitAirAgent(Agent):
         raise StopResponse()
 
     @function_tool
+    async def check_address(
+        self, context: RunContext[Call], street: str, town: str, zip_code: str
+    ) -> str:
+        """Check the service address the moment the caller gives it, before reading it back or
+        offering any time.
+
+        Args:
+            street: House number and street, with any apartment or unit.
+            town: The town or city.
+            zip_code: The five-digit ZIP code.
+        """
+        zip_code = re.sub(r"\D", "", zip_code)
+        if len(zip_code) != 5:
+            raise ToolError("Ask for the five-digit ZIP code, then check the address again.")
+        if not town.strip():
+            raise ToolError("Ask which town the address is in, then check the address again.")
+        if not in_coverage(zip_code):
+            return (
+                f"ZIP {zip_code} is outside the service area. Don't offer times or book. Read the "
+                "ZIP back once to make sure you heard it right. If it is right, say Summit Air "
+                "doesn't serve that area yet, offer a callback, and ask if there is anything else."
+            )
+        context.userdata.checked_zip = zip_code
+        return (
+            f"In the service area. Read it back once as {street}, {town}, ZIP {zip_code}, and wait "
+            "for a yes."
+        )
+
+    @function_tool
     async def check_availability(
         self,
         context: RunContext[Call],
@@ -299,6 +329,11 @@ class SummitAirAgent(Agent):
             raise ToolError(
                 f"ZIP {zip_code or 'missing'} is outside the service area. Don't book. Confirm the ZIP, "
                 "and if it is outside the area, create a callback task."
+            )
+        if zip_code != call.checked_zip:
+            raise ToolError(
+                "This address hasn't been checked on this call. Call check_address, read the "
+                "address back and hear a yes, then book."
             )
         context.disallow_interruptions()
         booking = await asyncio.to_thread(

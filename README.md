@@ -31,7 +31,7 @@ The voice model runs the conversation. It does not get to decide what is true ab
 | **Understanding the problem** | In the caller's own words, before asking for anything. Details volunteered out of order are kept, anything skipped is asked for before booking, and the name is also checked in code. |
 | **Urgency** | Emergency, then urgent, then routine. The prompt re-decides whenever new facts arrive, including during confirmation. An urgent call is flagged before anything is scheduled. |
 | **Emergencies** | Gas smell, carbon monoxide alarm, smoke. Detected in code, not left to the model, and the safety script is spoken before the model replies. |
-| **Booking** | Against a persistent schedule with real capacity. At most two arrival windows offered at a time. No booking without an offered window, a covered ZIP code and the caller's name. |
+| **Booking** | Against a persistent schedule with real capacity. At most two arrival windows offered at a time. The address is checked against the service area as soon as it is given, before any window is offered, and read back with the town. No booking without an offered window, a checked ZIP code and the caller's name. |
 | **People** | A request for a person, a reschedule, billing or a complaint becomes a callback task with a stated target, without argument. |
 | **Silence** | One check-in after 12 seconds of silence. If the line stays quiet, a goodbye and a hang-up. |
 
@@ -61,7 +61,7 @@ caller ──► Twilio number ──► SIP trunk ──► LiveKit Cloud
                      agent worker (one Python process, one call kept warm)
                        • speech to text → language model → text to speech
                        • hazard check on every caller turn
-                       • tools: availability, booking, dispatch task, end call
+                       • tools: address check, availability, booking, dispatch task, end call
                                               │
                         ┌─────────────────────┴───────────────────┐
                         ▼                                         ▼
@@ -87,6 +87,9 @@ booking. Detail: [docs/architecture.md](docs/architecture.md).
 - **No text-message confirmation.** Sending SMS from a US number needs A2P 10DLC registration.
 - **English only.** A Spanish-speaking caller is told so in Spanish and gets a callback task.
 - **No speech-to-speech model.** See [ADR-002](docs/decisions.md#adr-002-cascaded-speech-pipeline).
+- **No ZIP-to-town check.** Call 5 filed a Chappaqua address under a Manhattan ZIP. The coverage check
+  already refuses an out-of-area ZIP, and the readback now includes the town, so the caller hears
+  any remaining mismatch. A ZIP-to-town table would need the customer's territory data.
 - **No dispatcher dashboard.** Calls, bookings and tasks are rows in SQLite (queries below).
 
 ## Running it
@@ -117,10 +120,10 @@ sqlite3 data/summit-air.db "select ref, kind, reason, due_at from tasks order by
 
 ## Evaluation
 
-- **`uv run pytest`**: 31 offline checks, with no credentials and no cost. They cover capacity,
+- **`uv run pytest`**: 34 offline checks, with no credentials and no cost. They cover capacity,
   retries and mid-call corrections in the store; the booking guards (a window never offered, a ZIP
-  outside the area, a missing name); the hazard patterns, including phrases that must not trigger
-  them; and prompt rendering.
+  outside the area, an address never checked, a missing name); the hazard patterns, including
+  phrases that must not trigger them; and prompt rendering.
 - **`uv run pytest -m llm`**: 5 behavior tests, each run against both candidate models through
   LiveKit Inference with an LLM judge. They cover offering the windows a tool returned, never
   claiming an unmade booking, flagging an elderly caller without heat before scheduling, a price

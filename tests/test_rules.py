@@ -134,9 +134,39 @@ async def test_an_address_outside_the_three_counties_is_refused(db):
         )
 
 
+async def test_an_address_outside_the_area_is_caught_before_any_window(db):
+    ctx = FakeContext(Call(call_id="call-a", db=db))
+    result = await SummitAirAgent("").check_address(ctx, "48 Severn Lane", "Chappaqua", "10003")
+    assert "outside the service area" in result and "Don't offer times" in result
+    assert ctx.userdata.checked_zip is None
+
+
+async def test_an_address_without_a_town_is_sent_back_for_the_town(db):
+    ctx = FakeContext(Call(call_id="call-a", db=db))
+    with pytest.raises(ToolError, match="which town"):
+        await SummitAirAgent("").check_address(ctx, "14 Maple Ave", " ", "10601")
+
+
+async def test_booking_an_address_that_was_never_checked_is_refused(db):
+    ctx = FakeContext(Call(call_id="call-a", db=db, offered={"2026-09-29-0800": "Tuesday"}))
+    with pytest.raises(ToolError, match="hasn't been checked"):
+        await SummitAirAgent("").book_appointment(
+            ctx,
+            "2026-09-29-0800",
+            "residential",
+            "Maria Lopez",
+            "+19145550100",
+            "14 Maple Ave, White Plains",
+            "10601",
+            "no heat",
+        )
+
+
 async def test_an_offered_window_books_and_returns_a_reference(db):
     agent = SummitAirAgent("")
     ctx = FakeContext(Call(call_id="call-a", db=db))
+    readback = await agent.check_address(ctx, "14 Maple Ave", "White Plains", "10601")
+    assert "14 Maple Ave, White Plains, ZIP 10601" in readback
     offered = await agent.check_availability(ctx, "2026-09-29", "morning")
     assert "slot_id 2026-09-29-0800" in offered
     confirmation = await agent.book_appointment(

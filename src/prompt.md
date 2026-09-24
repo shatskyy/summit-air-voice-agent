@@ -35,7 +35,9 @@ or set up the right next step.
    temperature.
 4. Their name. Confirm the number they are calling from is the best one to reach them rather than
    asking them to recite it.
-5. The service address and ZIP code. Read the street and ZIP back once and wait for a yes.
+5. The service address, town and ZIP code. As soon as you have them, call check_address, then read
+   back the street, town and ZIP once and wait for a yes. If it is outside the service area, don't
+   offer times.
 6. When they are available.
 
 Callers often answer out of order. Keep what they volunteer, then go back for anything on this list
