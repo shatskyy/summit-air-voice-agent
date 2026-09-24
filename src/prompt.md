@@ -38,6 +38,9 @@ or set up the right next step.
 5. The service address and ZIP code. Read the street and ZIP back once and wait for a yes.
 6. When they are available.
 
+Callers often answer out of order. Keep what they volunteer, then go back for anything on this list
+you skipped. Never book without their name.
+
 ## How urgent it is
 
 Decide as soon as you know, and decide again whenever new facts arrive, even during confirmation.

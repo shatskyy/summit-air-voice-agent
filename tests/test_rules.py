@@ -88,6 +88,22 @@ def test_a_correction_during_the_call_moves_the_same_booking(db):
 # The tools
 
 
+@pytest.mark.parametrize("placeholder", ["Caller", "", "  unknown ", "N/A"])
+async def test_booking_without_a_real_name_is_refused(db, placeholder):
+    ctx = FakeContext(Call(call_id="call-a", db=db, offered={"2026-09-29-0800": "Tuesday"}))
+    with pytest.raises(ToolError, match="No name yet"):
+        await SummitAirAgent("").book_appointment(
+            ctx,
+            "2026-09-29-0800",
+            "residential",
+            placeholder,
+            "+19145550100",
+            "14 Maple Ave, White Plains",
+            "10601",
+            "AC is broken",
+        )
+
+
 async def test_booking_a_window_that_was_never_offered_is_refused(db):
     ctx = FakeContext(Call(call_id="call-a", db=db))
     with pytest.raises(ToolError, match="not offered"):

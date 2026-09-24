@@ -106,6 +106,15 @@ def speak_window(slot: dict) -> str:
     return f"{day:%A}, {day:%B} {day.day}, between {speak_clock(slot['start'])} and {speak_clock(slot['end'])}"
 
 
+# What a model writes when it never asked. A real name is anything else with a letter in it.
+PLACEHOLDER_NAMES = {"", "caller", "the caller", "customer", "unknown", "n/a", "na", "none", "sir", "ma'am"}
+
+
+def is_real_name(name: str) -> bool:
+    cleaned = name.strip().lower()
+    return cleaned not in PLACEHOLDER_NAMES and any(c.isalpha() for c in cleaned)
+
+
 def in_coverage(zip_code: str) -> bool:
     return (
         len(zip_code) == 5
@@ -265,6 +274,10 @@ class SummitAirAgent(Agent):
                 caller mentioned, or an earlier visit that was missed.
         """
         call = context.userdata
+        if not is_real_name(name):
+            raise ToolError(
+                "No name yet. Ask the caller for their name, then book. Don't use a placeholder."
+            )
         if slot_id not in call.offered:
             raise ToolError(
                 "That slot was not offered on this call. Call check_availability and offer a window first."

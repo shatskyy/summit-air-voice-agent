@@ -34,6 +34,8 @@ Fixes since call 4, each pending a phone retest:
 - **Recognition.** "AC" and "air conditioner" are keyterms, and the prompt asks what an unfamiliar
   word meant instead of guessing. The end-of-turn wait rose from 0.5 to 0.7 s so a late final
   transcript joins its sentence, at up to 0.2 s on each reply.
+- **Name.** `book_appointment` refuses an empty or placeholder name and tells the model to ask for
+  it, and the prompt says to go back for anything a caller skipped by answering out of order.
 
 ## Text tests (`uv run pytest -m llm`)
 
