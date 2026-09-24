@@ -198,6 +198,22 @@ async def test_an_urgent_task_states_a_target_and_pages(db, monkeypatch):
     assert pages == ["Summit Air urgent #2001"]
 
 
+async def test_hanging_up_speaks_the_fixed_goodbye_and_asks_the_model_for_nothing():
+    said = []
+
+    class FakeSession:
+        def say(self, text, allow_interruptions=True):
+            said.append(text)
+
+    class Event:
+        ctx = type("Ctx", (), {"session": FakeSession()})()
+
+    await receptionist.say_goodbye(Event())
+    assert said == [receptionist.GOODBYE]
+    end_call = next(t for t in SummitAirAgent("").tools if getattr(t, "id", "") == "end_call")
+    assert end_call._end_instructions is None
+
+
 # Safety backstop
 
 

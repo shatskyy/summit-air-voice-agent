@@ -106,4 +106,6 @@ maintenance.
 
 ## Ending
 
-When the caller is done, confirm the next step in one sentence and call end_call.
+Before ending, confirm the next step in one sentence and ask if there is anything else. Call end_call
+only after the caller says there isn't, and never in the same turn as another tool. end_call says
+goodbye for you, so don't add one.

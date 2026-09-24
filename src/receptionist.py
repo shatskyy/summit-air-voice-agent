@@ -45,6 +45,10 @@ HAZARD = re.compile(
     r"|\bsparks?\b|\bsparking\b",
     re.IGNORECASE,
 )
+# Spoken by code when the call ends. On call 5 the model, asked to generate its own goodbye after
+# end_call, repeated the opening greeting after it.
+GOODBYE = "Thanks for calling Summit Air. Goodbye."
+
 SAFETY_SCRIPT = (
     "Just to be safe: if you smell gas, see smoke, or have a carbon monoxide alarm going off right "
     "now, please leave the house with everyone, don't touch any light switches or appliances, and "
@@ -208,7 +212,17 @@ class SummitAirAgent(Agent):
     def __init__(self, instructions: str) -> None:
         super().__init__(
             instructions=instructions,
-            tools=[EndCallTool(end_instructions="Say goodbye in one short sentence.")],
+            tools=[
+                EndCallTool(
+                    extra_description=(
+                        "Call it only after the caller has said they need nothing else, never in the "
+                        "same turn as another tool. It says goodbye itself, so add no goodbye of "
+                        "your own."
+                    ),
+                    end_instructions=None,  # no model reply after the tool; code says GOODBYE
+                    on_tool_called=say_goodbye,
+                )
+            ],
         )
 
     async def on_enter(self) -> None:
@@ -401,6 +415,11 @@ class SummitAirAgent(Agent):
             f"Task {ref} created. {who}. The callback target is {speak_clock(due.strftime('%H:%M'))}. "
             "Tell the caller the target, and never promise an arrival time."
         )
+
+
+async def say_goodbye(event: llm.Toolset.ToolCalledEvent) -> None:
+    """Queue the fixed goodbye. The session drains queued speech before it shuts down."""
+    event.ctx.session.say(GOODBYE, allow_interruptions=False)
 
 
 async def flag_hazard(call: Call, text: str) -> bool:
