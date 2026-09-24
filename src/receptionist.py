@@ -108,7 +108,18 @@ def speak_window(slot: dict) -> str:
 
 
 # What a model writes when it never asked. A real name is anything else with a letter in it.
-PLACEHOLDER_NAMES = {"", "caller", "the caller", "customer", "unknown", "n/a", "na", "none", "sir", "ma'am"}
+PLACEHOLDER_NAMES = {
+    "",
+    "caller",
+    "the caller",
+    "customer",
+    "unknown",
+    "n/a",
+    "na",
+    "none",
+    "sir",
+    "ma'am",
+}
 
 
 def is_real_name(name: str) -> bool:

@@ -1880,10 +1880,12 @@ name = "summit-air-voice-agent"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aiohttp" },
     { name = "livekit-agents" },
     { name = "livekit-plugins-deepgram" },
     { name = "livekit-plugins-noise-cancellation" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -1895,10 +1897,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.14.3" },
     { name = "livekit-agents", specifier = "~=1.8" },
     { name = "livekit-plugins-deepgram", specifier = "~=1.8" },
     { name = "livekit-plugins-noise-cancellation", specifier = "~=0.3" },
     { name = "python-dotenv" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
 [package.metadata.requires-dev]
