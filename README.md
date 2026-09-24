@@ -44,7 +44,7 @@ The voice model runs the conversation. It does not get to decide what is true ab
 | Speech to text | Deepgram Nova-3, with territory and HVAC keyterms |
 | Language model | Gemma 4 31B and GPT-4.1 mini through LiveKit Inference, each the other's fallback. Which one leads is still being decided on phone calls |
 | Text to speech | Deepgram Aura-2 |
-| Turn-taking | LiveKit's turn detector (v1-mini, run locally), adaptive interruption, telephony noise cancellation |
+| Turn-taking | LiveKit's hosted turn detector (v1), adaptive interruption, telephony noise cancellation |
 | Store | SQLite |
 | On-call page | [ntfy](https://ntfy.sh) push |
 

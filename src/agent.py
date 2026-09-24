@@ -122,11 +122,15 @@ async def entrypoint(ctx: JobContext) -> None:
             [inference.LLM(model=LLM_MODEL), inference.LLM(model=FALLBACK_LLM_MODEL)]
         ),
         turn_handling=TurnHandlingOptions(
-            # v1-mini runs locally, so turn detection spends no inference credit.
-            turn_detection=inference.TurnDetector(version="v1-mini"),
+            # The hosted v1 detector, not the local v1-mini. On call 5, v1-mini scored complete short
+            # answers ("It's at a home.", "Yes.") below its threshold, so each reply waited the full
+            # max_delay: about 3.1 s end to end. v1 scored the same kind of turn 0.6 to 0.99 on
+            # call 3, and it bills against a separate monthly request quota, not the credit.
+            turn_detection=inference.TurnDetector(),
             # Deepgram's final transcript can land after a 0.5 s wait, splitting one sentence into
-            # two turns (call 4). 0.7 s gives it room at a small cost on every reply.
-            endpointing={"min_delay": 0.7, "max_delay": 3.0},
+            # two turns (call 4). 0.7 s gives it room. max_delay caps the wait when the detector
+            # thinks the caller is mid-thought.
+            endpointing={"min_delay": 0.7, "max_delay": 2.0},
             interruption={"mode": "adaptive"},
         ),
         user_away_timeout=12.0,

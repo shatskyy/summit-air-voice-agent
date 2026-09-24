@@ -56,7 +56,17 @@ before anything is booked. It also guarantees ordering: the model cannot say "yo
 the booking tool has returned.
 
 **Cost.** Speech-to-speech models currently feel more natural at turn-taking. This build compensates
-with a semantic turn detector that waits up to 3 s when a sentence sounds unfinished.
+with a semantic turn detector that waits up to 2 s when a sentence sounds unfinished.
+
+**Revision, 2026-09-24: the hosted turn detector, not the local one.** Replies on call 5 took about
+3.1 s end to end. Replaying that call's turns straight to each model put the first full sentence at
+0.64 s median for GPT-4.1 mini and 0.33 s for Gemma, with or without the full prompt and the fallback
+adapter, so the model was not the cause. The log showed the cause. The local `v1-mini` detector,
+adopted after call 4 to spend no inference credit, scored complete short answers ("It's at a home.",
+"Yes.") at 0.19 to 0.33, under its 0.36 threshold. So every such turn waited the full 3 s maximum
+while the reply sat ready. The hosted v1 detector scored the same kind of turn at 0.6 to 0.99 on
+call 3. Its usage counts against a separate monthly request quota, not the inference credit. It is
+back, and the maximum wait drops from 3 s to 2 s.
 
 **Components.**
 
