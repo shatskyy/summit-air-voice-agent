@@ -23,6 +23,7 @@ from livekit.agents import (
     inference,
     llm,
     room_io,
+    tts,
 )
 from livekit.plugins import deepgram, noise_cancellation
 
@@ -55,22 +56,25 @@ TTS_VOICE = os.getenv("TTS_VOICE", "aura-2-thalia-en")
 SILENCE_SECONDS = 12.0  # quiet before the check-in, and again before hanging up
 
 
+def inworld_voice():
+    return inference.TTS(
+        model="inworld/inworld-tts-2-flash",
+        voice="Ashley",
+        extra_kwargs={"apply_text_normalization": "ON"},
+    )
+
+
 def speech():
-    """Deepgram runs on its own free credit. Without a key, fall back to LiveKit Inference."""
+    """Deepgram runs on its own free credit. Without a key, speech runs on LiveKit Inference."""
     if os.getenv("DEEPGRAM_API_KEY"):
         return (
             deepgram.STT(model="nova-3", keyterm=CONFIG["keyterms"], smart_format=True),
-            deepgram.TTS(model=TTS_VOICE),
+            # Inworld takes over if Deepgram can't be reached. It can't rescue a sentence that
+            # drops partway (call 6): the adapter never replays audio the caller already heard.
+            tts.FallbackAdapter([deepgram.TTS(model=TTS_VOICE), inworld_voice()]),
         )
     logger.warning("DEEPGRAM_API_KEY is not set; speech runs on the LiveKit Inference credit")
-    return (
-        inference.STT(model="assemblyai/universal-3-5-pro", language="en"),
-        inference.TTS(
-            model="inworld/inworld-tts-2-flash",
-            voice="Ashley",
-            extra_kwargs={"apply_text_normalization": "ON"},
-        ),
-    )
+    return inference.STT(model="assemblyai/universal-3-5-pro", language="en"), inworld_voice()
 
 
 def caller_number(participant: rtc.RemoteParticipant) -> str | None:
@@ -115,11 +119,11 @@ async def entrypoint(ctx: JobContext) -> None:
     await asyncio.to_thread(init_store, call.db)
     await asyncio.to_thread(store.save_call, call.db, call.call_id, call.caller_number)
 
-    stt, tts = speech()
+    listening, speaking = speech()
     session = AgentSession[Call](
         userdata=call,
-        stt=stt,
-        tts=tts,
+        stt=listening,
+        tts=speaking,
         llm=llm.FallbackAdapter(
             [inference.LLM(model=LLM_MODEL), inference.LLM(model=FALLBACK_LLM_MODEL)]
         ),

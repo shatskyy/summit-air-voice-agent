@@ -43,7 +43,7 @@ The voice model runs the conversation. It does not get to decide what is true ab
 | Telephony | Twilio number on an Elastic SIP trunk into LiveKit Cloud |
 | Speech to text | Deepgram Nova-3, with territory and HVAC keyterms |
 | Language model | Gemma 4 31B and GPT-4.1 mini through LiveKit Inference, each the other's fallback. Which one leads is still being decided on phone calls |
-| Text to speech | Deepgram Aura-2 |
+| Text to speech | Deepgram Aura-2, with Inworld TTS-2 Flash through LiveKit Inference taking over if Deepgram can't be reached |
 | Turn-taking | LiveKit's hosted turn detector (v1), adaptive interruption, telephony noise cancellation |
 | Store | SQLite |
 | On-call page | [ntfy](https://ntfy.sh) push |
@@ -141,9 +141,10 @@ sqlite3 data/summit-air.db "select ref, kind, reason, due_at from tasks order by
   number stops answering.
 - **Latency.** Replies took 0.9 to 1.8 s end to end on call 6, after the turn-detector fix. An answer
   the detector thinks is unfinished can still wait up to 2 s.
-- **Speech is one vendor.** Deepgram handles both listening and speaking. On call 6 its speech
-  connection dropped mid-sentence; the caller asked again and got the full answer. There is no
-  mid-sentence failover.
+- **Listening is one vendor, and a dropped sentence stays dropped.** Deepgram handles listening
+  with no backup. Speaking falls over to Inworld when Deepgram can't be reached, which a forced
+  failure confirmed, but not partway through a sentence: on call 6 Deepgram's voice dropped
+  mid-sentence and the caller had to ask again.
 
 ## Before this could take real calls
 
