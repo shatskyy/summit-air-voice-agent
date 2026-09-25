@@ -31,6 +31,7 @@ from receptionist import (
     CONFIG,
     DEFAULT_DB,
     Call,
+    SilenceWatch,
     SummitAirAgent,
     init_store,
     now,
@@ -51,6 +52,7 @@ FALLBACK_LLM_MODEL = os.getenv(
     "FALLBACK_LLM_MODEL", next(m for m in CANDIDATE_LLMS if m != LLM_MODEL)
 )
 TTS_VOICE = os.getenv("TTS_VOICE", "aura-2-thalia-en")
+SILENCE_SECONDS = 12.0  # quiet before the check-in, and again before hanging up
 
 
 def speech():
@@ -133,29 +135,17 @@ async def entrypoint(ctx: JobContext) -> None:
             endpointing={"min_delay": 0.7, "max_delay": 2.0},
             interruption={"mode": "adaptive"},
         ),
-        user_away_timeout=12.0,
+        user_away_timeout=SILENCE_SECONDS,
     )
     session.on("conversation_item_added", log_turn_latency)
 
-    async def check_in_or_hang_up() -> None:
-        call.away_count += 1
-        if call.away_count == 1:
-            session.generate_reply(
-                instructions="The caller has gone quiet. Ask briefly whether they are still there."
-            )
-            return
-        await session.say("I'll let you go. Call us back any time.", allow_interruptions=False)
-        await ctx.delete_room()
-
-    pending: set[asyncio.Task] = set()
+    silence = SilenceWatch(session, ctx.delete_room, wait=SILENCE_SECONDS)
 
     def on_user_state(event: UserStateChangedEvent) -> None:
         if event.new_state == "speaking":
-            call.away_count = 0
+            silence.on_speaking()
         elif event.new_state == "away":
-            task = asyncio.create_task(check_in_or_hang_up())
-            pending.add(task)
-            task.add_done_callback(pending.discard)
+            silence.on_away()
 
     session.on("user_state_changed", on_user_state)
 

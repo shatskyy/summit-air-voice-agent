@@ -27,8 +27,9 @@ What the system does today. Where it differs from the first design, the reason i
 There is no separate state machine. The booking tool's required arguments are the list of what must
 be known (type, name, number, address, ZIP, issue), so a missing field is something the model has to
 ask for before the call can book. Code keeps only what the model must not be trusted with: the
-windows actually offered on this call, whether an emergency task already exists, and the silence
-count. The caller's number comes from caller ID and is confirmed rather than dictated.
+windows actually offered on this call, the ZIP code that passed the coverage check, whether an
+emergency task already exists, and the silence timer. The caller's number comes from caller ID and
+is confirmed rather than dictated.
 
 ## Tools
 

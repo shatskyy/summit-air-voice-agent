@@ -252,6 +252,43 @@ async def test_hanging_up_speaks_the_fixed_goodbye_and_asks_the_model_for_nothin
     assert end_call._end_instructions is None
 
 
+class QuietLine:
+    """Stands in for AgentSession: records what the silence watch says and whether it hung up."""
+
+    def __init__(self):
+        self.said = []
+        self.hung_up = False
+
+    async def generate_reply(self, instructions):
+        self.said.append(instructions)
+
+    async def say(self, text, allow_interruptions=True):
+        self.said.append(text)
+
+    async def hang_up(self):
+        self.hung_up = True
+
+
+async def test_a_line_that_stays_quiet_after_the_check_in_is_hung_up():
+    line = QuietLine()
+    watch = receptionist.SilenceWatch(line, line.hang_up, wait=0.01)
+    watch.on_away()
+    await receptionist.asyncio.sleep(0.05)
+    assert line.said == [receptionist.CHECK_IN, receptionist.SILENT_GOODBYE]
+    assert line.hung_up
+
+
+async def test_speaking_after_the_check_in_keeps_the_call_open():
+    line = QuietLine()
+    watch = receptionist.SilenceWatch(line, line.hang_up, wait=0.05)
+    watch.on_away()
+    await receptionist.asyncio.sleep(0.01)
+    watch.on_speaking()
+    await receptionist.asyncio.sleep(0.1)
+    assert line.said == [receptionist.CHECK_IN]
+    assert not line.hung_up
+
+
 # Safety backstop
 
 

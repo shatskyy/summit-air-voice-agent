@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -49,6 +50,10 @@ HAZARD = re.compile(
 # end_call, repeated the opening greeting after it.
 GOODBYE = "Thanks for calling Summit Air. Goodbye."
 
+# Said when the line goes quiet: one check-in, then a goodbye if it stays quiet.
+CHECK_IN = "The caller has gone quiet. Ask briefly whether they are still there."
+SILENT_GOODBYE = "I'll let you go. Call us back any time."
+
 SAFETY_SCRIPT = (
     "Just to be safe: if you smell gas, see smoke, or have a carbon monoxide alarm going off right "
     "now, please leave the house with everyone, don't touch any light switches or appliances, and "
@@ -66,7 +71,6 @@ class Call:
     offered: dict[str, str] = field(default_factory=dict)  # slot id -> how it was spoken
     checked_zip: str | None = None  # the in-area ZIP check_address passed on this call
     hazard_task: int | None = None
-    away_count: int = 0
 
 
 def now() -> datetime:
@@ -451,6 +455,38 @@ class SummitAirAgent(Agent):
             f"Task {ref} created. {who}. The callback target is {speak_due(due, now())}. "
             "Tell the caller the target, and never promise an arrival time."
         )
+
+
+class SilenceWatch:
+    """Check in once when the caller goes quiet, then say goodbye and hang up if they stay quiet.
+
+    LiveKit reports the caller as away only once per silence: it rearms its timer only while the
+    caller is listening, and after the first report they are already away. So the hang-up is timed
+    here instead of waiting for a second report that never comes.
+    """
+
+    def __init__(self, session, hang_up: Callable[[], Awaitable[object]], wait: float) -> None:
+        self._session = session
+        self._hang_up = hang_up
+        self._wait = wait
+        self._task: asyncio.Task | None = None
+        self._closing = False
+
+    def on_away(self) -> None:
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._check_in_then_hang_up())
+
+    def on_speaking(self) -> None:
+        if self._task is not None and not self._closing:
+            self._task.cancel()
+            self._task = None
+
+    async def _check_in_then_hang_up(self) -> None:
+        await self._session.generate_reply(instructions=CHECK_IN)  # returns after playout
+        await asyncio.sleep(self._wait)
+        self._closing = True  # the goodbye has started, so speech no longer calls it off
+        await self._session.say(SILENT_GOODBYE, allow_interruptions=False)
+        await self._hang_up()
 
 
 async def say_goodbye(event: llm.Toolset.ToolCalledEvent) -> None:
