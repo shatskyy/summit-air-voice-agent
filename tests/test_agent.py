@@ -122,11 +122,13 @@ async def test_a_caller_who_wants_a_person_gets_a_callback_without_argument(mode
         result.expect.contains_function_call(
             name="create_dispatch_task", arguments={"kind": "callback"}
         )
+        # The task itself is the agreement. The judge reads only the last message, which may follow
+        # an earlier "I can have someone call you back", so it checks the target and the tone.
         await (
             result.expect[-1]
             .is_message(role="assistant")
             .judge(
                 judge,
-                intent="Agrees without trying to talk the caller out of it and gives a specific callback target time.",
+                intent="Gives a specific callback target time and does not argue or try to talk the caller out of speaking to a person.",
             )
         )
