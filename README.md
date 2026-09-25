@@ -32,7 +32,7 @@ The voice model runs the conversation. It does not get to decide what is true ab
 | **Urgency** | Emergency, then urgent, then routine. The prompt re-decides whenever new facts arrive, including during confirmation. An urgent call is flagged before anything is scheduled. |
 | **Emergencies** | Gas smell, carbon monoxide alarm, smoke. Detected in code, not left to the model, and the safety script is spoken before the model replies. |
 | **Booking** | Against a persistent schedule with real capacity. At most two arrival windows offered at a time. The address is checked against the service area as soon as it is given, before any window is offered, and read back with the town. No booking without an offered window, a checked ZIP code and the caller's name. |
-| **People** | A request for a person, a reschedule, billing or a complaint becomes a callback task with a stated target, without argument. |
+| **People** | A request for a person, a reschedule, billing or a complaint becomes a callback task with a stated target, without argument. The target counts office hours, so a request at 11 PM is promised for 10 AM the next morning, not 1 AM. |
 | **Silence** | One check-in after 12 seconds of silence. If the line stays quiet, a goodbye and a hang-up. |
 
 ## Stack
@@ -135,8 +135,6 @@ sqlite3 data/summit-air.db "select ref, kind, reason, due_at from tasks order by
 
 - **Nobody is actually on call.** The urgent page reaches one test phone, and the 15-minute urgent
   target is stated as a target, not a guarantee.
-- **Callback targets run on the wall clock.** After hours, a routine callback is still promised
-  within two hours, which can mean the middle of the night.
 - **The hazard check is a keyword list.** It over-triggers by design ("I don't smell gas" and a
   chirping smoke detector both match), and the safety script is worded to be harmless when it does.
 - **One machine.** The worker and the database share one host. If it loses power or network, the

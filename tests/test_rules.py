@@ -198,6 +198,44 @@ async def test_an_urgent_task_states_a_target_and_pages(db, monkeypatch):
     assert pages == ["Summit Air urgent #2001"]
 
 
+def eastern(month, day, hour, minute=0):
+    return datetime(2026, month, day, hour, minute, tzinfo=TZ)
+
+
+@pytest.mark.parametrize(
+    ("asked", "due"),
+    [
+        (eastern(9, 28, 13), eastern(9, 28, 15)),  # Monday afternoon
+        (eastern(9, 28, 16, 30), eastern(9, 29, 9, 30)),  # half an hour before close
+        (eastern(9, 28, 23), eastern(9, 29, 10)),  # Monday night
+        (eastern(9, 28, 6), eastern(9, 28, 10)),  # before opening
+        (eastern(10, 2, 18), eastern(10, 5, 10)),  # Friday evening
+        (eastern(10, 3, 11), eastern(10, 5, 10)),  # Saturday
+    ],
+)
+def test_a_routine_callback_target_counts_office_time_only(asked, due):
+    assert receptionist.office_minutes_from(asked, 120) == due
+
+
+def test_a_callback_target_names_the_day_when_it_is_not_today():
+    monday_11pm = eastern(9, 28, 23)
+    assert receptionist.speak_due(eastern(9, 28, 23, 15), monday_11pm) == "11:15 PM"
+    assert receptionist.speak_due(eastern(9, 29, 10), monday_11pm) == "10 AM tomorrow"
+    assert receptionist.speak_due(eastern(10, 5, 10), eastern(10, 2, 18)) == "10 AM Monday"
+
+
+async def test_a_callback_asked_for_at_night_is_due_the_next_morning(db, monkeypatch):
+    monkeypatch.setattr(receptionist, "now", lambda: eastern(9, 28, 23))
+    ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    result = await SummitAirAgent("").create_dispatch_task(
+        ctx, "callback", "wants a person", "asked to speak to someone"
+    )
+    assert "10 AM tomorrow" in result
+    with store.connect(db) as conn:
+        due_at = conn.execute("select due_at from tasks where ref = 2001").fetchone()[0]
+    assert due_at.startswith("2026-09-29T10:00")
+
+
 async def test_hanging_up_speaks_the_fixed_goodbye_and_asks_the_model_for_nothing():
     said = []
 

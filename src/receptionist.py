@@ -94,7 +94,6 @@ def render_instructions(at: datetime, caller_number: str | None) -> str:
         diagnostic_fee=CONFIG["pricing"]["diagnostic_fee"],
         after_hours_fee=CONFIG["pricing"]["after_hours_fee"],
         urgent_minutes=CONFIG["callback_target_minutes"]["urgent"],
-        callback_minutes=CONFIG["callback_target_minutes"]["callback"],
     )
 
 
@@ -105,6 +104,35 @@ def speak_clock(hhmm: str) -> str:
     suffix = "AM" if hour < 12 else "PM"
     hour = hour % 12 or 12
     return f"{hour}:{minute:02d} {suffix}" if minute else f"{hour} {suffix}"
+
+
+def office_minutes_from(at: datetime, minutes: int) -> datetime:
+    """When `minutes` of office time will have passed after `at`. Evenings and weekends don't count,
+    so a routine callback asked for at 11 PM is due the next morning, not at 1 AM."""
+    office = CONFIG["hours"]["office"]
+    open_hour, open_minute = map(int, office["start"].split(":"))
+    close_hour, close_minute = map(int, office["end"].split(":"))
+    remaining = timedelta(minutes=minutes)
+    day = at
+    while True:
+        opens = day.replace(hour=open_hour, minute=open_minute, second=0, microsecond=0)
+        closes = day.replace(hour=close_hour, minute=close_minute, second=0, microsecond=0)
+        start = max(at, opens)
+        if day.strftime("%a").lower() in office["days"] and start < closes:
+            if start + remaining <= closes:
+                return start + remaining
+            remaining -= closes - start
+        day = opens + timedelta(days=1)
+
+
+def speak_due(due: datetime, at: datetime) -> str:
+    clock = speak_clock(due.strftime("%H:%M"))
+    days = (due.date() - at.date()).days
+    if days == 0:
+        return clock
+    if days == 1:
+        return f"{clock} tomorrow"
+    return f"{clock} {due:%A}"
 
 
 def speak_window(slot: dict) -> str:
@@ -163,9 +191,17 @@ async def file_task(
     phone: str = "",
     address: str = "",
 ) -> tuple[int, datetime]:
-    """Persist a dispatch task and, for emergency or urgent work, page the on-call phone."""
-    minutes = CONFIG["callback_target_minutes"]["callback" if kind == "callback" else "urgent"]
-    due = now() + timedelta(minutes=minutes)
+    """Persist a dispatch task and, for emergency or urgent work, page the on-call phone.
+
+    On-call answers around the clock, so urgent targets run on the wall clock. A routine callback is
+    handled by the office, so its target counts office time only.
+    """
+    targets = CONFIG["callback_target_minutes"]
+    at = now()
+    if kind == "callback":
+        due = office_minutes_from(at, targets["callback"])
+    else:
+        due = at + timedelta(minutes=targets["urgent"])
     ref = await asyncio.to_thread(
         store.add_task,
         call.db,
@@ -412,7 +448,7 @@ class SummitAirAgent(Agent):
             else "Dispatch has the callback"
         )
         return (
-            f"Task {ref} created. {who}. The callback target is {speak_clock(due.strftime('%H:%M'))}. "
+            f"Task {ref} created. {who}. The callback target is {speak_due(due, now())}. "
             "Tell the caller the target, and never promise an arrival time."
         )
 
