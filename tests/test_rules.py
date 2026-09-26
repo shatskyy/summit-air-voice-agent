@@ -463,3 +463,39 @@ def test_no_test_can_page_the_real_on_call_phone():
     """tests/test_agent.py loads .env.local, which names the real ntfy topic, so on 9/25 a model test
     that filed an urgent task paged the on-call phone ("Summit Air urgent #2001" at 22:39)."""
     assert "NTFY_TOPIC" not in sorted(receptionist.os.environ)  # keys only, never values
+
+
+# The on-call page
+
+
+@pytest.fixture
+async def ntfy(monkeypatch):
+    """A local stand-in for ntfy.sh that answers every page with the status the test sets."""
+    from aiohttp import web
+
+    reply = {"status": 200}
+
+    async def publish(request):
+        return web.Response(status=reply["status"])
+
+    app = web.Application()
+    app.router.add_post("/{topic}", publish)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    monkeypatch.setattr(receptionist, "NTFY_URL", f"http://127.0.0.1:{port}")
+    monkeypatch.setenv("NTFY_TOPIC", "test-topic")
+    yield reply
+    await runner.cleanup()
+
+
+async def test_a_page_that_ntfy_refuses_is_logged_as_failed(ntfy, caplog):
+    """ntfy answers a rate-limited or broken publish with an error status, not an exception, so a
+    refused page used to pass as sent."""
+    ntfy["status"] = 500
+    assert await receptionist.page_on_call("Summit Air urgent #2001", "no heat") is False
+    assert "on-call page failed" in caplog.text
+    ntfy["status"] = 200
+    assert await receptionist.page_on_call("Summit Air urgent #2002", "no heat") is True

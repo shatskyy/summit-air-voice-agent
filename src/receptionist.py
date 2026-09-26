@@ -31,6 +31,7 @@ CONFIG = yaml.safe_load((ROOT / "config" / "business.yaml").read_text())
 TZ = ZoneInfo(CONFIG["business"]["timezone"])
 PROMPT = (Path(__file__).parent / "prompt.md").read_text()
 DEFAULT_DB = Path(os.getenv("SUMMIT_AIR_DB", ROOT / "data" / "summit-air.db"))
+NTFY_URL = "https://ntfy.sh"
 
 # Fixed rather than generated: it needs no model call, so it is the fastest path to the first word,
 # and it discloses automation before anything else.
@@ -236,22 +237,26 @@ async def file_task(
     return ref, due
 
 
-async def page_on_call(title: str, message: str) -> None:
-    """Push to the on-call phone through ntfy. A failed page is logged, never raised into the call."""
+async def page_on_call(title: str, message: str) -> bool:
+    """Push to the on-call phone through ntfy. True means ntfy accepted it. A failed page is logged,
+    never raised into the call."""
     topic = os.getenv("NTFY_TOPIC")
     if not topic:
         logger.warning("NTFY_TOPIC is not set, so the on-call page was skipped: %s", title)
-        return
+        return False
     try:
-        async with aiohttp.ClientSession() as http:
+        # ntfy refuses a page with an error status (429 when rate-limited), not an exception.
+        async with aiohttp.ClientSession(raise_for_status=True) as http:
             await http.post(
-                f"https://ntfy.sh/{topic}",
+                f"{NTFY_URL}/{topic}",
                 data=message.encode(),
                 headers={"Title": title, "Priority": "urgent", "Tags": "rotating_light"},
                 timeout=aiohttp.ClientTimeout(total=5),
             )
     except Exception:
         logger.exception("on-call page failed: %s", title)
+        return False
+    return True
 
 
 class SummitAirAgent(Agent):
