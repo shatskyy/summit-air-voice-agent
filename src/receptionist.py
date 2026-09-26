@@ -434,7 +434,7 @@ class SummitAirAgent(Agent):
             customer_type=customer_type,
             priority=int(priority),
             name=name,
-            phone=callback_number,
+            phone=given(callback_number) or call.caller_number or "",
             address=address,
             zip=zip_code,
             issue=issue,

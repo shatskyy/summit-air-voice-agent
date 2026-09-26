@@ -182,6 +182,27 @@ async def test_an_offered_window_books_and_returns_a_reference(db):
     assert "Reference 1001" in confirmation and "Tuesday, September 29" in confirmation
 
 
+async def test_a_booking_without_a_given_number_keeps_the_caller_id(db):
+    """The same "unknown" habit as calls 8 and 9, on the booking: dispatch would have no number to
+    call although caller ID has it."""
+    agent = SummitAirAgent("")
+    ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    await agent.check_address(ctx, "14 Maple Ave", "White Plains", "10601")
+    await agent.check_availability(ctx, "2026-09-29", "morning")
+    await agent.book_appointment(
+        ctx,
+        "2026-09-29-0800",
+        "residential",
+        "Maria Lopez",
+        "unknown",
+        "14 Maple Ave",
+        "10601",
+        "no heat",
+    )
+    with store.connect(db) as conn:
+        assert conn.execute("select phone from bookings").fetchone()[0] == "+19145550100"
+
+
 async def test_an_urgent_task_states_a_target_and_pages(db, monkeypatch):
     pages = []
 
