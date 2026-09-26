@@ -366,6 +366,27 @@ async def test_the_turn_that_fires_the_backstop_is_kept_for_the_model_and_the_re
     assert turn.id in {item.id for item in line.history.items}
 
 
+async def test_the_safety_script_plays_even_when_the_emergency_task_cannot_be_written(
+    db, monkeypatch
+):
+    """An exception out of on_user_turn_completed makes LiveKit skip the turn entirely: no script and
+    no model reply. A locked database must not silence the safety script."""
+
+    def locked(*args, **kwargs):
+        raise store.sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(store, "add_task", locked)
+    line = HazardLine(Call(call_id="call-a", db=db))
+    monkeypatch.setattr(SummitAirAgent, "session", property(lambda self: line))
+    turn = llm.ChatMessage(role="user", content=["I smell gas"])
+
+    with pytest.raises(StopResponse):
+        await SummitAirAgent("").on_user_turn_completed(llm.ChatContext(), turn)
+
+    assert line.said == [receptionist.SAFETY_SCRIPT]
+    assert line.userdata.hazard_task is None
+
+
 async def test_a_hazard_files_one_emergency_task_per_call(db, monkeypatch):
     async def fake_page(title, message):
         pass

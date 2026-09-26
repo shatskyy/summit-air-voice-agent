@@ -501,10 +501,15 @@ async def say_goodbye(event: llm.Toolset.ToolCalledEvent) -> None:
 
 
 async def flag_hazard(call: Call, text: str) -> bool:
-    """Record an emergency task the first time a caller mentions a hazard. True means speak the script."""
+    """Record an emergency task the first time a caller mentions a hazard. True means speak the script,
+    even when the task could not be written: a failed write is logged, and the model can still file
+    the task, but nothing may stand between the caller and the safety script."""
     if call.hazard_task is not None or not HAZARD.search(text):
         return False
-    call.hazard_task, _ = await file_task(
-        call, "emergency", "possible gas, carbon monoxide or smoke", text
-    )
+    try:
+        call.hazard_task, _ = await file_task(
+            call, "emergency", "possible gas, carbon monoxide or smoke", text
+        )
+    except Exception:
+        logger.exception("the emergency task was not recorded; the safety script plays anyway")
     return True
