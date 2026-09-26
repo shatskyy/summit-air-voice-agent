@@ -124,6 +124,12 @@ def open_slots(
         return [dict(r) for r in conn.execute(sql, params)]
 
 
+CALL_BOOKING = """
+    select b.*, s.day, s.start, s.end from bookings b join slots s on s.id = b.slot_id
+    where b.call_id = ?
+"""
+
+
 def book(path: Path, **booking) -> dict | None:
     """Reserve booking['slot_id'] for booking['call_id'], or move that call's booking there.
 
@@ -146,12 +152,14 @@ def book(path: Path, **booking) -> dict | None:
     with connect(path) as conn:
         if conn.execute(sql, booking).fetchone() is None:
             return None
-        row = conn.execute(
-            "select b.*, s.day, s.start, s.end from bookings b join slots s on s.id = b.slot_id"
-            " where b.call_id = ?",
-            (booking["call_id"],),
-        ).fetchone()
-        return dict(row)
+        return dict(conn.execute(CALL_BOOKING, (booking["call_id"],)).fetchone())
+
+
+def booking_for(path: Path, call_id: str) -> dict | None:
+    """The booking a call holds, joined with its slot, or None."""
+    with connect(path) as conn:
+        row = conn.execute(CALL_BOOKING, (call_id,)).fetchone()
+        return dict(row) if row else None
 
 
 def add_task(path: Path, **task) -> int:

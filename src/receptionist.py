@@ -441,8 +441,11 @@ class SummitAirAgent(Agent):
             note=note,
         )
         if booking is None:
+            held = await asyncio.to_thread(store.booking_for, call.db, call.call_id)
+            kept = f" Their booking for {speak_window(held)} still stands." if held else ""
             raise ToolError(
-                "That window just filled up. Call check_availability again and offer another."
+                f"That window just filled up.{kept} Call check_availability again and offer "
+                "another."
             )
         return (
             f"Booked. Reference {booking['ref']}: {speak_window(booking)} at {address}. Tell the "

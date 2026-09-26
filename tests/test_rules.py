@@ -203,6 +203,23 @@ async def test_a_booking_without_a_given_number_keeps_the_caller_id(db):
         assert conn.execute("select phone from bookings").fetchone()[0] == "+19145550100"
 
 
+async def test_moving_to_a_full_window_says_the_first_booking_still_stands(db):
+    """A full window leaves the call's booking where it was (store.book), but the refusal didn't say
+    so, and a model told only "that window filled up" can tell the caller they have nothing."""
+    agent = SummitAirAgent("")
+    ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    await agent.check_address(ctx, "14 Maple Ave", "White Plains", "10601")
+    await agent.check_availability(ctx, "2026-09-29", "morning")
+    await agent.check_availability(ctx, "2026-09-29", "afternoon")
+    args = ("residential", "Maria Lopez", "", "14 Maple Ave", "10601", "no heat")
+    await agent.book_appointment(ctx, "2026-09-29-0800", *args)
+    store.book(db, **booking("call-b", "2026-09-29-1200"))  # capacity 1: now full
+    with pytest.raises(
+        ToolError, match="Tuesday, September 29, between 8 AM and noon still stands"
+    ):
+        await agent.book_appointment(ctx, "2026-09-29-1200", *args)
+
+
 async def test_an_urgent_task_states_a_target_and_pages(db, monkeypatch):
     pages = []
 
