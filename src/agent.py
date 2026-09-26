@@ -18,7 +18,6 @@ from livekit.agents import (
     ConversationItemAddedEvent,
     JobContext,
     TurnHandlingOptions,
-    UserStateChangedEvent,
     cli,
     inference,
     llm,
@@ -144,14 +143,7 @@ async def entrypoint(ctx: JobContext) -> None:
     session.on("conversation_item_added", log_turn_latency)
 
     silence = SilenceWatch(session, ctx.delete_room, wait=SILENCE_SECONDS)
-
-    def on_user_state(event: UserStateChangedEvent) -> None:
-        if event.new_state == "speaking":
-            silence.on_speaking()
-        elif event.new_state == "away":
-            silence.on_away()
-
-    session.on("user_state_changed", on_user_state)
+    session.on("user_state_changed", silence.on_user_state)
 
     await session.start(
         agent=SummitAirAgent(render_instructions(now(), call.caller_number)),

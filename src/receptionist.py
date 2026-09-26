@@ -19,7 +19,15 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 import yaml
-from livekit.agents import Agent, RunContext, StopResponse, ToolError, function_tool, llm
+from livekit.agents import (
+    Agent,
+    RunContext,
+    StopResponse,
+    ToolError,
+    UserStateChangedEvent,
+    function_tool,
+    llm,
+)
 from livekit.agents.beta.tools import EndCallTool
 
 import store
@@ -504,6 +512,13 @@ class SilenceWatch:
         self._wait = wait
         self._task: asyncio.Task | None = None
         self._closing = False
+
+    def on_user_state(self, event: UserStateChangedEvent) -> None:
+        if event.new_state == "away":
+            self.on_away()
+        else:
+            # Speaking, or back to listening when a transcript arrives that voice detection missed.
+            self.on_speaking()
 
     def on_away(self) -> None:
         if self._task is None or self._task.done():

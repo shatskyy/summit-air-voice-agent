@@ -302,6 +302,20 @@ async def test_speaking_after_the_check_in_keeps_the_call_open():
     assert not line.hung_up
 
 
+async def test_a_reply_that_voice_detection_missed_still_keeps_the_call_open():
+    """LiveKit moves a caller from away back to listening when a final transcript arrives that voice
+    detection missed (agent_session.py:2244). Only "speaking" called the hang-up off, so a quiet
+    "yes, I'm here" got the goodbye and the hang-up twelve seconds after the check-in."""
+    line = QuietLine()
+    watch = receptionist.SilenceWatch(line, line.hang_up, wait=0.05)
+    watch.on_user_state(type("Event", (), {"new_state": "away"})())
+    await receptionist.asyncio.sleep(0.01)
+    watch.on_user_state(type("Event", (), {"new_state": "listening"})())
+    await receptionist.asyncio.sleep(0.1)
+    assert line.said == [receptionist.CHECK_IN]
+    assert not line.hung_up
+
+
 # Safety backstop
 
 
