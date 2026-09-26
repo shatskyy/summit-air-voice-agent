@@ -146,7 +146,7 @@ def speak_window(slot: dict) -> str:
 
 
 # What a model writes when it never asked. A real name is anything else with a letter in it.
-PLACEHOLDER_NAMES = {
+PLACEHOLDERS = {
     "",
     "caller",
     "the caller",
@@ -162,7 +162,12 @@ PLACEHOLDER_NAMES = {
 
 def is_real_name(name: str) -> bool:
     cleaned = name.strip().lower()
-    return cleaned not in PLACEHOLDER_NAMES and any(c.isalpha() for c in cleaned)
+    return cleaned not in PLACEHOLDERS and any(c.isalpha() for c in cleaned)
+
+
+def given(detail: str) -> str:
+    """The detail as the model passed it, or blank when it is a placeholder like "Unknown"."""
+    return "" if detail.strip().lower() in PLACEHOLDERS else detail
 
 
 def in_coverage(zip_code: str) -> bool:
@@ -452,7 +457,9 @@ class SummitAirAgent(Agent):
             return (
                 f"Emergency task {call.hazard_task} already exists and the on-call team was paged."
             )
-        ref, due = await file_task(call, kind, reason, summary, name, callback_number, address)
+        ref, due = await file_task(
+            call, kind, reason, summary, given(name), given(callback_number), given(address)
+        )
         if kind == "emergency":
             call.hazard_task = ref  # one emergency task per call, whoever filed it first
         who = (

@@ -236,6 +236,18 @@ async def test_a_callback_asked_for_at_night_is_due_the_next_morning(db, monkeyp
     assert due_at.startswith("2026-09-29T10:00")
 
 
+async def test_a_task_never_stores_a_placeholder_for_a_detail_nobody_gave(db):
+    """Calls 8 and 9: the model filed name and address as "Unknown", and the page repeated it. A
+    blank tells dispatch the detail is missing; "Unknown" reads like data."""
+    ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    await SummitAirAgent("").create_dispatch_task(
+        ctx, "callback", "wants a person", "asked for someone", "unknown", "Unknown", "unknown"
+    )
+    with store.connect(db) as conn:
+        row = conn.execute("select name, phone, address from tasks where ref = 2001").fetchone()
+    assert tuple(row) == ("", "+19145550100", "")
+
+
 async def test_hanging_up_speaks_the_fixed_goodbye_and_asks_the_model_for_nothing():
     said = []
 
