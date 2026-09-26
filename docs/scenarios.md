@@ -44,6 +44,23 @@ Fixes since call 5 (all confirmed on call 6):
   caller says they need nothing else.
 - **Model.** Gemma leads, with GPT-4.1 mini as fallback (text tests below).
 
+### Finish-plan build (call 7 on)
+
+Commit `26935d8`: routine callback targets count office hours, a silent line is hung up by
+`SilenceWatch`, and Inworld takes over the voice if Deepgram can't be reached. All four calls ran on
+Gemma 4 31B, on a Friday night with the office closed.
+
+| Date | Room | Requirement | What happened | Result |
+|---|---|---|---|---|
+| 2026-09-25 22:47 | `RM_KV2Q3N7whAyV` | Gas smell mid-address: safety before anything else | "My furnace is out", then partway into the address, "smell gas in the kitchen." Emergency task 2002 was written, the on-call page went out, and the safety script started about 0.1 s later, before the model replied. "Yes. It's strong." got the prompt's own safety line a second time, cut off when the caller hung up. Defect: the turn that fired the backstop never reached the conversation history, so the model never saw the gas mention or the address, and the stored transcript is missing the call's most important sentence (the task summary has it) | Backstop, one task, page: pass. Transcript: fail |
+| 2026-09-25 22:52 | `RM_LjnLDJwFuvYt` | "No heat, my mother is 78", after hours | Urgent task 2003 filed on the first reply, before the name was asked, and the page went out. The caller heard the 15-minute target and the after-hours choice ($159 tonight or the $89 diagnostic in the morning). The main reply took 0.9 s end to end. Defects: the task was filed with the name and address "Unknown", which the page repeats; the one-word answer "David." waited the full 2 s cap | Urgent flow and script: pass. Placeholders: fail |
+| 2026-09-25 23:06 | `RM_UJWqhsa6mgey` | A request for a person, after hours | Callback task 2004 on the first reply. The caller heard "10 AM Monday", and the stored due time is 10:00 Monday. "No" to anything else ended the call with one fixed goodbye. Name and address were filed as "unknown" again. A second room from the same number, `RM_XvXF8eKfvTnZ`, opened three seconds before this one, played only the greeting, heard nothing, and closed 17 s later. Whether that was a quick redial or a duplicate invite from the trunk is not established | Office-hours target: pass. Second room: open |
+| 2026-09-25 23:14 | `RM_XaXDVs2oT5di` | Silence after "anything else?" | Callback target at 23:14:41, then silence. The caller went away at 23:14:59 and heard "Are you still there?"; about 12 s after that check-in, "I'll let you go. Call us back any time." at 23:15:13. The session closed at 23:15:16 with reason `ROOM_DELETED`, which is the agent hanging up, not the caller | Silence check-in and hang-up: pass |
+
+**Host.** Closing the lid at 23:13 put the Mac into clamshell sleep within seconds, although the
+worker was running under `caffeinate -s` on power. `caffeinate` holds off idle sleep, not a closed
+lid, so for the review window the laptop stays open and plugged in.
+
 ## Text tests (`uv run pytest -m llm`)
 
 Run on 2026-09-23 against the new prompt, with no filler line. Each test ran against both candidates.
@@ -58,4 +75,9 @@ Run on 2026-09-23 against the new prompt, with no filler line. Each test ran aga
 
 **Rerun 2026-09-24, after the prompt and tool fixes:** both models pass all five, including the
 call-1 replay. Gemma leads, since its first sentence arrives at 0.33 s median against 0.64 s on call
-5's turns. GPT-4.1 mini is its fallback. The next phone call on Gemma confirms the choice.
+5's turns. GPT-4.1 mini is its fallback. Call 6 confirmed the choice on the phone.
+
+**Reruns 2026-09-25:** Gemma passes all five on every run. GPT-4.1 mini went 3 of 5, then 5 of 5
+in the morning, and 3 of 5 twice that night on `26935d8`. Its two night failures: it didn't call
+`check_availability` when asked for tomorrow morning, and it didn't file the urgent task for an
+80-year-old without heat. It only answers if Gemma fails mid-call.
