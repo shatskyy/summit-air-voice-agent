@@ -454,3 +454,12 @@ def test_the_prompt_renders_every_placeholder():
 def test_evenings_and_weekends_are_after_hours():
     assert "office is closed" in render_instructions(datetime(2026, 9, 29, 19, 0, tzinfo=TZ), None)
     assert "office is closed" in render_instructions(datetime(2026, 10, 3, 10, 0, tzinfo=TZ), None)
+
+
+# The test harness
+
+
+def test_no_test_can_page_the_real_on_call_phone():
+    """tests/test_agent.py loads .env.local, which names the real ntfy topic, so on 9/25 a model test
+    that filed an urgent task paged the on-call phone ("Summit Air urgent #2001" at 22:39)."""
+    assert "NTFY_TOPIC" not in sorted(receptionist.os.environ)  # keys only, never values
