@@ -73,6 +73,22 @@ def test_a_full_window_is_refused_and_the_existing_booking_is_kept(db):
     assert kept["slot_id"] == "2026-09-29-1200"
 
 
+def race_for(path, call_id):
+    return store.book(path, **booking(call_id, "2026-09-29-0800")) is not None
+
+
+def test_callers_racing_for_the_last_slot_get_exactly_one_booking(db):
+    """Every call runs in its own process, so the capacity check has to hold across processes. It
+    does because the check and the insert are one SQL statement under SQLite's write lock."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    with ProcessPoolExecutor(max_workers=6) as pool:
+        won = list(pool.map(race_for, [db] * 6, [f"call-{n}" for n in range(6)]))
+    assert won.count(True) == 1
+    with store.connect(db) as conn:
+        assert conn.execute("select count(*) from bookings").fetchone()[0] == 1
+
+
 def test_a_correction_during_the_call_moves_the_same_booking(db):
     first = store.book(db, **booking("call-a", "2026-09-29-0800"))
     moved = store.book(
@@ -250,10 +266,22 @@ def eastern(month, day, hour, minute=0):
         (eastern(9, 28, 6), eastern(9, 28, 10)),  # before opening
         (eastern(10, 2, 18), eastern(10, 5, 10)),  # Friday evening
         (eastern(10, 3, 11), eastern(10, 5, 10)),  # Saturday
+        (eastern(9, 28, 8), eastern(9, 28, 10)),  # exactly at opening
+        (eastern(9, 28, 17), eastern(9, 29, 10)),  # exactly at closing
+        (eastern(9, 28, 16, 59), eastern(9, 29, 9, 59)),  # one office minute left
+        (eastern(10, 2, 16), eastern(10, 5, 9)),  # Friday afternoon runs into Monday
+        (eastern(10, 4, 23), eastern(10, 5, 10)),  # Sunday night
+        (eastern(10, 31, 11), eastern(11, 2, 10)),  # Saturday before the clocks go back
     ],
 )
 def test_a_routine_callback_target_counts_office_time_only(asked, due):
     assert receptionist.office_minutes_from(asked, 120) == due
+
+
+def test_a_target_across_the_clock_change_is_stored_in_standard_time():
+    due = receptionist.office_minutes_from(eastern(10, 31, 11), 120)
+    assert due.isoformat(timespec="minutes") == "2026-11-02T10:00-05:00"
+    assert receptionist.speak_due(due, eastern(10, 31, 11)) == "10 AM Monday"
 
 
 def test_a_callback_target_names_the_day_when_it_is_not_today():
@@ -261,6 +289,7 @@ def test_a_callback_target_names_the_day_when_it_is_not_today():
     assert receptionist.speak_due(eastern(9, 28, 23, 15), monday_11pm) == "11:15 PM"
     assert receptionist.speak_due(eastern(9, 29, 10), monday_11pm) == "10 AM tomorrow"
     assert receptionist.speak_due(eastern(10, 5, 10), eastern(10, 2, 18)) == "10 AM Monday"
+    assert receptionist.speak_due(eastern(10, 5, 10), eastern(10, 4, 23)) == "10 AM tomorrow"
 
 
 async def test_a_callback_asked_for_at_night_is_due_the_next_morning(db, monkeypatch):
