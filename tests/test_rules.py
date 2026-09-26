@@ -337,6 +337,38 @@ async def test_a_reply_that_voice_detection_missed_still_keeps_the_call_open():
     assert not line.hung_up
 
 
+# Caller ID
+
+
+class SipCaller:
+    def __init__(self, identity, number=None):
+        self.identity = identity
+        self.attributes = {"sip.phoneNumber": number} if number else {}
+
+
+@pytest.mark.parametrize(
+    ("identity", "number"),
+    [
+        ("sip_anonymous", None),
+        ("sip_+266696687", "+266696687"),  # ANONYMOUS on a keypad, Twilio's stand-in
+        ("sip_restricted", "Restricted"),
+        ("sip_+7378742833", "+7378742833"),  # RESTRICTED on a keypad
+    ],
+)
+def test_a_withheld_number_is_treated_as_unknown(identity, number):
+    """A withheld caller ID arrives as a word or as Twilio's stand-in digits. Stored as the number,
+    it would have the agent "confirm" a number that can't be called back."""
+    import agent
+
+    assert agent.caller_number(SipCaller(identity, number)) is None
+
+
+def test_a_real_caller_id_is_kept():
+    import agent
+
+    assert agent.caller_number(SipCaller("sip_+19145550100", "+19145550100")) == "+19145550100"
+
+
 # Safety backstop
 
 

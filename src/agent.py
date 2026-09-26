@@ -76,13 +76,21 @@ def speech():
     return inference.STT(model="assemblyai/universal-3-5-pro", language="en"), inworld_voice()
 
 
+# What Twilio sends in place of a withheld number: the words spelled out on a phone keypad
+# (ANONYMOUS, UNAVAILABLE, UNKNOWN, BLOCKED, RESTRICTED).
+WITHHELD = {"+266696687", "+86282452253", "+8656696", "+2562533", "+7378742833"}
+
+
 def caller_number(participant: rtc.RemoteParticipant) -> str | None:
-    """Caller ID from the SIP participant: the attribute, or the identity LiveKit gives SIP callers."""
+    """Caller ID from the SIP participant: the attribute, or the identity LiveKit gives SIP callers.
+    None when the number was withheld, so the prompt asks for one instead of confirming it."""
     logger.info("SIP attribute keys: %s", sorted(participant.attributes))  # keys only, never values
     number = participant.attributes.get("sip.phoneNumber")
     if not number and participant.identity.startswith("sip_"):
         number = participant.identity.removeprefix("sip_")
-    return number or None
+    if not number or number in WITHHELD or not any(c.isdigit() for c in number):
+        return None
+    return number
 
 
 def log_turn_latency(event: ConversationItemAddedEvent) -> None:
