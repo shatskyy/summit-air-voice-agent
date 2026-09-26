@@ -387,6 +387,33 @@ async def test_the_safety_script_plays_even_when_the_emergency_task_cannot_be_wr
     assert line.userdata.hazard_task is None
 
 
+async def test_an_emergency_the_model_filed_is_the_calls_one_emergency_task(db, monkeypatch):
+    """The keyword list misses some hazards ("I smell propane"), so the model files those itself. A
+    later keyword match or a second model call must not file a second task and page again."""
+    pages = []
+
+    async def fake_page(title, message):
+        pages.append(title)
+
+    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    call = Call(call_id="call-a", db=db)
+    ctx = FakeContext(call)
+    await SummitAirAgent("").create_dispatch_task(
+        ctx, "emergency", "propane smell", "in the basement"
+    )
+    assert await flag_hazard(call, "yes, I smell gas everywhere") is False
+    again = await SummitAirAgent("").create_dispatch_task(
+        ctx, "emergency", "propane", "still there"
+    )
+    assert "already exists" in again
+    await receptionist.asyncio.sleep(0)
+    with store.connect(db) as conn:
+        assert (
+            conn.execute("select count(*) from tasks where kind = 'emergency'").fetchone()[0] == 1
+        )
+    assert pages == ["Summit Air emergency #2001"]
+
+
 async def test_a_hazard_files_one_emergency_task_per_call(db, monkeypatch):
     async def fake_page(title, message):
         pass

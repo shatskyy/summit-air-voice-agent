@@ -452,6 +452,8 @@ class SummitAirAgent(Agent):
                 f"Emergency task {call.hazard_task} already exists and the on-call team was paged."
             )
         ref, due = await file_task(call, kind, reason, summary, name, callback_number, address)
+        if kind == "emergency":
+            call.hazard_task = ref  # one emergency task per call, whoever filed it first
         who = (
             "The on-call technician was paged"
             if kind != "callback"
