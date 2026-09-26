@@ -201,8 +201,9 @@ async def file_task(
     name: str = "",
     phone: str = "",
     address: str = "",
-) -> tuple[int, datetime]:
-    """Persist a dispatch task and, for emergency or urgent work, page the on-call phone.
+) -> tuple[int, datetime, asyncio.Task[bool] | None]:
+    """Persist a dispatch task and, for emergency or urgent work, start paging the on-call phone.
+    Returns the task's reference, its due time, and the page, which is still in flight.
 
     On-call answers around the clock, so urgent targets run on the wall clock. A routine callback is
     handled by the office, so its target counts office time only.
@@ -225,16 +226,25 @@ async def file_task(
         address=address,
         due_at=due.isoformat(timespec="minutes"),
     )
-    if kind != "callback":
-        page = asyncio.create_task(
-            page_on_call(
-                f"Summit Air {kind} #{ref}",
-                f"{reason}\n{summary}\n{phone or call.caller_number or ''} {address}",
-            )
+    if kind == "callback":
+        return ref, due, None
+    page = asyncio.create_task(
+        page_on_call(
+            f"Summit Air {kind} #{ref}",
+            f"{reason}\n{summary}\n{phone or call.caller_number or ''} {address}",
         )
-        _background.add(page)
-        page.add_done_callback(_background.discard)
-    return ref, due
+    )
+    _background.add(page)
+    page.add_done_callback(_background.discard)
+    return ref, due, page
+
+
+async def confirmed(page: asyncio.Task[bool]) -> bool:
+    """Whether ntfy accepted the page, waiting at most 3 s. The page keeps trying after that."""
+    try:
+        return await asyncio.wait_for(asyncio.shield(page), timeout=3)
+    except TimeoutError:
+        return False
 
 
 async def page_on_call(title: str, message: str) -> bool:
@@ -459,19 +469,21 @@ class SummitAirAgent(Agent):
         """
         call = context.userdata
         if kind == "emergency" and call.hazard_task is not None:
-            return (
-                f"Emergency task {call.hazard_task} already exists and the on-call team was paged."
-            )
-        ref, due = await file_task(
+            return f"Emergency task {call.hazard_task} already exists."
+        ref, due, page = await file_task(
             call, kind, reason, summary, given(name), given(callback_number), given(address)
         )
         if kind == "emergency":
             call.hazard_task = ref  # one emergency task per call, whoever filed it first
-        who = (
-            "The on-call technician was paged"
-            if kind != "callback"
-            else "Dispatch has the callback"
-        )
+        if page is None:
+            who = "Dispatch has the callback"
+        elif await confirmed(page):
+            who = "The on-call technician was paged"
+        else:
+            who = (
+                "The page to the on-call phone could not be confirmed, so the task waits in the "
+                "dispatch queue"
+            )
         return (
             f"Task {ref} created. {who}. The callback target is {speak_due(due, now())}. "
             "Tell the caller the target, and never promise an arrival time."
@@ -522,7 +534,7 @@ async def flag_hazard(call: Call, text: str) -> bool:
     if call.hazard_task is not None or not HAZARD.search(text):
         return False
     try:
-        call.hazard_task, _ = await file_task(
+        call.hazard_task, _, _ = await file_task(
             call, "emergency", "possible gas, carbon monoxide or smoke", text
         )
     except Exception:

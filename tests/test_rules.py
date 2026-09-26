@@ -187,6 +187,7 @@ async def test_an_urgent_task_states_a_target_and_pages(db, monkeypatch):
 
     async def fake_page(title, message):
         pages.append(title)
+        return True
 
     monkeypatch.setattr(receptionist, "page_on_call", fake_page)
     ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+19145550100"))
@@ -194,7 +195,7 @@ async def test_an_urgent_task_states_a_target_and_pages(db, monkeypatch):
         ctx, "urgent", "no heat, mother is 78", "furnace out"
     )
     assert "Task 2001 created" in result and "callback target" in result
-    await receptionist.asyncio.sleep(0)
+    assert "was paged" in result
     assert pages == ["Summit Air urgent #2001"]
 
 
@@ -499,3 +500,16 @@ async def test_a_page_that_ntfy_refuses_is_logged_as_failed(ntfy, caplog):
     assert "on-call page failed" in caplog.text
     ntfy["status"] = 200
     assert await receptionist.page_on_call("Summit Air urgent #2002", "no heat") is True
+
+
+async def test_the_model_is_told_paged_only_when_ntfy_accepted_the_page(db, ntfy):
+    """The tool said "The on-call technician was paged" before the page was even attempted, and the
+    model repeats what the tool says. The claim has to wait for the answer."""
+    ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    ntfy["status"] = 503
+    refused = await SummitAirAgent("").create_dispatch_task(ctx, "urgent", "no heat", "mother 78")
+    assert "was paged" not in refused and "could not be confirmed" in refused
+    ntfy["status"] = 200
+    ctx = FakeContext(Call(call_id="call-b", db=db, caller_number="+19145550100"))
+    accepted = await SummitAirAgent("").create_dispatch_task(ctx, "urgent", "no heat", "mother 78")
+    assert "was paged" in accepted
