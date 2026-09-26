@@ -81,6 +81,7 @@ class Call:
     offered: dict[str, str] = field(default_factory=dict)  # slot id -> how it was spoken
     checked_zip: str | None = None  # the in-area ZIP check_address passed on this call
     hazard_task: int | None = None
+    warned: bool = False  # the safety script has been given, whether or not its task was written
 
 
 def now() -> datetime:
@@ -546,8 +547,9 @@ async def flag_hazard(call: Call, text: str) -> bool:
     """Record an emergency task the first time a caller mentions a hazard. True means speak the script,
     even when the task could not be written: a failed write is logged, and the model can still file
     the task, but nothing may stand between the caller and the safety script."""
-    if call.hazard_task is not None or not HAZARD.search(text):
+    if call.warned or call.hazard_task is not None or not HAZARD.search(text):
         return False
+    call.warned = True  # set before the write, so a failed write can't replay the script
     try:
         call.hazard_task, _, _ = await file_task(
             call, "emergency", "possible gas, carbon monoxide or smoke", text

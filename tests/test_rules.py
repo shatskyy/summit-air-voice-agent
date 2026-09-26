@@ -417,6 +417,12 @@ async def test_the_safety_script_plays_even_when_the_emergency_task_cannot_be_wr
     assert line.said == [receptionist.SAFETY_SCRIPT]
     assert line.userdata.hazard_task is None
 
+    # Said once is enough: the next mention goes to the model, which can still file the task.
+    await SummitAirAgent("").on_user_turn_completed(
+        llm.ChatContext(), llm.ChatMessage(role="user", content=["yes, the gas smell is strong"])
+    )
+    assert line.said == [receptionist.SAFETY_SCRIPT]
+
 
 async def test_an_emergency_the_model_filed_is_the_calls_one_emergency_task(db, monkeypatch):
     """The keyword list misses some hazards ("I smell propane"), so the model files those itself. A
