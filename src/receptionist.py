@@ -40,7 +40,8 @@ GREETING = "Thanks for calling Summit Air. This is the automated assistant. How 
 # below is worded to be harmless when that happens; a classifier is the upgrade if false alarms cost
 # calls.
 HAZARD = re.compile(
-    r"smell\w*\W+(?:\w+\W+){0,3}gas\b|\bgas\W+(?:smell|odou?r|leak)|\bleak\w*\W+gas\b|rotten eggs?"
+    r"smell\w*\W+(?:\w+\W+){0,3}(?:gas|propane|sulfur|sulphur)\b"
+    r"|\b(?:gas|propane)\W+(?:smell|odou?r|leak)|\bleak\w*\W+(?:gas|propane)\b|rotten eggs?"
     r"|carbon monoxide|monoxide|\bco\W+(?:alarm|detector)"
     r"|\bsmoke\b|\bsmoking\b|\bon fire\b|\bflames?\b|burning smell|smell\w*\W+(?:\w+\W+){0,2}burning"
     r"|\bsparks?\b|\bsparking\b",

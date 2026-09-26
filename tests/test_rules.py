@@ -304,6 +304,10 @@ async def test_speaking_after_the_check_in_keeps_the_call_open():
         "there's smoke coming out of the vent",
         "I think the unit is on fire",
         "there's a burning smell",
+        # Propane heats many homes in Putnam and Rockland, and its odorant smells of sulfur.
+        "I smell propane in the basement",
+        "I think there's a propane leak",
+        "it smells like sulfur by the water heater",
         # Known false positives. The script is worded to be harmless when these fire.
         "no, I don't smell gas",
         "the smoke detector battery died",
