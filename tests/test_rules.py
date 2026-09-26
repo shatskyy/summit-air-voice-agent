@@ -3,7 +3,7 @@
 from datetime import date, datetime
 
 import pytest
-from livekit.agents import ToolError
+from livekit.agents import StopResponse, ToolError, llm
 
 import receptionist
 import store
@@ -324,6 +324,46 @@ def test_hazard_phrases_trigger_the_safety_script(said):
 )
 def test_ordinary_calls_do_not_trigger_it(said):
     assert not HAZARD.search(said)
+
+
+class HazardLine:
+    """Stands in for AgentSession when the backstop fires: the call, the history and what was said."""
+
+    def __init__(self, call):
+        self.userdata = call
+        self.history = llm.ChatContext()
+        self.said = []
+
+    def interrupt(self, force=False):
+        pass
+
+    def say(self, text, allow_interruptions=True):
+        self.said.append(text)
+
+
+async def test_the_turn_that_fires_the_backstop_is_kept_for_the_model_and_the_record(
+    db, monkeypatch
+):
+    """Call 7: raising StopResponse makes LiveKit drop the turn, so the model never saw "smell gas
+    in the kitchen" or the address, and the stored transcript lost the call's key sentence."""
+
+    async def fake_page(title, message):
+        pass
+
+    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    line = HazardLine(Call(call_id="call-a", db=db))
+    monkeypatch.setattr(SummitAirAgent, "session", property(lambda self: line))
+    agent = SummitAirAgent("")
+    turn = llm.ChatMessage(
+        role="user", content=["My address is 17 Severn. Smell gas in the kitchen."]
+    )
+
+    with pytest.raises(StopResponse):
+        await agent.on_user_turn_completed(llm.ChatContext(), turn)
+
+    assert line.said == [receptionist.SAFETY_SCRIPT]
+    assert turn.id in {item.id for item in agent.chat_ctx.items}
+    assert turn.id in {item.id for item in line.history.items}
 
 
 async def test_a_hazard_files_one_emergency_task_per_call(db, monkeypatch):

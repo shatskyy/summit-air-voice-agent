@@ -280,6 +280,12 @@ class SummitAirAgent(Agent):
         except RuntimeError:
             pass
         self.session.say(SAFETY_SCRIPT, allow_interruptions=False)
+        # StopResponse makes LiveKit drop this turn, so keep it by hand: the model needs what the
+        # caller said, and the call record needs its most important sentence (call 7).
+        chat_ctx = self.chat_ctx.copy()
+        chat_ctx.insert(new_message)
+        await self.update_chat_ctx(chat_ctx)
+        self.session.history.insert(new_message)
         raise StopResponse()
 
     @function_tool
