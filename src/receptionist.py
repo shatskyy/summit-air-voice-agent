@@ -86,6 +86,9 @@ class Call:
     checked_zip: str | None = None  # the in-area ZIP check_address passed on this call
     hazard_task: int | None = None
     hazard_due: datetime | None = None  # the emergency task's callback target, for a repeat attempt
+    paged: bool = False  # an urgent or emergency task was filed, so on-call has been paged
+    urgent_task: int | None = None
+    urgent_due: datetime | None = None
     warned: bool = False  # the safety script has been given, whether or not its task was written
 
 
@@ -187,6 +190,16 @@ def is_real_name(name: str) -> bool:
     return cleaned not in PLACEHOLDERS and any(c.isalpha() for c in cleaned)
 
 
+# A business_name made only of these words describes the business instead of naming it: "dental
+# office", "the restaurant". GPT-4.1 mini booked "dental office" in the simulated calls.
+GENERIC_BUSINESS = re.compile(
+    r"(?:(?:the|a|an|our|my|dental|dentist|doctor'?s?|medical|law|office|offices|clinic|store|"
+    r"shop|restaurant|salon|building|company|business|practice|firm|school|church|warehouse|"
+    r"gym|bakery|cafe|bar|hotel|apartment|apartments|plaza|center)\s*)+",
+    re.IGNORECASE,
+)
+
+
 def given(detail: str) -> str:
     """The detail as the model passed it, or blank when it is a placeholder like "Unknown"."""
     return "" if detail.strip().lower() in PLACEHOLDERS else detail
@@ -249,6 +262,9 @@ async def file_task(
     )
     if kind == "callback":
         return ref, due, None
+    call.paged = True
+    if kind == "urgent":
+        call.urgent_task, call.urgent_due = ref, due  # one urgent task per call, like emergencies
     page = start_page(
         f"Summit Air {kind} #{ref}",
         f"{reason}\n{summary}\n{phone or call.caller_number or ''} {address}",
@@ -437,6 +453,11 @@ class SummitAirAgent(Agent):
                 "them, repeat it back, then book with it."
             )
         business = given(business_name or "").strip()  # models send null for unused arguments
+        if business and GENERIC_BUSINESS.fullmatch(business):
+            raise ToolError(
+                f'"{business}" is a kind of business, not its name. Ask the caller what the '
+                "business is called, then book."
+            )
         contact = given(site_contact or "").strip()
         if customer_type == "commercial" and not (business and contact):
             raise ToolError(
@@ -515,6 +536,12 @@ class SummitAirAgent(Agent):
             address: The service address, if known.
         """
         call = context.userdata
+        if kind == "urgent" and call.urgent_task is not None:
+            return (
+                f"Urgent task {call.urgent_task} already exists and on-call has it. The callback "
+                f"target is {speak_due(call.urgent_due, now())}. Tell the caller the target, and "
+                "never promise an arrival time."
+            )
         if kind == "emergency" and call.hazard_task is not None:
             target = (
                 f" The callback target is {speak_due(call.hazard_due, now())}."
@@ -587,6 +614,29 @@ class SilenceWatch:
 async def say_goodbye(event: llm.Toolset.ToolCalledEvent) -> None:
     """Queue the fixed goodbye. The session drains queued speech before it shuts down."""
     event.ctx.session.say(GOODBYE, allow_interruptions=False)
+
+
+# What the agent says when it tells a caller on-call is coming. GPT-4.1 mini said "I am paging the
+# on-call technician now" without calling the tool (decision 4; 1 of 4 simulated elderly calls).
+PAGE_PROMISE = re.compile(
+    r"\bpag(e|ing)\b.{0,30}on.?call|on.?call (technician|tech)\b.{0,40}(call|reach|paged)"
+    r"|callback within \d+ minutes|within (15|fifteen) minutes",
+    re.IGNORECASE,
+)
+
+
+async def keep_promise(call: Call, text: str) -> bool:
+    """File the urgent task when the agent has told the caller on-call is paged but never filed it.
+    A false page is cheap; a promised callback that never comes is not. True means it filed one."""
+    if call.paged or call.warned or not PAGE_PROMISE.search(text):
+        return False
+    logger.warning("the agent promised an on-call callback without filing it; filing it now")
+    try:
+        await file_task(call, "urgent", "on-call callback the agent promised", text)
+    except Exception:
+        logger.exception("the promised urgent task was not recorded; paging on-call without it")
+        start_page("Summit Air urgent, not recorded", f"{text}\n{call.caller_number or ''}")
+    return True
 
 
 async def flag_hazard(call: Call, text: str) -> bool:

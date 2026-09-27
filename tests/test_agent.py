@@ -10,15 +10,16 @@ from pathlib import Path
 
 import pytest
 from dotenv import load_dotenv
-from livekit.agents import AgentSession, inference
+from livekit.agents import AgentSession
 
+from models import make_llm
 from receptionist import Call, SummitAirAgent, init_store, now, render_instructions
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env.local")
 
 pytestmark = pytest.mark.llm
 
-MODELS = ["google/gemma-4-31b-it", "openai/gpt-4.1-mini"]
+MODELS = ["openai/gpt-4.1-mini", "openai/gpt-4.1"]
 
 
 @pytest.fixture(params=MODELS)
@@ -35,14 +36,14 @@ def call(tmp_path):
 
 @pytest.fixture
 async def judge():
-    async with inference.LLM(model="openai/gpt-4.1-mini") as judge_llm:
+    async with make_llm("openai/gpt-4.1-mini") as judge_llm:
         yield judge_llm
 
 
 @asynccontextmanager
 async def conversation(model, call):
     async with (
-        inference.LLM(model=model) as agent_llm,
+        make_llm(model) as agent_llm,
         AgentSession(llm=agent_llm, userdata=call) as session,
     ):
         await session.start(SummitAirAgent(render_instructions(now(), call.caller_number)))

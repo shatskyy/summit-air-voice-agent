@@ -7,7 +7,16 @@ from livekit.agents import StopResponse, ToolError, llm
 
 import receptionist
 import store
-from receptionist import HAZARD, TZ, Call, SummitAirAgent, flag_hazard, render_instructions
+from receptionist import (
+    HAZARD,
+    TZ,
+    Call,
+    SummitAirAgent,
+    file_task,
+    flag_hazard,
+    keep_promise,
+    render_instructions,
+)
 
 WINDOWS = [{"start": "08:00", "end": "12:00"}, {"start": "12:00", "end": "16:00"}]
 MONDAY_9AM = datetime(2026, 9, 28, 9, 0, tzinfo=TZ)
@@ -260,6 +269,14 @@ async def test_a_commercial_booking_needs_the_business_name(db):
     with pytest.raises(ToolError, match="business's name and a site contact"):
         await booked_call(
             db, "+19145550100", customer_type="commercial", business_name="Bright Smile Dental"
+        )
+    with pytest.raises(ToolError, match="kind of business, not its name"):
+        await booked_call(
+            db,
+            "+19145550100",
+            customer_type="commercial",
+            business_name="dental office",
+            site_contact="Maria",
         )
     await booked_call(
         db,
@@ -654,6 +671,51 @@ async def test_a_hazard_files_one_emergency_task_per_call(db, monkeypatch):
         FakeContext(call), "emergency", "gas", "strong smell"
     )
     assert "already exists" in again and "The callback target is" in again
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Oh no. I am paging the on-call technician now, our target is a callback within 15 minutes.",
+        "Our on-call technician will call you back tonight.",
+        "Our target is a callback within 15 minutes.",
+    ],
+)
+async def test_a_promised_page_is_filed_when_the_model_forgot(db, said, monkeypatch):
+    """Simulated elderly call: GPT-4.1 mini promised the page and never called the tool."""
+
+    async def fake_page(title, message):
+        pass
+
+    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    call = Call(call_id="call-a", db=db)
+    assert await keep_promise(call, said) is True
+    assert await keep_promise(call, said) is False  # once is enough
+    # The model filing its own urgent task afterwards gets the existing one, not a second page.
+    again = await SummitAirAgent("").create_dispatch_task(
+        FakeContext(call), "urgent", "no heat", "mother at home"
+    )
+    assert "already exists" in again and "The callback target is" in again
+    with store.connect(db) as conn:
+        assert [r[0] for r in conn.execute("select kind from tasks")] == ["urgent"]
+
+
+async def test_ordinary_lines_and_filed_pages_file_nothing(db, monkeypatch):
+    async def fake_page(title, message):
+        pass
+
+    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    call = Call(call_id="call-a", db=db)
+    for said in [
+        "Our target is to call you back by 10 AM tomorrow.",
+        "What's the address there?",
+        "The diagnostic visit is $89.",
+    ]:
+        assert await keep_promise(call, said) is False
+    await file_task(call, "urgent", "no heat, 80-year-old", "mother at home")
+    assert await keep_promise(call, "Our on-call technician will call you back tonight.") is False
+    with store.connect(db) as conn:
+        assert conn.execute("select count(*) from tasks").fetchone()[0] == 1
 
 
 # The prompt

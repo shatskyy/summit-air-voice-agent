@@ -24,9 +24,10 @@ from livekit.agents import (
     room_io,
     tts,
 )
-from livekit.plugins import deepgram, noise_cancellation
+from livekit.plugins import deepgram, noise_cancellation, openai
 
 import store
+from models import make_llm
 from receptionist import (
     CONFIG,
     DEFAULT_DB,
@@ -34,6 +35,7 @@ from receptionist import (
     SilenceWatch,
     SummitAirAgent,
     init_store,
+    keep_promise,
     now,
     render_instructions,
 )
@@ -45,14 +47,23 @@ logger = logging.getLogger("summit-air")
 AGENT_NAME = "summit-air"
 
 # Model IDs are configuration so a failed test call can swap one without a code change. The two
-# candidates back each other up: whichever is primary, the other is the fallback.
-CANDIDATE_LLMS = ("google/gemma-4-31b-it", "openai/gpt-4.1-mini")
+# candidates back each other up: whichever is primary, the other is the fallback. Both run on
+# OPENAI_API_KEY (models.py). Gemma led until the LiveKit Inference credit ran out on 2026-09-27;
+# GPT-4.1 mini is the model the phone calls and simulations proved alongside it.
+CANDIDATE_LLMS = ("openai/gpt-4.1-mini", "openai/gpt-4.1")
 LLM_MODEL = os.getenv("LLM_MODEL", CANDIDATE_LLMS[0])
 FALLBACK_LLM_MODEL = os.getenv(
     "FALLBACK_LLM_MODEL", next(m for m in CANDIDATE_LLMS if m != LLM_MODEL)
 )
 TTS_VOICE = os.getenv("TTS_VOICE", "aura-2-thalia-en")
 SILENCE_SECONDS = 12.0  # quiet before the check-in, and again before hanging up
+
+
+def backup_voice():
+    """OpenAI's voice when the key is set, since Inworld runs on the spent LiveKit credit."""
+    if os.getenv("OPENAI_API_KEY"):
+        return openai.TTS(model="gpt-4o-mini-tts", voice="coral")
+    return inworld_voice()
 
 
 def inworld_voice():
@@ -68,9 +79,9 @@ def speech():
     if os.getenv("DEEPGRAM_API_KEY"):
         return (
             deepgram.STT(model="nova-3", keyterm=CONFIG["keyterms"], smart_format=True),
-            # Inworld takes over if Deepgram can't be reached. It can't rescue a sentence that
-            # drops partway (call 6): the adapter never replays audio the caller already heard.
-            tts.FallbackAdapter([deepgram.TTS(model=TTS_VOICE), inworld_voice()]),
+            # The backup voice takes over if Deepgram can't be reached. It can't rescue a sentence
+            # that drops partway (call 6): the adapter never replays audio already heard.
+            tts.FallbackAdapter([deepgram.TTS(model=TTS_VOICE), backup_voice()]),
         )
     logger.warning("DEEPGRAM_API_KEY is not set; speech runs on the LiveKit Inference credit")
     return inference.STT(model="assemblyai/universal-3-5-pro", language="en"), inworld_voice()
@@ -131,9 +142,7 @@ async def entrypoint(ctx: JobContext) -> None:
         userdata=call,
         stt=listening,
         tts=speaking,
-        llm=llm.FallbackAdapter(
-            [inference.LLM(model=LLM_MODEL), inference.LLM(model=FALLBACK_LLM_MODEL)]
-        ),
+        llm=llm.FallbackAdapter([make_llm(LLM_MODEL), make_llm(FALLBACK_LLM_MODEL)]),
         turn_handling=TurnHandlingOptions(
             # The hosted v1 detector, not the local v1-mini. On call 5, v1-mini scored complete short
             # answers ("It's at a home.", "Yes.") below its threshold, so each reply waited the full
@@ -149,6 +158,16 @@ async def entrypoint(ctx: JobContext) -> None:
         user_away_timeout=SILENCE_SECONDS,
     )
     session.on("conversation_item_added", log_turn_latency)
+
+    def check_promise(event: ConversationItemAddedEvent) -> None:
+        item = event.item
+        if getattr(item, "role", None) == "assistant" and item.text_content:
+            task = asyncio.create_task(keep_promise(call, item.text_content))
+            background.add(task)
+            task.add_done_callback(background.discard)
+
+    background: set[asyncio.Task] = set()
+    session.on("conversation_item_added", check_promise)
 
     silence = SilenceWatch(session, ctx.delete_room, wait=SILENCE_SECONDS)
     session.on("user_state_changed", silence.on_user_state)

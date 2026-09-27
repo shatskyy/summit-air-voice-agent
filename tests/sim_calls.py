@@ -29,20 +29,22 @@ sys.path.insert(0, str(ROOT / "src"))
 load_dotenv(ROOT / ".env.local")
 os.environ.pop("NTFY_TOPIC", None)  # a simulated emergency must never page the real on-call phone
 
-from livekit.agents import AgentSession, StopResponse, inference, llm
+from livekit.agents import AgentSession, StopResponse, llm
 
 import store
+from models import make_llm
 from receptionist import (
     GREETING,
     SAFETY_SCRIPT,
     Call,
     SummitAirAgent,
     init_store,
+    keep_promise,
     now,
     render_instructions,
 )
 
-MODELS = ["google/gemma-4-31b-it", "openai/gpt-4.1-mini"]
+MODELS = ["openai/gpt-4.1-mini", "openai/gpt-4.1"]
 CALLER_MODEL = "openai/gpt-4.1-mini"
 HANG_UP = "<hang up>"
 MAX_TURNS = 16
@@ -132,6 +134,23 @@ SCENARIOS = [
         'you, say exactly: "Actually, sorry, it\'s 52 Severn Lane, not 48." After that, confirm '
         "52 and accept the first window offered.",
     ),
+    Scenario(
+        "routine_furnace",
+        "10. Routine furnace (naturalness)",
+        "Hi. My furnace stopped working.",
+        brief=f"It's your house. Nobody at risk: just you, healthy adult. Your name is David "
+        f"Shatsky, your address is {HOME}. The number you're calling from is fine. Take the "
+        "first window offered.",
+    ),
+    Scenario(
+        "elderly_no_heat",
+        "11. Elderly, no heat",
+        "My heat went out last night and it's freezing in here. My mother is 80 and she lives "
+        "with me.",
+        brief=f"It's your house. Your name is David Shatsky, your address is {HOME}. The number "
+        "you're calling from is fine. If offered a choice, take the first morning window. If "
+        "told on-call will call back, accept that too.",
+    ),
 ]
 
 CALLER_RULES = f"""You are a caller phoning an HVAC company. Play the caller described below and
@@ -154,6 +173,7 @@ class Result:
     tasks: list[dict]
     failures: list[str]
     error: str = ""
+    style: dict = field(default_factory=dict)
 
 
 def rows(db: Path, table: str) -> list[dict]:
@@ -228,12 +248,21 @@ async def play(scenario: Scenario, model: str, run: int) -> Result:
     call = Call(call_id=f"sim-{scenario.name}-{run}", caller_number=scenario.caller_number, db=db)
     error = ""
     async with (
-        inference.LLM(model=model) as agent_llm,
-        inference.LLM(model=CALLER_MODEL) as caller_llm,
+        make_llm(model) as agent_llm,
+        make_llm(CALLER_MODEL) as caller_llm,
         AgentSession(llm=agent_llm, userdata=call) as session,
     ):
         agent = SummitAirAgent(render_instructions(now(), call.caller_number))
         await session.start(agent)
+        promises: list[asyncio.Task] = []
+        session.on(
+            "conversation_item_added",
+            lambda e: (
+                getattr(e.item, "role", None) == "assistant"
+                and e.item.text_content
+                and promises.append(asyncio.create_task(keep_promise(call, e.item.text_content)))
+            ),
+        )
         await settle(session)  # the greeting, before the caller speaks
         say, lines = scenario.opening, list(scenario.lines)
         try:
@@ -252,9 +281,13 @@ async def play(scenario: Scenario, model: str, run: int) -> Result:
                     break
         except Exception as e:  # noqa: BLE001 - a crash is a finding; keep the transcript
             error = f"{type(e).__name__}: {e}"
+        kept_promise = any(await asyncio.gather(*promises))
         transcript = history_lines(session)
+        if kept_promise:
+            transcript.append("  [backstop] filed the urgent task the agent promised")
     res = Result(scenario.name, model, run, transcript, rows(db, "bookings"), rows(db, "tasks"), [])
     res.error = error
+    res.style = style(res)
     res.failures = CHECKS[scenario.name](res) + ([f"crashed: {error}"] if error else [])
     return res
 
@@ -387,6 +420,54 @@ def check_address_change(r):
     return f
 
 
+def check_routine_furnace(r):
+    if len(r.bookings) != 1:
+        return [f"{len(r.bookings)} bookings, expected 1"]
+    if r.bookings[0]["customer_type"] != "residential":
+        return [f"booked as {r.bookings[0]['customer_type']}"]
+    return []
+
+
+def check_elderly_no_heat(r):
+    f = []
+    urgent = [t for t in r.tasks if t["kind"] == "urgent"]
+    if len(urgent) != 1:
+        f.append(f"{len(urgent)} urgent tasks, expected 1")
+    elif (
+        r.bookings
+        and r.bookings[0]["ref"]
+        and r.bookings[0]["created_at"] < urgent[0]["created_at"]
+    ):
+        f.append("booked before filing the urgent task")
+    if not re.search(r"15 minutes|fifteen minutes|call you back by", agent_text(r), re.IGNORECASE):
+        f.append("never said the callback target")
+    return f
+
+
+CLOSE = re.compile(r"anything else", re.IGNORECASE)
+HOME_WORDS = re.compile(r"\b(house|home|my (furnace|ac|heat|air))\b", re.IGNORECASE)
+TYPE_Q = re.compile(r"residential|commercial|home or (a )?business", re.IGNORECASE)
+SPOKEN_LIST = re.compile(
+    r"elderly, an infant|\w+, \w+,? (and|or) (a |an )?(infant|zip|medical)", re.IGNORECASE
+)
+
+
+def style(r: Result) -> dict:
+    """Soft naturalness counts: reported beside pass/fail, never failures themselves."""
+    said = [x[8:] for x in r.transcript if x.startswith("AGENT") and GREETING not in x]
+    bundled = sum(t.count("?") >= 2 and not CLOSE.search(t) for t in said)
+    reasked = 0
+    heard_home = False
+    for x in r.transcript:
+        if x.startswith("CALLER") and HOME_WORDS.search(x):
+            heard_home = True
+        if x.startswith("AGENT") and heard_home and TYPE_Q.search(x) and "?" in x:
+            reasked += 1
+    lists = sum(bool(SPOKEN_LIST.search(t)) for t in said)
+    words = sum(len(t.split()) for t in said) / max(len(said), 1)
+    return {"bundled": bundled, "reasked_type": reasked, "lists": lists, "words": round(words, 1)}
+
+
 CHECKS = {
     "blocked_id": check_blocked_id,
     "gas": check_gas,
@@ -396,6 +477,8 @@ CHECKS = {
     "spanish": check_spanish,
     "commercial": check_commercial,
     "address_change": check_address_change,
+    "routine_furnace": check_routine_furnace,
+    "elderly_no_heat": check_elderly_no_heat,
 }
 
 
@@ -404,7 +487,7 @@ async def main() -> None:
     ap.add_argument("scenarios", nargs="*", help=f"any of {', '.join(CHECKS)}")
     ap.add_argument("-n", "--runs", type=int, default=3)
     ap.add_argument("-m", "--model", action="append", help="default: both candidate models")
-    ap.add_argument("-j", "--jobs", type=int, default=3, help="conversations at once")
+    ap.add_argument("-j", "--jobs", type=int, default=2, help="conversations at once")
     args = ap.parse_args()
 
     chosen = [s for s in SCENARIOS if not args.scenarios or s.name in args.scenarios]
@@ -414,7 +497,7 @@ async def main() -> None:
     async def one(s, m, i):
         # The free tier allows 110 model requests a minute across the project. A run that hits it
         # proves nothing about the agent, so wait out the minute and replay it.
-        for _ in range(3):
+        for _ in range(5):
             async with gate:
                 res = await play(s, m, i)
             if "429" not in res.error:
@@ -434,6 +517,7 @@ async def main() -> None:
         body = [
             f"# {r.scenario} / {r.model} / run {r.run}",
             "PASS" if not r.failures else "FAIL: " + "; ".join(r.failures),
+            f"style: {r.style}",
             "",
             *r.transcript,
             "",
@@ -452,6 +536,21 @@ async def main() -> None:
             for r in mine:
                 for why in r.failures:
                     print(f"      run {r.run}: {why}")
+
+    # Naturalness, summed over every conversation a model had. Lower is better except words.
+    summary = ["", "Naturalness (per model, all scenarios):"]
+    for m in models:
+        mine = [r for r in results if r.model == m]
+        turns = sum(sum(x.startswith("AGENT") for x in r.transcript) for r in mine)
+        total = {k: sum(r.style[k] for r in mine) for k in ("bundled", "reasked_type", "lists")}
+        words = sum(r.style["words"] for r in mine) / max(len(mine), 1)
+        summary.append(
+            f"  {m:24} bundled {total['bundled']}, re-asked home/business "
+            f"{total['reasked_type']}, spoken lists {total['lists']}, "
+            f"{words:.1f} words a turn, over {turns} agent turns"
+        )
+    print("\n".join(summary))
+    (out / "SUMMARY.txt").write_text("\n".join(summary) + "\n")
 
 
 if __name__ == "__main__":
