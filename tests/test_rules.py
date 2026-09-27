@@ -434,6 +434,13 @@ def test_a_real_caller_id_is_kept():
         "I smell propane in the basement",
         "I think there's a propane leak",
         "it smells like sulfur by the water heater",
+        # Word orders the first pattern missed: the leak said after "gas", sulfur before "smell".
+        "I think gas is leaking",
+        "gas might be leaking from the stove",
+        "the propane tank is leaking",
+        "there's a sulfur smell in the basement",
+        "it smells gassy in here",
+        "it smells like something is burning",
         # Known false positives. The script is worded to be harmless when these fire.
         "no, I don't smell gas",
         "the smoke detector battery died",
@@ -448,6 +455,9 @@ def test_hazard_phrases_trigger_the_safety_script(said):
     [
         "my furnace won't fire up",
         "I have a gas furnace and it won't turn on",
+        # A furnace or water heater leaking water is a routine call, even when it burns gas.
+        "my gas furnace is leaking water",
+        "the gas water heater is leaking",
         "the AC is blowing warm air",
         "the heat pump is making a grinding noise",
     ],

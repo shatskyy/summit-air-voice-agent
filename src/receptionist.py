@@ -48,11 +48,15 @@ GREETING = "Thanks for calling Summit Air. This is the automated assistant. How 
 # Known shortcut: a keyword list over-triggers by design ("I don't smell gas" matches). The script
 # below is worded to be harmless when that happens; a classifier is the upgrade if false alarms cost
 # calls.
+# Words that can stand between the fuel and "leak": "gas is leaking", "the propane tank might be
+# leaking". None names an appliance, so "my gas furnace is leaking water" stays a routine call.
+LEAK_BRIDGE = r"(?:(?:is|was|tank|lines?|pipes?|might|may|could|be|seems|to|still)\W+){0,3}"
 HAZARD = re.compile(
-    r"smell\w*\W+(?:\w+\W+){0,3}(?:gas|propane|sulfur|sulphur)\b"
-    r"|\b(?:gas|propane)\W+(?:smell|odou?r|leak)|\bleak\w*\W+(?:gas|propane)\b|rotten eggs?"
+    r"smell\w*\W+(?:\w+\W+){0,3}(?:gas(?:sy)?|propane|sulfur|sulphur)\b"
+    r"|\b(?:gas|propane|sulfur|sulphur)\W+(?:smell|odou?r)"
+    r"|\b(?:gas|propane)\W+" + LEAK_BRIDGE + r"leak|\bleak\w*\W+(?:gas|propane)\b|rotten eggs?"
     r"|carbon monoxide|monoxide|\bco\W+(?:alarm|detector)"
-    r"|\bsmoke\b|\bsmoking\b|\bon fire\b|\bflames?\b|burning smell|smell\w*\W+(?:\w+\W+){0,2}burning"
+    r"|\bsmoke\b|\bsmoking\b|\bon fire\b|\bflames?\b|burning smell|smell\w*\W+(?:\w+\W+){0,3}burning"
     r"|\bsparks?\b|\bsparking\b",
     re.IGNORECASE,
 )
