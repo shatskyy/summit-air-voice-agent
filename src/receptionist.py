@@ -103,7 +103,7 @@ def office_open(at: datetime) -> bool:
 
 
 def counties_spoken() -> str:
-    """The service counties as a caller hears them: "Westchester, Rockland and Putnam"."""
+    """The service area as a caller hears it: "Manhattan, Brooklyn and Queens"."""
     counties = CONFIG["coverage"]["counties"]
     return ", ".join(counties[:-1]) + " and " + counties[-1]
 
@@ -214,7 +214,7 @@ def in_coverage(zip_code: str) -> bool:
     return (
         len(zip_code) == 5
         and zip_code.isdigit()
-        and zip_code[:3] in CONFIG["coverage"]["zip_prefixes"]
+        and any(zip_code.startswith(prefix) for prefix in CONFIG["coverage"]["zip_prefixes"])
     )
 
 
@@ -315,12 +315,43 @@ async def page_on_call(title: str, message: str) -> bool:
     return True
 
 
+CLOSING_QUESTION = re.compile(r"anything else", re.IGNORECASE)
+
+
+def closing_confirmed(items) -> bool:
+    """Whether the caller has spoken since the agent last asked if there is anything else. The
+    history is the record, so this needs no state of its own."""
+    caller_spoke = False
+    for item in reversed(items):
+        if getattr(item, "type", None) != "message":
+            continue
+        if item.role == "user":
+            caller_spoke = True
+        elif item.role == "assistant" and CLOSING_QUESTION.search(item.text_content or ""):
+            return caller_spoke
+    return False
+
+
+class GuardedEndCall(EndCallTool):
+    """end_call that refuses until the caller has been asked whether there is anything else and has
+    answered. On a test call speech-to-text heard "Stop." over the greeting, and the model hung up
+    on it (room dEwa8tRdFwLW)."""
+
+    async def _end_call(self, ctx: RunContext):
+        if not closing_confirmed(ctx.session.history.items):
+            raise ToolError(
+                "Don't end the call yet. If you're not sure what the caller wants, ask what they "
+                "need. Before ending, ask whether there is anything else and hear their answer."
+            )
+        return await super()._end_call(ctx)
+
+
 class SummitAirAgent(Agent):
     def __init__(self, instructions: str) -> None:
         super().__init__(
             instructions=instructions,
             tools=[
-                EndCallTool(
+                GuardedEndCall(
                     extra_description=(
                         "Call it only after the caller has said they need nothing else, never in the "
                         "same turn as another tool. It says goodbye itself, so add no goodbye of "
@@ -376,7 +407,7 @@ class SummitAirAgent(Agent):
             return (
                 f"ZIP {zip_code} is outside the service area. Don't offer times or book. Read the "
                 "ZIP back once to make sure you heard it right. If it is right, say Summit Air "
-                f"covers {counties_spoken()} counties in New York, and ask whether the address is in "
+                f"covers {counties_spoken()} in New York City, and ask whether the address is in "
                 "one of them. If it isn't, offer a callback and ask if there is anything else."
             )
         context.userdata.checked_zip = zip_code

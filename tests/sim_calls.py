@@ -49,7 +49,7 @@ CALLER_MODEL = "openai/gpt-4.1-mini"
 HANG_UP = "<hang up>"
 MAX_TURNS = 16
 
-HOME = "48 Severn Lane, Chappaqua, 10514"
+HOME = "48 Bergen Street, Brooklyn, 11201"
 
 
 @dataclass
@@ -117,11 +117,11 @@ SCENARIOS = [
     Scenario(
         "commercial",
         "8. Commercial rooftop",
-        "I manage a dental office in White Plains. Our rooftop AC stopped working and it's "
+        "I manage a dental office in Manhattan. Our rooftop AC stopped working and it's "
         "getting really hot in here.",
         brief="Your name is David Shatsky. The business is Bright Smile Dental. The site contact "
         "is Maria, the office manager. Access: the roof hatch is in the back storage room. The "
-        "address is 200 Main Street, White Plains, 10601. Nobody is medically at risk. The number "
+        "address is 200 Madison Avenue, Manhattan, 10016. Nobody is medically at risk. The number "
         "you're calling from is fine. Take the first window offered. Only give each detail when "
         "asked for it.",
     ),
@@ -131,7 +131,7 @@ SCENARIOS = [
         "My AC isn't cooling well, can someone come check it?",
         brief=f"Your name is David Shatsky. Give the address as {HOME}. Nobody is at risk. The "
         "number you're calling from is fine. The first time the agent reads the address back to "
-        'you, say exactly: "Actually, sorry, it\'s 52 Severn Lane, not 48." After that, confirm '
+        'you, say exactly: "Actually, sorry, it\'s 52 Bergen Street, not 48." After that, confirm '
         "52 and accept the first window offered.",
     ),
     Scenario(
@@ -150,6 +150,15 @@ SCENARIOS = [
         brief=f"It's your house. Your name is David Shatsky, your address is {HOME}. The number "
         "you're calling from is fine. If offered a choice, take the first morning window. If "
         "told on-call will call back, accept that too.",
+    ),
+    Scenario(
+        "stray_word",
+        "12. A stray word over the greeting",
+        "Stop.",
+        brief=f"You said 'Stop.' by accident, talking to someone else. Next turn, apologize and say "
+        f"your AC is leaking water. It's your house, nobody at risk. Your name is David Shatsky, "
+        f"your address is {HOME}. The number you're calling from is fine. Take the first window "
+        "offered.",
     ),
 ]
 
@@ -271,7 +280,14 @@ async def play(scenario: Scenario, model: str, run: int) -> Result:
                     pass  # the safety script replaced the model's reply, as on a call
                 else:
                     result = await session.run(user_input=say)
-                    if any(getattr(e.item, "name", "") == "end_call" for e in result.events):
+                    # Only an end_call that went through ends the run; a refused one (the guard)
+                    # comes back as an error output and the conversation carries on.
+                    if any(
+                        getattr(e.item, "name", "") == "end_call"
+                        and getattr(e.item, "type", "") == "function_call_output"
+                        and not e.item.is_error
+                        for e in result.events
+                    ):
                         break
                 if scenario.brief:
                     say = await caller_turn(caller_llm, scenario, session)
@@ -378,6 +394,10 @@ def check_spanish(r):
         f.append("no callback task")
     if r.bookings:
         f.append("booked instead of handing off")
+    # A promise of a Spanish speaker, not "since you speak Spanish" about the caller.
+    promise = r"(someone|person|agent|representative|who)\b.{0,25}speaks? spanish|spanish.speaking"
+    if re.search(promise + r"|habla español", agent_text(r), re.IGNORECASE):
+        f.append("promised a Spanish speaker")
     return f
 
 
@@ -428,6 +448,15 @@ def check_routine_furnace(r):
     return []
 
 
+def check_stray_word(r):
+    f = []
+    if sum(x.startswith("CALLER") for x in r.transcript) < 2:
+        f.append("hung up after the stray word")
+    if len(r.bookings) != 1:
+        f.append(f"{len(r.bookings)} bookings, expected 1")
+    return f
+
+
 def check_elderly_no_heat(r):
     f = []
     urgent = [t for t in r.tasks if t["kind"] == "urgent"]
@@ -441,6 +470,8 @@ def check_elderly_no_heat(r):
         f.append("booked before filing the urgent task")
     if not re.search(r"15 minutes|fifteen minutes|call you back by", agent_text(r), re.IGNORECASE):
         f.append("never said the callback target")
+    if re.search(r"\bgas\b", agent_text(r), re.IGNORECASE):
+        f.append("mentioned gas on a no-heat call")
     return f
 
 
@@ -479,6 +510,7 @@ CHECKS = {
     "address_change": check_address_change,
     "routine_furnace": check_routine_furnace,
     "elderly_no_heat": check_elderly_no_heat,
+    "stray_word": check_stray_word,
 }
 
 

@@ -11,9 +11,12 @@ from receptionist import (
     HAZARD,
     TZ,
     Call,
+    GuardedEndCall,
     SummitAirAgent,
+    closing_confirmed,
     file_task,
     flag_hazard,
+    in_coverage,
     keep_promise,
     render_instructions,
     wants_dictation,
@@ -38,8 +41,8 @@ def booking(call_id, slot_id, **overrides):
         "priority": 0,
         "name": "Maria Lopez",
         "phone": "+19145550100",
-        "address": "14 Maple Ave, White Plains",
-        "zip": "10601",
+        "address": "14 Maple Street, Brooklyn",
+        "zip": "11225",
         "issue": "furnace won't start",
         "note": "",
     }
@@ -102,10 +105,10 @@ def test_callers_racing_for_the_last_slot_get_exactly_one_booking(db):
 def test_a_correction_during_the_call_moves_the_same_booking(db):
     first = store.book(db, **booking("call-a", "2026-09-29-0800"))
     moved = store.book(
-        db, **booking("call-a", "2026-09-29-1200", address="16 Maple Ave, White Plains")
+        db, **booking("call-a", "2026-09-29-1200", address="16 Maple Street, Brooklyn")
     )
     assert moved["ref"] == first["ref"]
-    assert (moved["slot_id"], moved["address"]) == ("2026-09-29-1200", "16 Maple Ave, White Plains")
+    assert (moved["slot_id"], moved["address"]) == ("2026-09-29-1200", "16 Maple Street, Brooklyn")
     assert (
         store.open_slots(db, date(2026, 9, 29), "morning", MONDAY_9AM)[0]["id"] == "2026-09-29-0800"
     )
@@ -124,8 +127,8 @@ async def test_booking_without_a_real_name_is_refused(db, placeholder):
             "residential",
             placeholder,
             "+19145550100",
-            "14 Maple Ave, White Plains",
-            "10601",
+            "14 Maple Street, Brooklyn",
+            "11225",
             "AC is broken",
         )
 
@@ -139,8 +142,8 @@ async def test_booking_a_window_that_was_never_offered_is_refused(db):
             "residential",
             "Maria Lopez",
             "+19145550100",
-            "14 Maple Ave, White Plains",
-            "10601",
+            "14 Maple Street, Brooklyn",
+            "11225",
             "no heat",
         )
 
@@ -154,25 +157,43 @@ async def test_an_address_outside_the_three_counties_is_refused(db):
             "residential",
             "Maria Lopez",
             "+12125550100",
-            "10 W 4th St, New York",
-            "10012",
+            "10 Bay Street, Staten Island",
+            "10301",
             "no heat",
         )
 
 
+@pytest.mark.parametrize(
+    ("zip_code", "covered"),
+    [
+        ("10003", True),  # Manhattan
+        ("11225", True),  # Brooklyn
+        ("11101", True),  # Long Island City, Queens
+        ("11004", True),  # Glen Oaks, Queens, inside Nassau's 110 prefix
+        ("11691", True),  # Far Rockaway, Queens
+        ("10451", False),  # the Bronx
+        ("10301", False),  # Staten Island
+        ("11010", False),  # Franklin Square, Nassau County
+        ("10601", False),  # White Plains
+    ],
+)
+def test_the_service_area_is_manhattan_brooklyn_and_queens(zip_code, covered):
+    assert in_coverage(zip_code) is covered
+
+
 async def test_an_address_outside_the_area_is_caught_before_any_window(db):
     ctx = FakeContext(Call(call_id="call-a", db=db))
-    result = await SummitAirAgent("").check_address(ctx, "48 Severn Lane", "Chappaqua", "10003")
+    result = await SummitAirAgent("").check_address(ctx, "48 Bay Street", "Staten Island", "10301")
     assert "outside the service area" in result and "Don't offer times" in result
     # A tester who gives their own address has to hear where Summit Air works, or it's a dead end.
-    assert "Westchester, Rockland and Putnam" in result
+    assert "Manhattan, Brooklyn and Queens" in result
     assert ctx.userdata.checked_zip is None
 
 
 async def test_an_address_without_a_town_is_sent_back_for_the_town(db):
     ctx = FakeContext(Call(call_id="call-a", db=db))
     with pytest.raises(ToolError, match="which town"):
-        await SummitAirAgent("").check_address(ctx, "14 Maple Ave", " ", "10601")
+        await SummitAirAgent("").check_address(ctx, "14 Maple Street", " ", "11225")
 
 
 async def test_booking_an_address_that_was_never_checked_is_refused(db):
@@ -184,8 +205,8 @@ async def test_booking_an_address_that_was_never_checked_is_refused(db):
             "residential",
             "Maria Lopez",
             "+19145550100",
-            "14 Maple Ave, White Plains",
-            "10601",
+            "14 Maple Street, Brooklyn",
+            "11225",
             "no heat",
         )
 
@@ -193,8 +214,8 @@ async def test_booking_an_address_that_was_never_checked_is_refused(db):
 async def test_an_offered_window_books_and_returns_a_reference(db):
     agent = SummitAirAgent("")
     ctx = FakeContext(Call(call_id="call-a", db=db))
-    readback = await agent.check_address(ctx, "14 Maple Ave", "White Plains", "10601")
-    assert "14 Maple Ave, White Plains, ZIP 10601" in readback
+    readback = await agent.check_address(ctx, "14 Maple Street", "Brooklyn", "11225")
+    assert "14 Maple Street, Brooklyn, ZIP 11225" in readback
     offered = await agent.check_availability(ctx, "2026-09-29", "morning")
     assert "slot_id 2026-09-29-0800" in offered
     confirmation = await agent.book_appointment(
@@ -203,8 +224,8 @@ async def test_an_offered_window_books_and_returns_a_reference(db):
         "residential",
         "Maria Lopez",
         "+19145550100",
-        "14 Maple Ave, White Plains",
-        "10601",
+        "14 Maple Street, Brooklyn",
+        "11225",
         "no heat",
     )
     assert "Reference 1001" in confirmation and "Tuesday, September 29" in confirmation
@@ -215,7 +236,7 @@ async def test_a_booking_without_a_given_number_keeps_the_caller_id(db):
     call although caller ID has it."""
     agent = SummitAirAgent("")
     ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+19145550100"))
-    await agent.check_address(ctx, "14 Maple Ave", "White Plains", "10601")
+    await agent.check_address(ctx, "14 Maple Street", "Brooklyn", "11225")
     await agent.check_availability(ctx, "2026-09-29", "morning")
     await agent.book_appointment(
         ctx,
@@ -223,8 +244,8 @@ async def test_a_booking_without_a_given_number_keeps_the_caller_id(db):
         "residential",
         "Maria Lopez",
         "unknown",
-        "14 Maple Ave",
-        "10601",
+        "14 Maple Street",
+        "11225",
         "no heat",
     )
     with store.connect(db) as conn:
@@ -235,15 +256,15 @@ async def booked_call(db, caller_number, **kwargs):
     """Check the address, offer the morning, and book it, as a call would."""
     agent = SummitAirAgent("")
     ctx = FakeContext(Call(call_id="call-a", db=db, caller_number=caller_number))
-    await agent.check_address(ctx, "200 Main Street", "White Plains", "10601")
+    await agent.check_address(ctx, "200 Flatbush Avenue", "Brooklyn", "11225")
     await agent.check_availability(ctx, "2026-09-29", "morning")
     args = {
         "slot_id": "2026-09-29-0800",
         "customer_type": "residential",
         "name": "Maria Lopez",
         "callback_number": "",
-        "address": "200 Main Street, White Plains",
-        "zip_code": "10601",
+        "address": "200 Flatbush Avenue, Brooklyn",
+        "zip_code": "11225",
         "issue": "no cooling",
     }
     return await agent.book_appointment(ctx, **(args | kwargs))
@@ -299,10 +320,10 @@ async def test_moving_to_a_full_window_says_the_first_booking_still_stands(db):
     so, and a model told only "that window filled up" can tell the caller they have nothing."""
     agent = SummitAirAgent("")
     ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+19145550100"))
-    await agent.check_address(ctx, "14 Maple Ave", "White Plains", "10601")
+    await agent.check_address(ctx, "14 Maple Street", "Brooklyn", "11225")
     await agent.check_availability(ctx, "2026-09-29", "morning")
     await agent.check_availability(ctx, "2026-09-29", "afternoon")
-    args = ("residential", "Maria Lopez", "", "14 Maple Ave", "10601", "no heat")
+    args = ("residential", "Maria Lopez", "", "14 Maple Street", "11225", "no heat")
     await agent.book_appointment(ctx, "2026-09-29-0800", *args)
     store.book(db, **booking("call-b", "2026-09-29-1200"))  # capacity 1: now full
     with pytest.raises(
@@ -505,7 +526,7 @@ def test_a_real_caller_id_is_kept():
         "there's smoke coming out of the vent",
         "I think the unit is on fire",
         "there's a burning smell",
-        # Propane heats many homes in Putnam and Rockland, and its odorant smells of sulfur.
+        # Propane heats homes off the gas mains, and its odorant smells of sulfur.
         "I smell propane in the basement",
         "I think there's a propane leak",
         "it smells like sulfur by the water heater",
@@ -742,6 +763,45 @@ async def test_ordinary_lines_and_filed_pages_file_nothing(db, monkeypatch):
 )
 def test_the_long_wait_is_only_for_dictating_an_address_or_number(said, dictation):
     assert wants_dictation(said) is dictation
+
+
+def said(role, text):
+    return llm.ChatMessage(role=role, content=[text])
+
+
+GREETED = said("assistant", receptionist.GREETING)
+
+
+@pytest.mark.parametrize(
+    ("history", "ends"),
+    [
+        ([GREETED, said("user", "Stop.")], False),  # the stray word on the dEwa8tRdFwLW call
+        ([GREETED, said("user", "No heat."), said("assistant", "Is there anything else?")], False),
+        (
+            [
+                GREETED,
+                said("assistant", "Is there anything else I can help with?"),
+                said("user", "No."),
+            ],
+            True,
+        ),
+    ],
+)
+def test_the_call_ends_only_after_anything_else_is_answered(history, ends):
+    assert closing_confirmed(history) is ends
+
+
+async def test_end_call_refuses_before_the_closing_question():
+    from types import SimpleNamespace
+
+    ctx = SimpleNamespace(
+        session=SimpleNamespace(history=SimpleNamespace(items=[GREETED, said("user", "Stop.")]))
+    )
+
+    agent = SummitAirAgent("")
+    guard = next(t for t in agent.tools if isinstance(t, GuardedEndCall))
+    with pytest.raises(ToolError, match="Don't end the call yet"):
+        await guard._end_call(ctx)
 
 
 # The prompt
