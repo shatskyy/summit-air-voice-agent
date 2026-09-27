@@ -31,6 +31,8 @@ from models import make_llm
 from receptionist import (
     CONFIG,
     DEFAULT_DB,
+    DICTATION_MAX_DELAY,
+    MAX_DELAY,
     Call,
     SilenceWatch,
     SummitAirAgent,
@@ -38,6 +40,7 @@ from receptionist import (
     keep_promise,
     now,
     render_instructions,
+    wants_dictation,
 )
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env.local")
@@ -151,8 +154,8 @@ async def entrypoint(ctx: JobContext) -> None:
             turn_detection=inference.TurnDetector(),
             # Deepgram's final transcript can land after a 0.5 s wait, splitting one sentence into
             # two turns (call 4). 0.7 s gives it room. max_delay caps the wait when the detector
-            # thinks the caller is mid-thought.
-            endpointing={"min_delay": 0.7, "max_delay": 2.0},
+            # thinks the caller is mid-thought; set_patience stretches it for dictation.
+            endpointing={"min_delay": 0.7, "max_delay": MAX_DELAY},
             interruption={"mode": "adaptive"},
         ),
         user_away_timeout=SILENCE_SECONDS,
@@ -168,6 +171,22 @@ async def entrypoint(ctx: JobContext) -> None:
 
     background: set[asyncio.Task] = set()
     session.on("conversation_item_added", check_promise)
+
+    patience = {"max_delay": MAX_DELAY}
+
+    def set_patience(event: ConversationItemAddedEvent) -> None:
+        """Wait longer for the caller's next turn when the agent just asked for an address or a
+        number, and go back to the short wait after any other question."""
+        item = event.item
+        if getattr(item, "role", None) != "assistant" or not item.text_content:
+            return
+        wanted = DICTATION_MAX_DELAY if wants_dictation(item.text_content) else MAX_DELAY
+        if wanted != patience["max_delay"]:
+            patience["max_delay"] = wanted
+            session.update_options(endpointing_opts={"max_delay": wanted})
+            logger.info("endpointing max_delay -> %s", wanted)
+
+    session.on("conversation_item_added", set_patience)
 
     silence = SilenceWatch(session, ctx.delete_room, wait=SILENCE_SECONDS)
     session.on("user_state_changed", silence.on_user_state)

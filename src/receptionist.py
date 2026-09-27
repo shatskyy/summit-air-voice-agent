@@ -625,6 +625,23 @@ PAGE_PROMISE = re.compile(
 )
 
 
+# Turn timing. When the turn detector thinks a caller is mid-thought it waits max_delay before
+# replying, and the hosted detector scores complete short answers low ("No." 0.31 against its
+# 0.56 bar), so 9 of 21 turns on the 16:09 call waited the full 2 s. Most turns get a short cap;
+# dictating an address or a number gets a long one, because callers pause between the parts.
+MAX_DELAY = 1.1
+DICTATION_MAX_DELAY = 2.5
+DICTATION = re.compile(r"address|street|zip|number|reach you|phone", re.IGNORECASE)
+
+
+def wants_dictation(said: str) -> bool:
+    """Whether the agent's last question asks the caller to dictate an address or a number."""
+    if "?" not in said:
+        return False
+    question = re.split(r"(?<=[.!?])\s+", said[: said.rindex("?") + 1])[-1]
+    return bool(DICTATION.search(question))
+
+
 async def keep_promise(call: Call, text: str) -> bool:
     """File the urgent task when the agent has told the caller on-call is paged but never filed it.
     A false page is cheap; a promised callback that never comes is not. True means it filed one."""

@@ -16,6 +16,7 @@ from receptionist import (
     flag_hazard,
     keep_promise,
     render_instructions,
+    wants_dictation,
 )
 
 WINDOWS = [{"start": "08:00", "end": "12:00"}, {"start": "12:00", "end": "16:00"}]
@@ -716,6 +717,25 @@ async def test_ordinary_lines_and_filed_pages_file_nothing(db, monkeypatch):
     assert await keep_promise(call, "Our on-call technician will call you back tonight.") is False
     with store.connect(db) as conn:
         assert conn.execute("select count(*) from tasks").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize(
+    ("said", "dictation"),
+    [
+        ("Got it. What's the address there?", True),
+        ("Thanks, David. What's the best number to reach you?", True),
+        ("Which town is that in? And the ZIP?", True),
+        ("Oh no. What's going on with it?", False),
+        ("Is anyone there who'd be at risk in the cold?", False),
+        (
+            "I have 48 Severn Lane. Which window works for you?",
+            False,
+        ),  # the address, not a question
+        ("You're booked. Your reference number is 1001.", False),  # no question at all
+    ],
+)
+def test_the_long_wait_is_only_for_dictating_an_address_or_number(said, dictation):
+    assert wants_dictation(said) is dictation
 
 
 # The prompt
