@@ -111,6 +111,13 @@ def render_instructions(at: datetime, caller_number: str | None) -> str:
         office_status=("The office is open. " if office_open(at) else "The office is closed. ")
         + hours,
         caller_number=caller_number or "unknown, so ask for a callback number",
+        number_step=(
+            "confirm the number they are calling from is the best one to reach them rather than "
+            "asking them to recite it."
+            if caller_number
+            else "ask for the best number to reach them. Caller ID is withheld, so there is no "
+            "calling number to confirm. Repeat the number back once."
+        ),
         diagnostic_fee=CONFIG["pricing"]["diagnostic_fee"],
         after_hours_fee=CONFIG["pricing"]["after_hours_fee"],
         urgent_minutes=CONFIG["callback_target_minutes"]["urgent"],
@@ -399,6 +406,8 @@ class SummitAirAgent(Agent):
         issue: str,
         priority: bool = False,
         note: str = "",
+        business_name: str = "",
+        site_contact: str = "",
     ) -> str:
         """Book a visit in a window you offered and the caller accepted, after reading back the address.
 
@@ -413,12 +422,29 @@ class SummitAirAgent(Agent):
             priority: True for an urgent call where someone vulnerable is without heat or cooling.
             note: What dispatch needs: a site contact and access for commercial, a membership the
                 caller mentioned, or an earlier visit that was missed.
+            business_name: For commercial, the business's name as the caller gave it. Required.
+            site_contact: For commercial, who meets the technician on site. Required.
         """
         call = context.userdata
         if not is_real_name(name):
             raise ToolError(
                 "No name yet. Ask the caller for their name, then book. Don't use a placeholder."
             )
+        phone = given(callback_number) or call.caller_number or ""
+        if len(re.sub(r"\D", "", phone)) < 10:
+            raise ToolError(
+                "No callback number yet: caller ID is withheld. Ask for the best number to reach "
+                "them, repeat it back, then book with it."
+            )
+        business = given(business_name or "").strip()  # models send null for unused arguments
+        contact = given(site_contact or "").strip()
+        if customer_type == "commercial" and not (business and contact):
+            raise ToolError(
+                "A commercial booking needs the business's name and a site contact. Ask for "
+                "whichever is missing, and any access instructions, then book."
+            )
+        if business:
+            note = f"Business: {business}. Site contact: {contact}. {note or ''}".strip()
         if slot_id not in call.offered:
             raise ToolError(
                 "That slot was not offered on this call. Call check_availability and offer a window first."
@@ -443,7 +469,7 @@ class SummitAirAgent(Agent):
             customer_type=customer_type,
             priority=int(priority),
             name=name,
-            phone=given(callback_number) or call.caller_number or "",
+            phone=phone,
             address=address,
             zip=zip_code,
             issue=issue,

@@ -315,7 +315,9 @@ def check_member(r):
         f.append("quoted the $89 diagnostic to a member")
     if len(r.bookings) != 1:
         f.append(f"{len(r.bookings)} bookings, expected 1")
-    elif not re.search(r"member|plan", r.bookings[0]["note"] + r.bookings[0]["issue"], re.IGNORECASE):
+    elif not re.search(
+        r"member|plan", r.bookings[0]["note"] + r.bookings[0]["issue"], re.IGNORECASE
+    ):
         f.append(f"membership not in the booking: note {r.bookings[0]['note']!r}")
     return f
 

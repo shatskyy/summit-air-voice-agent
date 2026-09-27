@@ -219,6 +219,61 @@ async def test_a_booking_without_a_given_number_keeps_the_caller_id(db):
         assert conn.execute("select phone from bookings").fetchone()[0] == "+19145550100"
 
 
+async def booked_call(db, caller_number, **kwargs):
+    """Check the address, offer the morning, and book it, as a call would."""
+    agent = SummitAirAgent("")
+    ctx = FakeContext(Call(call_id="call-a", db=db, caller_number=caller_number))
+    await agent.check_address(ctx, "200 Main Street", "White Plains", "10601")
+    await agent.check_availability(ctx, "2026-09-29", "morning")
+    args = {
+        "slot_id": "2026-09-29-0800",
+        "customer_type": "residential",
+        "name": "Maria Lopez",
+        "callback_number": "",
+        "address": "200 Main Street, White Plains",
+        "zip_code": "10601",
+        "issue": "no cooling",
+    }
+    return await agent.book_appointment(ctx, **(args | kwargs))
+
+
+async def test_a_withheld_caller_id_cannot_book_without_a_number(db):
+    """Simulated call 2: with caller ID withheld, a "yes" to "is this number the best one" would
+    have stored an empty phone number."""
+    with pytest.raises(ToolError, match="No callback number"):
+        await booked_call(db, None, callback_number="yes")
+    await booked_call(db, None, callback_number="914-555-0142")
+    with store.connect(db) as conn:
+        assert conn.execute("select phone from bookings").fetchone()[0] == "914-555-0142"
+
+
+def test_a_withheld_caller_id_makes_the_prompt_ask_for_a_number():
+    at = datetime(2026, 9, 29, 13, 5, tzinfo=TZ)
+    assert "Caller ID is withheld" in render_instructions(at, None)
+    assert "Caller ID is withheld" not in render_instructions(at, "+19145550100")
+
+
+async def test_a_commercial_booking_needs_the_business_name(db):
+    """Simulated call 8: four of six bookings lost the business name, which had nowhere to go."""
+    with pytest.raises(ToolError, match="business's name and a site contact"):
+        await booked_call(db, "+19145550100", customer_type="commercial", business_name=None)
+    with pytest.raises(ToolError, match="business's name and a site contact"):
+        await booked_call(
+            db, "+19145550100", customer_type="commercial", business_name="Bright Smile Dental"
+        )
+    await booked_call(
+        db,
+        "+19145550100",
+        customer_type="commercial",
+        business_name="Bright Smile Dental",
+        site_contact="Maria, the office manager",
+        note="Roof hatch in the back storage room.",
+    )
+    with store.connect(db) as conn:
+        note = conn.execute("select note from bookings").fetchone()[0]
+    assert note.startswith("Business: Bright Smile Dental. Site contact: Maria") and "hatch" in note
+
+
 async def test_moving_to_a_full_window_says_the_first_booking_still_stands(db):
     """A full window leaves the call's booking where it was (store.book), but the refusal didn't say
     so, and a model told only "that window filled up" can tell the caller they have nothing."""
