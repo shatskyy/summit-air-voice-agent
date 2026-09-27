@@ -15,7 +15,7 @@ from pathlib import Path
 
 from evals import ledger, report
 from evals.runner import CLOCKS, clock, play
-from evals.scenarios import BY_NAME, SCENARIOS
+from evals.scenarios import BY_NAME, SCENARIOS, Conversation, style
 
 DEFAULT_MODEL = "openai/gpt-4.1-mini"
 
@@ -44,6 +44,31 @@ def dirty() -> bool:
     return bool(out.stdout.strip())
 
 
+def rescore(path: Path, compare: Path | None) -> int:
+    """Run the current checks over the conversations a results file already holds. The transcript,
+    bookings and tasks are what the checks read, so a fixed check can re-grade a run for free."""
+    saved = json.loads(path.read_text())
+    meta = saved["meta"] | {"suffix": "-rescored", "rescored_with": ledger.commit()}
+    results = []
+    for r in saved["results"]:
+        if not r.get("skipped"):
+            convo = Conversation(r["transcript"], r["bookings"], r["tasks"])
+            failures = BY_NAME[r["scenario"]].check(convo)
+            failures += [f"crashed: {r['error']}"] if r["error"] else []
+            r = r | {"failures": failures, "passed": not failures, "style": style(convo)}
+            r.pop("transcript_file", None)
+        results.append(r)
+    out = report.write_results(meta, results)
+    changes = (
+        report.compare_lines(json.loads(compare.read_text())["results"], results) if compare else []
+    )
+    report.write_report(report.render(meta, results, ledger.total(ledger.load()), changes))
+    print(f"Re-graded {path.name} -> {out.name}")
+    for k, (p, n) in sorted(report.tally(results).items()):
+        print(f"  {k[0]:16} {k[1]:5} {p}/{n}")
+    return 0
+
+
 async def main() -> int:
     ap = argparse.ArgumentParser(description="Simulated calls, priced and ledgered.")
     ap.add_argument("scenarios", nargs="*", help=f"any of {', '.join(BY_NAME)}")
@@ -55,7 +80,15 @@ async def main() -> int:
     ap.add_argument("--compare", type=Path, help="an earlier results JSON to compare against")
     ap.add_argument("--label", default="", help="a note for the ledger")
     ap.add_argument("--dry-run", action="store_true", help="show the plan and estimate only")
+    ap.add_argument(
+        "--rescore",
+        type=Path,
+        metavar="FILE",
+        help="re-grade a results JSON with the current checks; no model calls, no spend",
+    )
     args = ap.parse_args()
+    if args.rescore:
+        return rescore(args.rescore, args.compare)
     unknown = [n for n in args.scenarios if n not in BY_NAME]
     if unknown:
         ap.error(f"unknown scenario(s): {', '.join(unknown)}")

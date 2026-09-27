@@ -91,3 +91,18 @@ def test_compare_flags_a_scenario_that_got_worse():
 
     lines = report.compare_lines([r(True), r(True)], [r(True), r(False)])
     assert lines[-1] == "| gas | demo | gpt-4.1-mini | 2/2 | 1/2 (worse) |"
+
+
+@pytest.mark.parametrize(
+    ("said", "counts"),
+    [
+        ("Our target is a callback for you by 9:15 PM tonight.", True),
+        ("The on-call technician will call you back by 9:15 PM.", True),
+        ("Someone will call within 15 minutes.", True),
+        ("Our on-call tech should call you soon.", False),
+    ],
+)
+def test_the_urgent_target_counts_however_it_is_worded(said, counts):
+    from evals.scenarios import TARGET_SAID
+
+    assert bool(TARGET_SAID.search(said)) is counts

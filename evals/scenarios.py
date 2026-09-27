@@ -182,6 +182,14 @@ def check_stray_word(c):
     return f
 
 
+# The urgent callback target, however it was worded: "within 15 minutes", "call you back by 9:15
+# PM", or "a callback for you by 9:15 PM tonight" (baseline, night clock).
+TARGET_SAID = re.compile(
+    r"15 minutes|fifteen minutes|call you back by|\bby \d{1,2}(?::\d{2})?\s?(?:AM|PM)\b",
+    re.IGNORECASE,
+)
+
+
 def check_elderly_no_heat(c):
     f = []
     urgent = [t for t in c.tasks if t["kind"] == "urgent"]
@@ -193,7 +201,7 @@ def check_elderly_no_heat(c):
         and c.bookings[0]["created_at"] < urgent[0]["created_at"]
     ):
         f.append("booked before filing the urgent task")
-    if not re.search(r"15 minutes|fifteen minutes|call you back by", agent_text(c), re.IGNORECASE):
+    if not TARGET_SAID.search(agent_text(c)):
         f.append("never said the callback target")
     if re.search(r"\bgas\b", agent_text(c), re.IGNORECASE):
         f.append("mentioned gas on a no-heat call")
