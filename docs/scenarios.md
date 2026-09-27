@@ -57,6 +57,16 @@ Gemma 4 31B, on a Friday night with the office closed.
 | 2026-09-25 23:06 | `RM_UJWqhsa6mgey` | A request for a person, after hours | Callback task 2004 on the first reply. The caller heard "10 AM Monday", and the stored due time is 10:00 Monday. "No" to anything else ended the call with one fixed goodbye. Name and address were filed as "unknown" again. A second room from the same number, `RM_XvXF8eKfvTnZ`, opened three seconds before this one and played only the greeting: the caller had dialed twice | Office-hours target: pass |
 | 2026-09-25 23:14 | `RM_XaXDVs2oT5di` | Silence after "anything else?" | Callback target at 23:14:41, then silence. The caller went away at 23:14:59 and heard "Are you still there?"; about 12 s after that check-in, "I'll let you go. Call us back any time." at 23:15:13. The session closed at 23:15:16 with reason `ROOM_DELETED`, which is the agent hanging up, not the caller | Silence check-in and hang-up: pass |
 
+### Bug-hunt merge (2026-09-27 on)
+
+Commit `04655e2`: the 13 bug-hunt fixes plus the widened gas pattern and the page on a failed write.
+Gemma 4 31B, Sunday afternoon with the office closed.
+
+| Date | Room | Requirement | What happened | Result |
+|---|---|---|---|---|
+| 2026-09-27 16:06 | `RM_6WiUX8kkMmL9` | Rerun of call 7: gas mid-address | Speech-to-text heard "I smell gas in the kitchen" as "I just want gas in the kitchen", so the keyword backstop never fired and the fix under test never ran. The model caught it: it gave the prompt's safety line and filed emergency task 2006 on the next turn (about 15 s after the mention), with a 4:22 PM target. The name was filed blank rather than "Unknown". The opening "My furnace stopped working" was also heard as "My phone stopped working" | Model catch: pass. Backstop: not exercised. Recognition: fail |
+| 2026-09-27 16:11 | `RM_abnXb9F2qb4b` | Rerun of call 7, said clearly | "Forty eight Severn Lane, Chapp... hold on, I smell gas in the kitchen." The backstop wrote emergency task 2007 with the caller's words and spoke the safety script. The saved call record keeps the gas sentence in order, and the model saw it (its own emergency call named the gas smell). "Yes, it's strong" got a second `create_dispatch_task`, refused with "Emergency task 2007 already exists", then the prompt's leave-the-house line, which fits a confirmed hazard. Defect: that refusal carries no callback target, so the caller never heard one. "Severn" was heard as "Southern" | Transcript fix, one task, backstop: pass. Callback target: fail |
+
 **Host.** Closing the lid at 23:13 put the Mac into clamshell sleep within seconds, although the
 worker was running under `caffeinate -s` on power. `caffeinate` holds off idle sleep, not a closed
 lid, so for the review window the laptop stays open and plugged in.
