@@ -9,10 +9,13 @@ business:
   timezone: America/New_York
 
 coverage:
-  counties: [Westchester, Rockland, Putnam]
-  # Known shortcut: ZIP prefixes approximate the three counties (109 also covers part of Orange
-  # County, and Patterson's 12563 is missed). A real deployment uses the customer's territory map.
-  zip_prefixes: ["105", "106", "107", "108", "109"]
+  # The three counties are Manhattan (New York County), Brooklyn (Kings) and Queens. Callers say the
+  # borough, so the agent does too. The Bronx and Staten Island are out, which keeps a real New York
+  # address on the out-of-area path.
+  counties: [Manhattan, Brooklyn, Queens]
+  # Known shortcut: ZIP prefixes approximate the boroughs. 110 is mostly Nassau County, so only
+  # Queens' 11004 and 11005 are listed from it. A real deployment uses the customer's territory map.
+  zip_prefixes: ["100", "101", "102", "112", "111", "113", "114", "116", "11004", "11005"]
 
 hours:
   office: { days: [mon, tue, wed, thu, fri], start: "08:00", end: "17:00" }
@@ -33,39 +36,33 @@ callback_target_minutes:
 # Words the speech recognizer should expect: the service-area towns and HVAC vocabulary.
 keyterms:
   - Summit Air
-  - White Plains
-  - Yonkers
-  - New Rochelle
-  - Mount Vernon
-  - Scarsdale
-  - Mamaroneck
-  - Larchmont
-  - Tarrytown
-  - Sleepy Hollow
-  - Ossining
-  - Peekskill
-  - Yorktown Heights
-  - Mount Kisco
-  - Chappaqua
-  - Pleasantville
-  - Port Chester
-  - Croton-on-Hudson
-  - Katonah
-  - Briarcliff Manor
-  - Nyack
-  - New City
-  - Spring Valley
-  - Suffern
-  - Pearl River
-  - Nanuet
-  - Haverstraw
-  - Stony Point
-  - Monsey
-  - Carmel
-  - Mahopac
-  - Brewster
-  - Cold Spring
-  - Putnam Valley
+  - Manhattan
+  - Brooklyn
+  - Queens
+  - Harlem
+  - Washington Heights
+  - Upper West Side
+  - Upper East Side
+  - Chelsea
+  - Tribeca
+  - Williamsburg
+  - Greenpoint
+  - Bushwick
+  - Bed-Stuy
+  - Park Slope
+  - Crown Heights
+  - Flatbush
+  - Bay Ridge
+  - Astoria
+  - Long Island City
+  - Flushing
+  - Jackson Heights
+  - Jamaica
+  - Forest Hills
+  - Ridgewood
+  - Bayside
+  - Bronx
+  - Staten Island
   - AC
   - air conditioner
   - furnace

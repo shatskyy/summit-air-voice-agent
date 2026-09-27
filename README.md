@@ -1,14 +1,14 @@
 # Summit Air Voice Agent
 
-An inbound AI phone agent for Summit Air, a fictional 40-technician HVAC company serving Westchester,
-Rockland and Putnam counties in New York. It answers the phone, works out what is wrong, separates
+An inbound AI phone agent for Summit Air, a fictional 40-technician HVAC company serving Manhattan,
+Brooklyn and Queens in New York City. It answers the phone, works out what is wrong, separates
 routine work from urgent work from a genuine emergency, and either books a real appointment or files
 a dispatch task with a stated callback target.
 
-**Try it.** Summit Air serves Westchester, Rockland and Putnam counties in New York (ZIP codes
-starting 105 to 109). An address there reaches a booking, for example 14 Maple Avenue, White Plains,
-10601. Any other address takes the out-of-area path: the agent names the three counties, and if the
-address really is outside them it offers a callback instead of a booking.
+**Try it.** Summit Air serves Manhattan, Brooklyn and Queens. An address in any of the three
+reaches a booking, for example 14 Maple Street, Brooklyn, 11225. An address anywhere else, the Bronx
+and Staten Island included, takes the out-of-area path: the agent names the three boroughs, and if
+the address really is outside them it offers a callback instead of a booking.
 
 **Read first:** the prompt, [`src/prompt.md`](src/prompt.md); the tools and the safety backstop,
 [`src/receptionist.py`](src/receptionist.py); the booking store, [`src/store.py`](src/store.py); the

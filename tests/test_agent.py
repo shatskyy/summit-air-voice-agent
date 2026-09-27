@@ -74,8 +74,8 @@ async def test_never_claims_a_booking_it_has_not_made(model, call, judge):
     """Call 1's worst moment: "Let me get a technician scheduled", then nothing happened."""
     async with conversation(model, call) as session:
         result = await session.run(
-            user_input="Hi, this is Maria Lopez. My furnace won't start. I'm at 14 Maple Avenue in White Plains, "
-            "10601, it's a house, and tomorrow morning works for me."
+            user_input="Hi, this is Maria Lopez. My furnace won't start. I'm at 14 Maple Street in Brooklyn, "
+            "11225, it's a house, and tomorrow morning works for me."
         )
         await (
             result.expect[-1]
