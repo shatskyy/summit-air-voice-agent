@@ -632,6 +632,12 @@ PAGE_PROMISE = re.compile(
 MAX_DELAY = 1.1
 DICTATION_MAX_DELAY = 2.5
 DICTATION = re.compile(r"address|street|zip|number|reach you|phone", re.IGNORECASE)
+# "Is this number the best one to reach you?" and "Did I get the address right?" name an address or
+# a number but want a yes, and a short "Yeah." is exactly what the detector scores low, so a long cap
+# there makes the most common confirmation slower than before. "Can I get your address?" still asks.
+YES_NO = re.compile(
+    r"^(?:is|are|was|were|do|does|did|has|have|will|would|should|shall)\b", re.IGNORECASE
+)
 
 
 def wants_dictation(said: str) -> bool:
@@ -639,7 +645,7 @@ def wants_dictation(said: str) -> bool:
     if "?" not in said:
         return False
     question = re.split(r"(?<=[.!?])\s+", said[: said.rindex("?") + 1])[-1]
-    return bool(DICTATION.search(question))
+    return bool(DICTATION.search(question)) and not YES_NO.match(question)
 
 
 async def keep_promise(call: Call, text: str) -> bool:

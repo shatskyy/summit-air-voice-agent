@@ -732,6 +732,10 @@ async def test_ordinary_lines_and_filed_pages_file_nothing(db, monkeypatch):
             False,
         ),  # the address, not a question
         ("You're booked. Your reference number is 1001.", False),  # no question at all
+        # Confirmations that name a number or an address but want a yes (the 18:33 call).
+        ("Is this number I'm speaking on the best to reach you?", False),
+        ("Did I get the address right?", False),
+        ("Can I get the address there?", True),
     ],
 )
 def test_the_long_wait_is_only_for_dictating_an_address_or_number(said, dictation):
