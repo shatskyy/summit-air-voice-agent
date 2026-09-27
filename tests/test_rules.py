@@ -825,7 +825,9 @@ def test_evenings_and_weekends_are_after_hours():
 def test_no_test_can_page_the_real_on_call_phone():
     """tests/test_agent.py loads .env.local, which names the real ntfy topic, so on 9/25 a model test
     that filed an urgent task paged the on-call phone ("Summit Air urgent #2001" at 22:39)."""
-    assert "NTFY_TOPIC" not in sorted(receptionist.os.environ)  # keys only, never values
+    from conftest import PAGE_TOPICS
+
+    assert not set(PAGE_TOPICS) & set(receptionist.os.environ)  # keys only, never values
 
 
 # The on-call page
@@ -885,3 +887,27 @@ def test_the_hosted_turn_detector_is_pinned(monkeypatch):
     monkeypatch.setenv("LIVEKIT_API_KEY", "test-key")
     monkeypatch.setenv("LIVEKIT_API_SECRET", "test-secret")
     assert agent.turn_detector().model == "turn-detector-v1"
+
+
+@pytest.mark.parametrize(
+    ("metadata", "health"),
+    [
+        ('{"healthcheck": true}', True),
+        ("", False),
+        (None, False),
+        ('{"healthcheck": "yes"}', False),
+        ("not json", False),
+        ("[1]", False),
+    ],
+)
+def test_only_the_watchdog_metadata_marks_a_health_check(metadata, health):
+    import agent
+
+    assert agent.is_healthcheck(metadata) is health
+
+
+def test_a_heartbeat_is_recorded_per_room(db):
+    assert store.heartbeat_at(db, "health-1") is None
+    store.add_heartbeat(db, "health-1")
+    assert store.heartbeat_at(db, "health-1") is not None
+    assert store.heartbeat_at(db, "health-2") is None

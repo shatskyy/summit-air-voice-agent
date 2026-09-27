@@ -91,3 +91,21 @@ call-1 replay. Gemma leads, since its first sentence arrives at 0.33 s median ag
 in the morning, and 3 of 5 twice that night on `26935d8`. Its two night failures: it didn't call
 `check_availability` when asked for tomorrow morning, and it didn't file the urgent task for an
 80-year-old without heat. It only answers if Gemma fails mid-call.
+
+## Operations
+
+The worker runs under launchd `start` from 2026-09-27 19:22 (`ops/launchd/`), and a watchdog checks
+it every 5 minutes by dispatching a health-check job and waiting for its heartbeat row. Drills run
+2026-09-27 on `main`:
+
+| Time | Drill | What happened | Result |
+|---|---|---|---|
+| 19:22 | Switch from `dev` to launchd `start` | No `call-*` room open and no worker process running (the `dev` worker had already exited). `launchctl bootstrap` started it; "registered worker" 3 s later | Pass |
+| 19:26 | First health check | Worker wrote the heartbeat 0.9 s after the dispatch; room deleted, no `calls` row written | Pass |
+| 19:27 | Kill the worker process | `kill` on the worker's `uv` process at 19:27:03. launchd started a new one and it registered 4 s later. One worker tree afterwards, no orphans | Pass |
+| 19:27 | Watchdog, worker stopped | `launchctl bootout`, then the watchdog by hand (`--dry-run`): "line is DOWN: no heartbeat within 15 s", exit 1 | Pass |
+| 19:27 | Watchdog, worker started | `launchctl bootstrap`, then the watchdog by hand: "answered in 2.8 s" (the process was still warming), exit 0 | Pass |
+| 19:28 | Watchdog under launchd | First scheduled run: up in 0.9 s, on AC, and the day's "all good" sent to the ntfy topic | Pass |
+
+Each health check uses the warm idle process; the worker starts a replacement in about 2 s, so a
+real call arriving in that gap waits for it.

@@ -126,8 +126,18 @@ def log_turn_latency(event: ConversationItemAddedEvent) -> None:
     logger.info("turn latency role=%s %s", getattr(item, "role", "?"), fields)
 
 
+def is_healthcheck(metadata: str | None) -> bool:
+    """Whether this job is the watchdog's health check (scripts/watchdog.py), not a call."""
+    try:
+        return json.loads(metadata or "{}").get("healthcheck") is True
+    except (json.JSONDecodeError, AttributeError):
+        return False
+
+
 async def save_call_record(ctx: JobContext) -> None:
     """Keep the transcript, tool calls and timings next to the bookings they produced."""
+    if is_healthcheck(ctx.job.metadata):
+        return
     try:
         report = ctx.make_session_report()
     except RuntimeError:
@@ -144,6 +154,14 @@ server = AgentServer(num_idle_processes=1)
 @server.rtc_session(agent_name=AGENT_NAME, on_session_end=save_call_record)
 async def entrypoint(ctx: JobContext) -> None:
     ctx.log_context_fields = {"room": ctx.room.name}
+
+    if is_healthcheck(ctx.job.metadata):
+        # The watchdog's probe: prove this worker takes jobs and can write the store, then leave.
+        await asyncio.to_thread(init_store, DEFAULT_DB)
+        await asyncio.to_thread(store.add_heartbeat, DEFAULT_DB, ctx.room.name)
+        logger.info("health check answered")
+        ctx.shutdown(reason="health check")
+        return
 
     caller = await ctx.wait_for_participant()
     call = Call(call_id=ctx.room.name, caller_number=caller_number(caller))

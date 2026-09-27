@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.shatsky.summit-air-watchdog</string>
+
+  <!-- Every 5 minutes: dispatch a health-check job to the Summit Air worker and wait for its
+       heartbeat, check the Mac is on AC power, and page through ntfy only when either changes,
+       plus one all-good after 9 AM each day (scripts/watchdog.py). -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/uv</string>
+    <string>run</string>
+    <string>python</string>
+    <string>scripts/watchdog.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/path/to/summit-air-voice-agent</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>300</integer>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/path/to/summit-air-voice-agent/logs/watchdog.log</string>
+  <key>StandardErrorPath</key>
+  <string>/path/to/summit-air-voice-agent/logs/watchdog.log</string>
+</dict>
+</plist>

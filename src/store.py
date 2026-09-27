@@ -1,6 +1,6 @@
 """The booking store: one SQLite file on the host's disk.
 
-Slots, bookings, dispatch tasks and call records live here, and this is the only file with SQL in
+Slots, bookings, dispatch tasks, call records and health-check heartbeats live here, and this is the only file with SQL in
 it. Each write is a single statement, so SQLite's own locking provides capacity, idempotency and
 in-call correction without application-level locks, even though every call runs in its own process.
 Callers run these functions through asyncio.to_thread.
@@ -56,6 +56,12 @@ create table if not exists calls (
     caller_number text,
     started_at text not null default (datetime('now')),
     report_json text
+);
+
+-- One row per watchdog health check (scripts/watchdog.py): the worker took a job and could write.
+create table if not exists heartbeats (
+    room text primary key,
+    at text not null default (datetime('now'))
 );
 
 -- Start references at speakable four-digit numbers.
@@ -183,3 +189,15 @@ def save_call(
     """
     with connect(path) as conn:
         conn.execute(sql, (call_id, caller_number, report_json))
+
+
+def add_heartbeat(path: Path, room: str) -> None:
+    with connect(path) as conn:
+        conn.execute("insert or replace into heartbeats (room) values (?)", (room,))
+
+
+def heartbeat_at(path: Path, room: str) -> str | None:
+    """When the worker answered the health check in `room`, or None if it hasn't."""
+    with connect(path) as conn:
+        row = conn.execute("select at from heartbeats where room = ?", (room,)).fetchone()
+        return row["at"] if row else None
