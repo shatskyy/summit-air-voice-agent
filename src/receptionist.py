@@ -241,15 +241,19 @@ async def file_task(
     )
     if kind == "callback":
         return ref, due, None
-    page = asyncio.create_task(
-        page_on_call(
-            f"Summit Air {kind} #{ref}",
-            f"{reason}\n{summary}\n{phone or call.caller_number or ''} {address}",
-        )
+    page = start_page(
+        f"Summit Air {kind} #{ref}",
+        f"{reason}\n{summary}\n{phone or call.caller_number or ''} {address}",
     )
+    return ref, due, page
+
+
+def start_page(title: str, message: str) -> asyncio.Task[bool]:
+    """Page the on-call phone in the background. The task's result is whether ntfy accepted it."""
+    page = asyncio.create_task(page_on_call(title, message))
     _background.add(page)
     page.add_done_callback(_background.discard)
-    return ref, due, page
+    return page
 
 
 async def confirmed(page: asyncio.Task[bool]) -> bool:
@@ -552,15 +556,18 @@ async def say_goodbye(event: llm.Toolset.ToolCalledEvent) -> None:
 
 async def flag_hazard(call: Call, text: str) -> bool:
     """Record an emergency task the first time a caller mentions a hazard. True means speak the script,
-    even when the task could not be written: a failed write is logged, and the model can still file
-    the task, but nothing may stand between the caller and the safety script."""
+    even when the task could not be written: nothing may stand between the caller and the safety
+    script. A failed write still pages on-call, because once the script has played the prompt tells
+    the model the task exists, so the model won't file it either."""
     if call.warned or call.hazard_task is not None or not HAZARD.search(text):
         return False
     call.warned = True  # set before the write, so a failed write can't replay the script
+    reason = "possible gas, carbon monoxide or smoke"
     try:
-        call.hazard_task, _, _ = await file_task(
-            call, "emergency", "possible gas, carbon monoxide or smoke", text
-        )
+        call.hazard_task, _, _ = await file_task(call, "emergency", reason, text)
     except Exception:
-        logger.exception("the emergency task was not recorded; the safety script plays anyway")
+        logger.exception("the emergency task was not recorded; paging on-call without it")
+        start_page(
+            "Summit Air emergency, not recorded", f"{reason}\n{text}\n{call.caller_number or ''}"
+        )
     return True

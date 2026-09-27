@@ -533,6 +533,31 @@ async def test_the_safety_script_plays_even_when_the_emergency_task_cannot_be_wr
     assert line.said == [receptionist.SAFETY_SCRIPT]
 
 
+async def test_on_call_is_paged_even_when_the_emergency_task_cannot_be_written(db, monkeypatch):
+    """Once the safety script has played, the prompt tells the model the emergency task already
+    exists, so it won't file one. If the backstop's write failed, the page is the only way on-call
+    hears about it."""
+    pages = []
+
+    async def fake_page(title, message):
+        pages.append(message)
+        return True
+
+    def locked(*args, **kwargs):
+        raise store.sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(store, "add_task", locked)
+    call = Call(call_id="call-a", caller_number="+19145550100", db=db)
+
+    assert await flag_hazard(call, "I smell gas in the kitchen") is True
+    await receptionist.asyncio.sleep(0)
+
+    assert len(pages) == 1
+    assert "I smell gas in the kitchen" in pages[0]
+    assert "+19145550100" in pages[0]
+
+
 async def test_an_emergency_the_model_filed_is_the_calls_one_emergency_task(db, monkeypatch):
     """The keyword list misses some hazards ("I smell propane"), so the model files those itself. A
     later keyword match or a second model call must not file a second task and page again."""
