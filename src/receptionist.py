@@ -102,13 +102,18 @@ def office_open(at: datetime) -> bool:
     return day in office["days"] and office["start"] <= at.strftime("%H:%M") < office["end"]
 
 
+def counties_spoken() -> str:
+    """The service counties as a caller hears them: "Westchester, Rockland and Putnam"."""
+    counties = CONFIG["coverage"]["counties"]
+    return ", ".join(counties[:-1]) + " and " + counties[-1]
+
+
 def render_instructions(at: datetime, caller_number: str | None) -> str:
     office = CONFIG["hours"]["office"]
     hours = f"Office hours are Monday to Friday, {speak_clock(office['start'])} to {speak_clock(office['end'])}."
-    counties = CONFIG["coverage"]["counties"]
     return PROMPT.format(
         business_name=CONFIG["business"]["name"],
-        counties=", ".join(counties[:-1]) + " and " + counties[-1],
+        counties=counties_spoken(),
         today=f"{at:%A}, {at:%B} {at.day}, {at.year}",
         time=speak_clock(at.strftime("%H:%M")),
         office_status=("The office is open. " if office_open(at) else "The office is closed. ")
@@ -371,7 +376,8 @@ class SummitAirAgent(Agent):
             return (
                 f"ZIP {zip_code} is outside the service area. Don't offer times or book. Read the "
                 "ZIP back once to make sure you heard it right. If it is right, say Summit Air "
-                "doesn't serve that area yet, offer a callback, and ask if there is anything else."
+                f"covers {counties_spoken()} counties in New York, and ask whether the address is in "
+                "one of them. If it isn't, offer a callback and ask if there is anything else."
             )
         context.userdata.checked_zip = zip_code
         return (

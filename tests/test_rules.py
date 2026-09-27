@@ -164,6 +164,8 @@ async def test_an_address_outside_the_area_is_caught_before_any_window(db):
     ctx = FakeContext(Call(call_id="call-a", db=db))
     result = await SummitAirAgent("").check_address(ctx, "48 Severn Lane", "Chappaqua", "10003")
     assert "outside the service area" in result and "Don't offer times" in result
+    # A tester who gives their own address has to hear where Summit Air works, or it's a dead end.
+    assert "Westchester, Rockland and Putnam" in result
     assert ctx.userdata.checked_zip is None
 
 
