@@ -875,3 +875,13 @@ async def test_the_model_is_told_paged_only_when_ntfy_accepted_the_page(db, ntfy
     ctx = FakeContext(Call(call_id="call-b", db=db, caller_number="+19145550100"))
     accepted = await SummitAirAgent("").create_dispatch_task(ctx, "urgent", "no heat", "mother 78")
     assert "was paged" in accepted
+
+
+def test_the_hosted_turn_detector_is_pinned(monkeypatch):
+    """Unpinned, `start` on this Mac picks the local v1-mini and replies wait about 3.1 s (call 5)."""
+    import agent
+
+    monkeypatch.delenv("LIVEKIT_DEV_MODE", raising=False)
+    monkeypatch.setenv("LIVEKIT_API_KEY", "test-key")
+    monkeypatch.setenv("LIVEKIT_API_SECRET", "test-secret")
+    assert agent.turn_detector().model == "turn-detector-v1"

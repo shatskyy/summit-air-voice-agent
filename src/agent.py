@@ -90,6 +90,16 @@ def speech():
     return inference.STT(model="assemblyai/universal-3-5-pro", language="en"), inworld_voice()
 
 
+def turn_detector() -> inference.TurnDetector:
+    """The hosted v1 detector, pinned. Unpinned, the plugin picks v1 only under `dev` or on LiveKit
+    Cloud hosting, so `start` on this Mac silently ran the local v1-mini. On call 5, v1-mini scored
+    complete short answers ("It's at a home.", "Yes.") below its threshold, so each reply waited the
+    full max_delay: about 3.1 s end to end. v1 scored the same kind of turn 0.6 to 0.99 on call 3,
+    and it bills against a separate monthly request quota, not the credit. If the hosted model
+    can't be reached it falls back to v1-mini by itself (local_fallback)."""
+    return inference.TurnDetector(version="v1", local_fallback=True)
+
+
 # What Twilio sends in place of a withheld number: the words spelled out on a phone keypad
 # (ANONYMOUS, UNAVAILABLE, UNKNOWN, BLOCKED, RESTRICTED).
 WITHHELD = {"+266696687", "+86282452253", "+8656696", "+2562533", "+7378742833"}
@@ -147,11 +157,7 @@ async def entrypoint(ctx: JobContext) -> None:
         tts=speaking,
         llm=llm.FallbackAdapter([make_llm(LLM_MODEL), make_llm(FALLBACK_LLM_MODEL)]),
         turn_handling=TurnHandlingOptions(
-            # The hosted v1 detector, not the local v1-mini. On call 5, v1-mini scored complete short
-            # answers ("It's at a home.", "Yes.") below its threshold, so each reply waited the full
-            # max_delay: about 3.1 s end to end. v1 scored the same kind of turn 0.6 to 0.99 on
-            # call 3, and it bills against a separate monthly request quota, not the credit.
-            turn_detection=inference.TurnDetector(),
+            turn_detection=turn_detector(),
             # Deepgram's final transcript can land after a 0.5 s wait, splitting one sentence into
             # two turns (call 4). 0.7 s gives it room. max_delay caps the wait when the detector
             # thinks the caller is mid-thought; set_patience stretches it for dictation.
