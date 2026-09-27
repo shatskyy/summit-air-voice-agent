@@ -1,0 +1,26 @@
+{
+  "cap": 3.0,
+  "total": 0.156535,
+  "runs": [
+    {
+      "at": "2026-09-27T19:35:08-04:00",
+      "commit": "7b5525e",
+      "kind": "eval",
+      "label": "calibration",
+      "conversations": 2,
+      "estimate": 0.06,
+      "cost": 0.00828,
+      "results": "evals/results/2026-09-27-1934-7b5525e.json"
+    },
+    {
+      "at": "2026-09-27T19:37:10-04:00",
+      "commit": "7b5525e",
+      "kind": "eval",
+      "label": "baseline (before)",
+      "conversations": 28,
+      "estimate": 0.1159,
+      "cost": 0.148255,
+      "results": "evals/results/2026-09-27-1935-7b5525e.json"
+    }
+  ]
+}
