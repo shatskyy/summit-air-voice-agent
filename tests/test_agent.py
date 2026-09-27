@@ -1,10 +1,15 @@
-"""Conversation checks against a real model. They spend LiveKit Inference credit (about a cent per
-model per run), so they only run when asked for: `uv run pytest -m llm`.
+"""Conversation checks against a real OpenAI model, on OPENAI_API_KEY. They spend real money, so
+they only run when asked for, and every run goes through the spend ledger (evals/spend.json):
 
-Each test runs against both candidate models; the results decide which one answers the phone.
+    uv run pytest -m llm               # GPT-4.1 mini, the model that answers the phone
+    uv run pytest -m llm --fallback    # GPT-4.1 as well, the fallback (or LLM_TESTS_FALLBACK=1)
+
+The run is refused before any test starts if its estimate is over what the ledger allows or the
+OpenAI balance is under $1.50, and what it cost is recorded when it ends.
 Text tests prove turn logic and tool routing, not audio, latency or barge-in. Those need a call.
 """
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,6 +17,8 @@ import pytest
 from dotenv import load_dotenv
 from livekit.agents import AgentSession
 
+from evals import ledger
+from evals.pricing import track
 from models import make_llm
 from receptionist import Call, SummitAirAgent, init_store, now, render_instructions
 
@@ -19,12 +26,46 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env.local")
 
 pytestmark = pytest.mark.llm
 
-MODELS = ["openai/gpt-4.1-mini", "openai/gpt-4.1"]
+PRIMARY = "openai/gpt-4.1-mini"
+FALLBACK = "openai/gpt-4.1"
+JUDGE = "openai/gpt-4.1-mini"
+PER_TEST = {PRIMARY: 0.01, FALLBACK: 0.05}  # USD, generous: one agent turn and a judge call
+USAGE = []  # every model instance the tests make, tracked
 
 
-@pytest.fixture(params=MODELS)
-def model(request):
-    return request.param
+def models(config) -> list[str]:
+    fallback = config.getoption("--fallback") or os.getenv("LLM_TESTS_FALLBACK") == "1"
+    return [PRIMARY, FALLBACK] if fallback else [PRIMARY]
+
+
+def pytest_generate_tests(metafunc):
+    if "model" in metafunc.fixturenames:
+        metafunc.parametrize("model", models(metafunc.config))
+
+
+def tracked(model: str):
+    instance = make_llm(model)
+    USAGE.append(track(instance, model))
+    return instance
+
+
+@pytest.fixture(scope="module", autouse=True)
+def spend(request):
+    """Check the ledger before the first test and record the cost after the last."""
+    chosen = [
+        item
+        for item in request.session.items
+        if item.get_closest_marker("llm") and item.fspath == request.fspath
+    ]
+    estimate = sum(PER_TEST[item.callspec.params["model"]] for item in chosen)
+    try:
+        ledger.check(estimate)
+    except ledger.Refused as refused:
+        pytest.exit(f"Refused: {refused}", returncode=2)
+    yield
+    cost = sum(u.cost for u in USAGE)
+    total = ledger.record("pytest-llm", ", ".join(models(request.config)), cost, estimate=estimate)
+    print(f"\npytest -m llm cost ${cost:.4f}; ledger total ${total:.4f}")
 
 
 @pytest.fixture
@@ -36,14 +77,14 @@ def call(tmp_path):
 
 @pytest.fixture
 async def judge():
-    async with make_llm("openai/gpt-4.1-mini") as judge_llm:
+    async with tracked(JUDGE) as judge_llm:
         yield judge_llm
 
 
 @asynccontextmanager
 async def conversation(model, call):
     async with (
-        make_llm(model) as agent_llm,
+        tracked(model) as agent_llm,
         AgentSession(llm=agent_llm, userdata=call) as session,
     ):
         await session.start(SummitAirAgent(render_instructions(now(), call.caller_number)))

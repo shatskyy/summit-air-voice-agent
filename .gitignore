@@ -19,6 +19,8 @@ data/
 *.sqlite
 recordings/
 transcripts/
+# Failing simulated calls are committed with their results.
+!evals/results/transcripts/
 
 # OS / editor
 .DS_Store

@@ -825,7 +825,7 @@ def test_evenings_and_weekends_are_after_hours():
 def test_no_test_can_page_the_real_on_call_phone():
     """tests/test_agent.py loads .env.local, which names the real ntfy topic, so on 9/25 a model test
     that filed an urgent task paged the on-call phone ("Summit Air urgent #2001" at 22:39)."""
-    from conftest import PAGE_TOPICS
+    from evals import PAGE_TOPICS
 
     assert not set(PAGE_TOPICS) & set(receptionist.os.environ)  # keys only, never values
 

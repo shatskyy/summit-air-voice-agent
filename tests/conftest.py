@@ -1,8 +1,14 @@
 import pytest
 
-# Every ntfy topic the code can page. .env.local names the real ones; a new topic variable joins this
-# list in the commit that adds it.
-PAGE_TOPICS = ("NTFY_TOPIC", "WATCHDOG_NTFY_TOPIC")
+from evals import PAGE_TOPICS  # every ntfy topic the code can page; new ones join that list
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--fallback",
+        action="store_true",
+        help="also run the llm tests on GPT-4.1, the fallback model (or set LLM_TESTS_FALLBACK=1)",
+    )
 
 
 @pytest.fixture(autouse=True)

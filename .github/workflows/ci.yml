@@ -1,5 +1,6 @@
 # Deterministic checks only: lint, format and the rule tests. No secrets, no model, no credit.
-# The model-backed tests (`pytest -m llm`) spend LiveKit Inference credit and stay manual.
+# The model-backed tests (`pytest -m llm`) and the simulator (`python -m evals`) spend OpenAI
+# credit through the spend ledger and stay manual.
 name: CI
 
 on:
