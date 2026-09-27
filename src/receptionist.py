@@ -85,6 +85,7 @@ class Call:
     offered: dict[str, str] = field(default_factory=dict)  # slot id -> how it was spoken
     checked_zip: str | None = None  # the in-area ZIP check_address passed on this call
     hazard_task: int | None = None
+    hazard_due: datetime | None = None  # the emergency task's callback target, for a repeat attempt
     warned: bool = False  # the safety script has been given, whether or not its task was written
 
 
@@ -489,12 +490,20 @@ class SummitAirAgent(Agent):
         """
         call = context.userdata
         if kind == "emergency" and call.hazard_task is not None:
-            return f"Emergency task {call.hazard_task} already exists."
+            target = (
+                f" The callback target is {speak_due(call.hazard_due, now())}."
+                if call.hazard_due
+                else ""
+            )
+            return (
+                f"Emergency task {call.hazard_task} already exists and on-call has it.{target} "
+                "Tell the caller the target, and never promise an arrival time."
+            )
         ref, due, page = await file_task(
             call, kind, reason, summary, given(name), given(callback_number), given(address)
         )
         if kind == "emergency":
-            call.hazard_task = ref  # one emergency task per call, whoever filed it first
+            call.hazard_task, call.hazard_due = ref, due  # one emergency task per call
         if page is None:
             who = "Dispatch has the callback"
         elif await confirmed(page):
@@ -564,7 +573,7 @@ async def flag_hazard(call: Call, text: str) -> bool:
     call.warned = True  # set before the write, so a failed write can't replay the script
     reason = "possible gas, carbon monoxide or smoke"
     try:
-        call.hazard_task, _, _ = await file_task(call, "emergency", reason, text)
+        call.hazard_task, call.hazard_due, _ = await file_task(call, "emergency", reason, text)
     except Exception:
         logger.exception("the emergency task was not recorded; paging on-call without it")
         start_page(

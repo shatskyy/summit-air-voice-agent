@@ -576,7 +576,7 @@ async def test_an_emergency_the_model_filed_is_the_calls_one_emergency_task(db, 
     again = await SummitAirAgent("").create_dispatch_task(
         ctx, "emergency", "propane", "still there"
     )
-    assert "already exists" in again
+    assert "already exists" in again and "The callback target is" in again
     await receptionist.asyncio.sleep(0)
     with store.connect(db) as conn:
         assert (
@@ -594,6 +594,11 @@ async def test_a_hazard_files_one_emergency_task_per_call(db, monkeypatch):
     assert await flag_hazard(call, "I smell gas") is True
     assert await flag_hazard(call, "yes, it's really strong gas smell") is False
     assert call.hazard_task == 2001
+    # The model's repeat attempt is refused, but still hands it the target to tell the caller.
+    again = await SummitAirAgent("").create_dispatch_task(
+        FakeContext(call), "emergency", "gas", "strong smell"
+    )
+    assert "already exists" in again and "The callback target is" in again
 
 
 # The prompt
