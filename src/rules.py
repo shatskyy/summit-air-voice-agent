@@ -13,10 +13,10 @@ if TYPE_CHECKING:
 
     from receptionist import Call
 
-# Known shortcut: a keyword list over-triggers by design (a chirping smoke detector matches). The
-# script below is worded to be harmless when that happens, and a clear no to it cancels the page; a
-# classifier is the upgrade if false alarms cost calls. A negation just before a match, in the same
-# clause, cancels that match (hazard_in).
+# Known shortcut: a keyword list over-triggers by design. The safety script is worded to be
+# harmless when that happens, and a clear no to it cancels the page; a classifier is the upgrade if
+# false alarms cost calls. A negation just before a match, in the same clause, cancels that match
+# (hazard_in), and so does a detector that is only asking for a battery (benign_detector).
 # Words that can stand between the fuel and "leak": "gas is leaking", "the propane tank might be
 # leaking". None names an appliance, so "my gas furnace is leaking water" stays a routine call.
 LEAK_BRIDGE = r"(?:(?:is|was|tank|lines?|pipes?|might|may|could|be|seems|to|still)\W+){0,3}"
@@ -38,12 +38,72 @@ NEGATED = re.compile(
 )
 CLAUSE = re.compile(r"[,.;!?]|\bbut\b", re.IGNORECASE)
 
+# A detector asking for a battery is the most common "alarm" call and almost never a hazard. A
+# smoke detector chirping or reporting a low battery is routine from the first mention. A carbon
+# monoxide detector still gets the script on first mention, because a CO alarm and a CO low-battery
+# chirp are easy to confuse and every guidance source says to treat doubt as an alarm; once the
+# caller has heard the script, "no, it's just the battery" is taken at their word. Anything that
+# sounds like a real alarm, a new battery, a symptom or another hazard keeps the match.
+DETECTOR = re.compile(
+    r"(?:smoke|co|carbon monoxide|monoxide)\W+(?:alarms?|detectors?)\b", re.IGNORECASE
+)
+LOW_BATTERY = re.compile(
+    r"\blow\W+batter(?:y|ies)\b"
+    r"|\bbatter(?:y|ies)(?:'s|\W+(?:is|are|was|must be|might be|seems|sounds))?\W+(?:\w+\W+)?"
+    r"(?:low|dying|dead|died|going|running (?:low|out)|out)\b"
+    r"|\b(?:needs?|for)\W+(?:a\W+)?(?:new\W+)?batter(?:y|ies)\b"
+    r"|\b(?:just|it'?s|that'?s)\W+(?:the\W+|a\W+)?(?:\w+\W+){0,3}batter(?:y|ies)\b",
+    re.IGNORECASE,
+)
+CHIRP = re.compile(r"\bchirp\w*", re.IGNORECASE)
+ALARMING = re.compile(
+    r"\bgoing off\b|\bwent off\b|\bsounding\b|\bblaring\b|\bscreaming\b|\bwon'?t stop\b|\bstill\b"
+    r"|\bbatter(?:y|ies)\W+(?:is|are)\W+(?:brand\W+)?new\b|\bfresh batter"
+    r"|\b(?:put|installed|changed|replaced|swapped)\W+(?:in\W+)?(?:\w+\W+){0,2}batter"
+    r"|\bheadaches?\b|\bdizzy\b|\bnause|\bsick\b|\bsleepy\b|\bfaint|\bthermostat\b"
+    r"|\bsmell|\bflames?\b|\bfire\b|\bsparks?\b|\bgas\b|\bpropane\b|\bsee (?:the |any )?smoke\b"
+    r"|\bsmoke (?:is |coming|pouring|everywhere|in )|\bsmoky\b|\bsmoking\b|\b(?:four|4) beeps\b",
+    re.IGNORECASE,
+)
 
-def hazard_in(text: str) -> bool:
-    """Whether the turn names a hazard that isn't negated in its own clause."""
+
+def benign_detector(text: str, start: int, after_script: bool) -> bool:
+    """Whether the hazard match at `start` is a detector asking for a battery and nothing more."""
+    detector = DETECTOR.match(text, start)
+    if detector is None or ALARMING.search(text):
+        return False
+    smoke = detector.group().lower().startswith("smoke")
+    battery = bool(LOW_BATTERY.search(text)) or (smoke and bool(CHIRP.search(text)))
+    return battery and (smoke or after_script)
+
+
+def hazard_in(text: str, after_script: bool = False) -> bool:
+    """Whether the turn names a hazard that isn't negated in its own clause and isn't a detector
+    asking for a battery. `after_script`: the caller has already heard the safety script."""
     return any(
-        not NEGATED.search(CLAUSE.split(text[: m.start()])[-1]) for m in HAZARD.finditer(text)
+        not NEGATED.search(CLAUSE.split(text[: m.start()])[-1])
+        and not benign_detector(text, m.start(), after_script)
+        for m in HAZARD.finditer(text)
     )
+
+
+# Gas the caller isn't sure of: "I don't think it's gas, but there's a weird smell". It gets the
+# script on first mention, like any gas smell. It is kept out of the answer checks below, so a
+# hedged "no, I don't think it's gas" to the script never counts as confirming an emergency.
+HEDGED_GAS = re.compile(
+    r"\b(?:don'?t|do not)\W+(?:think|know|believe)\W+(?:if\W+)?(?:it'?s|it is|that'?s|there'?s)\W+"
+    r"(?:\w+\W+)?(?:gas|propane)\b"
+    r"|\b(?:not sure|unsure|no idea)\W+(?:if\W+|whether\W+)?(?:it'?s|it is|that'?s)\W+(?:\w+\W+)?"
+    r"(?:gas|propane)\b"
+    r"|\b(?:might|could|may)\W+be\W+(?:\w+\W+)?(?:gas|propane)\b|\bhope\W+it'?s\W+not\W+(?:gas|propane)\b",
+    re.IGNORECASE,
+)
+ODOR = re.compile(r"\b(?:smell\w*|odou?r|stinks?|stench)\b", re.IGNORECASE)
+
+
+def gas_suspected(text: str) -> bool:
+    """A hedged gas smell, for the first mention only (see HEDGED_GAS)."""
+    return bool(HEDGED_GAS.search(text) and ODOR.search(text))
 
 
 # The answers to the safety script's closing question. A clear no is short and only a no; anything
@@ -65,12 +125,12 @@ def clear_no(text: str) -> bool:
         bool(CLEAR_NO.match(text))
         and len(text.split()) <= 8
         and not NOT_ONLY_NO.search(text)
-        and not hazard_in(text)
+        and not hazard_in(text, after_script=True)
     )
 
 
 def confirms(text: str) -> bool:
-    return bool(CONFIRM.match(text)) or hazard_in(text)
+    return bool(CONFIRM.match(text)) or hazard_in(text, after_script=True)
 
 
 # Urgent is decided in code, not left to the model: no heat or cooling, with someone at risk in the
@@ -99,6 +159,26 @@ HEAT_DOWN = re.compile(
     r"|isn'?t heating|not coming on|gone)\b",
     re.IGNORECASE,
 )
+# The opposite failure: heat that won't turn off is a repair, not a failed system. Read in the
+# clause the match starts, so "the heat won't turn on, it won't stop clicking" still counts.
+STUCK_ON = re.compile(
+    r"\b(?:won'?t|will not|can'?t|cannot|doesn'?t|does not|isn'?t|is not|not)\W+(?:\w+\W+)?"
+    r"(?:turn(?:ing)?|shut(?:ting)?|switch(?:ing)?|click(?:ing)?|cut(?:ting)?|go(?:ing)?)\W+off\b"
+    r"|\bwon'?t stop\b|\bstuck on\b",
+    re.IGNORECASE,
+)
+DOWN_CLAUSE_END = re.compile(r"[,.;!?]|\b(?:and|but)\b", re.IGNORECASE)
+
+
+def down_in(pattern: re.Pattern, text: str) -> bool:
+    """Whether `pattern` (SYSTEM_DOWN or HEAT_DOWN) finds a failed system that isn't stuck on."""
+    for match in pattern.finditer(text):
+        clause = DOWN_CLAUSE_END.split(text[match.start() :], maxsplit=1)[0]
+        if not STUCK_ON.search(clause):
+            return True
+    return False
+
+
 # The caller saying it is cold, in the home or outside. "Freezing up" (an iced coil) and "blowing
 # cold" (an AC) don't count, and COLD only matters beside HEAT_DOWN.
 _COLD_NUMBER = (
@@ -134,8 +214,13 @@ AT_RISK = re.compile(
     re.IGNORECASE,
 )
 # A denial earlier in the same clause: "no one elderly", "nobody's at risk".
+# "No heat and my mom is 82" is not a denial: the "no" is about the heat, so a failed system named
+# right after it, or an "and" or "so" between the denial and the person, ends the denial.
 RISK_DENIED = re.compile(
-    r"\b(?:no|not|nobody|no one|none|isn'?t|aren'?t)\b" + r"(?:\W+\w+){0,3}\W*$", re.IGNORECASE
+    r"\b(?:no|not|nobody|no one|none|isn'?t|aren'?t)\b"
+    r"(?!\W+(?:heat|heating|hot|ac|a/?c|air|cooling|power|working|coming)\b)"
+    r"(?:\W+(?!(?:and|so|because|plus)\b)\w+){0,3}\W*$",
+    re.IGNORECASE,
 )
 NOBODY = re.compile(r"\b(?:nobody|no one|just me|i'?m fine)\b", re.IGNORECASE)
 PLAIN_YES = re.compile(r"^\W*(?:yes|yeah|yep|yup|she is|he is|they are)\b", re.IGNORECASE)
@@ -144,12 +229,70 @@ RISK_QUESTION = re.compile(
 )
 
 
+# A relative the caller names who isn't in the home: "since my dad passed", "my late father's
+# house", "my mom's in Florida, the AC at my place is out", "my parents are away". Only a named
+# relation can be away; an age, a baby or a medical condition is taken as in the home. A place
+# said after the relation only counts when the caller also makes the home their own ("my place",
+# "it's just me"), so "I'm calling for my mom, she's in Queens and her heat is out" still pages.
+RELATIVE = re.compile(
+    r"mother|mom|mum|father|dad|parents?|grandmother|grandma|grandfather|grandpa|grandparents?"
+    r"|granny",
+    re.IGNORECASE,
+)
+GONE_AFTER = re.compile(
+    r"(?:'s)?(?:\W+(?:has|had|just|recently|sadly|already|who|that))*\W+"
+    r"(?:passed(?:\W+(?:away|on))?\b(?!\W+out)|died\b|is gone\b|is no longer with us\b)",
+    re.IGNORECASE,
+)
+LATE_BEFORE = re.compile(r"\blate\W+$", re.IGNORECASE)
+AWAY_AFTER = re.compile(
+    r"(?:'s|'re|\W+(?:is|are))\W+(?:away|out of (?:town|state|the country)|on vacation"
+    r"|travell?ing|not (?:home|here|there))\b",
+    re.IGNORECASE,
+)
+AWAY = re.compile(
+    r"\b(?:she|he|they)(?:'s|'re|\W+(?:is|are))\W+(?:away|out of (?:town|state|the country)"
+    r"|on vacation|travell?ing|not (?:home|here|there))\b"
+    r"|\b(?:doesn'?t|don'?t|does not|do not|no longer)\W+live\W+(?:here|there|with (?:me|us))\b",
+    re.IGNORECASE,
+)
+ELSEWHERE = re.compile(
+    r"^(?:'s|'re|\W+(?:is|are|lives?|stays?))\W+(?:down|out|over|up)?\W*in\W+(?-i:[A-Z])"
+    r"|\b(?:she|he|they)(?:'s|'re|\W+(?:is|are|lives?|stays?))\W+(?:down|out|over|up)?\W*in\W+"
+    r"(?-i:[A-Z])",
+    re.IGNORECASE,
+)
+MY_HOME = re.compile(r"\bmy (?:place|house|home|apartment|condo|unit)\b", re.IGNORECASE)
+THEIR_HOME = re.compile(
+    r"\b(?:her|his|their) (?:place|house|home|apartment|unit|heat|heating|furnace|boiler|ac|air)\b"
+    r"|\bwith (?:me|us)\b|\blives? (?:here|with)\b",
+    re.IGNORECASE,
+)
+SENTENCE_END = re.compile(r"[.;!?]|\bbut\b", re.IGNORECASE)
+
+
+def not_home(text: str, match: re.Match) -> bool:
+    """Whether the relative named at `match` is someone who isn't in the home."""
+    if not RELATIVE.fullmatch(match.group()):
+        return False
+    if GONE_AFTER.match(text, match.end()) or AWAY_AFTER.match(text, match.end()):
+        return True
+    if LATE_BEFORE.search(text[: match.start()]):
+        return True
+    rest = SENTENCE_END.split(text[match.end() :])[0]
+    if AWAY.search(rest):
+        return True
+    home_is_callers = MY_HOME.search(text) or NOBODY.search(text)
+    return bool(ELSEWHERE.search(rest) and home_is_callers and not THEIR_HOME.search(text))
+
+
 def at_risk_in(text: str, last_agent: str) -> bool:
     """Whether this caller turn says someone vulnerable is in the home: a named risk not denied in
-    its own clause, or a plain yes right after the agent asked who is at risk."""
+    its own clause and not somewhere else, or a plain yes right after the agent asked who is at
+    risk."""
     for match in AT_RISK.finditer(text):
         clause = re.split(r"[,.;!?]|\bbut\b", text[: match.start()])[-1]
-        if not RISK_DENIED.search(clause):
+        if not RISK_DENIED.search(clause) and not not_home(text, match):
             return True
     return bool(
         RISK_QUESTION.search(last_agent) and PLAIN_YES.match(text) and not NOBODY.search(text)
@@ -351,7 +494,7 @@ def risk_denied_last(items) -> bool:
         if item.role == "user":
             text = item.text_content or ""
             words = re.findall(r"[a-z]+", text.lower().replace("'", ""))
-            if not words or AT_RISK.search(text):
+            if not words or at_risk_in(text, ""):
                 return False
             if not NOBODY.search(text) and not RISK_QUESTION.search(last_agent):
                 return False  # a plain no to some other question
@@ -394,7 +537,7 @@ def note_urgency(call: Call, turn_ctx: llm.ChatContext, text: str) -> None:
     last_agent = next(
         (m.text_content or "" for m in reversed(messages) if m.role == "assistant"), ""
     )
-    call.system_down = call.system_down or bool(SYSTEM_DOWN.search(text))
+    call.system_down = call.system_down or down_in(SYSTEM_DOWN, text)
     at_risk = at_risk_in(text, last_agent)
     # The prompt has the agent ask who is at risk only once heating or cooling has failed, so a yes
     # to that question means the model judged the system down, even when the caller's words were
@@ -403,7 +546,7 @@ def note_urgency(call: Call, turn_ctx: llm.ChatContext, text: str) -> None:
     if at_risk and RISK_QUESTION.search(last_agent):
         call.system_down = True
     call.at_risk = call.at_risk or at_risk
-    call.heat_down = call.heat_down or bool(HEAT_DOWN.search(text))
+    call.heat_down = call.heat_down or down_in(HEAT_DOWN, text)
     call.cold = call.cold or bool(COLD.search(text))
 
 

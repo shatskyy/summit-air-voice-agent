@@ -10,6 +10,7 @@ from livekit.agents.voice.agent_session import SessionConnectOptions
 
 import paging
 import receptionist
+import rules
 import store
 from receptionist import (
     TZ,
@@ -540,8 +541,9 @@ def test_a_real_caller_id_is_kept():
         "there's a sulfur smell in the basement",
         "it smells gassy in here",
         "it smells like something is burning",
-        # A known false positive. The script is worded to be harmless when it fires.
-        "the smoke detector battery died",
+        # A carbon monoxide detector gets the script on first mention, battery or not.
+        "my CO detector is beeping, I think the battery is low",
+        "the carbon monoxide detector has a low battery",
     ],
 )
 def test_hazard_phrases_trigger_the_safety_script(said):
@@ -562,6 +564,89 @@ def test_hazard_phrases_trigger_the_safety_script(said):
 )
 def test_ordinary_calls_do_not_trigger_it(said):
     assert not receptionist.hazard_in(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "my smoke detector keeps chirping",
+        "the smoke detector battery died",
+        "my smoke alarm is chirping for a new battery",
+        "the smoke detector needs a new battery",
+    ],
+)
+def test_a_smoke_detector_asking_for_a_battery_is_routine(said):
+    assert not receptionist.hazard_in(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "the CO alarm is going off and the battery is new",
+        "the CO detector is beeping and I changed the battery",
+        "I replaced the batteries and the CO alarm is still beeping",
+        "the smoke detector is going off, maybe it's the battery",
+        "my CO detector battery is low, and I have a headache",
+        "the smoke alarm battery is low and I smell smoke",
+        "the CO detector says low battery but I smell gas",
+        "the CO detector does four beeps and a pause, maybe the battery",
+        "the smoke detector's chirping, and the furnace is sparking",
+        "it smells like something is burning, and the smoke detector battery is low",
+    ],
+)
+def test_a_detector_with_any_sign_of_a_real_alarm_still_fires(said):
+    assert receptionist.hazard_in(said, after_script=True)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "No, it's just the CO detector battery",
+        "No, the battery's dying",
+        "No, it's just the battery",
+        "no, it was just the smoke detector chirping",
+    ],
+)
+def test_a_battery_answer_to_the_script_is_a_clear_no(said):
+    assert receptionist.clear_no(said)
+    assert not receptionist.confirms(said)
+
+
+@pytest.mark.parametrize(
+    ("said", "suspected"),
+    [
+        ("I don't think it's gas but there's a weird smell", True),
+        ("I hope it's not gas, it smells funny", True),
+        ("I don't know if it's the gas but it stinks in here", True),
+        ("I don't think it's gas, the furnace just won't start", False),
+        ("there's a weird smell from the vents", False),
+        ("my gas furnace smells dusty", False),
+    ],
+)
+def test_a_hedged_gas_smell_is_suspected(said, suspected):
+    assert rules.gas_suspected(said) is suspected
+
+
+def test_a_hedged_no_to_the_script_never_confirms_the_emergency():
+    assert not receptionist.confirms("No, I don't think it's gas, it just smells weird.")
+
+
+async def test_a_battery_answer_calls_off_the_page_without_reopening_it(db, monkeypatch):
+    agent, line, pages, hung_up = gas_call(db, monkeypatch, hold=0.1)
+    with pytest.raises(StopResponse):
+        await turn(agent, "My CO detector is beeping, I think the battery is low.")
+    line.handles[-1].done.set()
+    await turn(agent, "No, it's just the CO detector battery.")  # the model replies
+    await receptionist.asyncio.sleep(0.3)
+    assert pages == [] and hung_up == [] and line.userdata.false_alarm
+    assert line.said == [receptionist.SAFETY_SCRIPT]
+
+
+async def test_a_hedged_gas_smell_gets_the_script(db, monkeypatch):
+    agent, line, _, _ = gas_call(db, monkeypatch)
+    with pytest.raises(StopResponse):
+        await turn(agent, "I don't think it's gas but there's a weird smell in the kitchen.")
+    assert line.said == [receptionist.SAFETY_SCRIPT]
 
 
 class HazardLine:
@@ -1377,7 +1462,7 @@ class EmergencyLine(HazardLine):
         return self.handles[-1]
 
 
-def gas_call(db, monkeypatch, hold=0.2):
+def gas_call(db, monkeypatch, hold=0.2, cap=5):
     pages, hung_up = [], []
 
     async def fake_page(title, message):
@@ -1389,6 +1474,7 @@ def gas_call(db, monkeypatch, hold=0.2):
 
     monkeypatch.setattr(paging, "page_on_call", fake_page)
     monkeypatch.setattr(receptionist, "PAGE_HOLD_SECONDS", hold)
+    monkeypatch.setattr(receptionist, "PAGE_HOLD_CAP_SECONDS", cap)
     call = Call(call_id="call-a", db=db, caller_number="+19145550100", hang_up=hang_up)
     line = EmergencyLine(call)
     monkeypatch.setattr(SummitAirAgent, "session", property(lambda self: line))
@@ -1471,10 +1557,33 @@ async def test_an_unclear_answer_sends_the_page_and_lets_the_model_reply(db, mon
 
 
 async def test_the_page_goes_out_when_nobody_answers(db, monkeypatch):
-    agent, _, pages, _ = gas_call(db, monkeypatch, hold=0.1)
+    agent, line, pages, _ = gas_call(db, monkeypatch, hold=0.1)
     with pytest.raises(StopResponse):
         await turn(agent, "I smell gas.")
+    line.handles[-1].done.set()  # the script has finished playing
     await receptionist.asyncio.sleep(0.3)
+    assert pages == ["Summit Air emergency #2001"]
+
+
+async def test_the_wait_for_an_answer_starts_when_the_script_ends(db, monkeypatch):
+    """The script takes about 13 seconds to say. Counted from the hazard, a 15-second hold ran out
+    before any caller could answer, so a "no" never stopped a page on a real call."""
+    agent, line, pages, _ = gas_call(db, monkeypatch, hold=0.1)
+    with pytest.raises(StopResponse):
+        await turn(agent, "There's a dusty burning smell from the vents.")
+    await receptionist.asyncio.sleep(0.3)  # longer than the hold, but the script is still playing
+    assert pages == []
+    line.handles[-1].done.set()
+    await turn(agent, "No, just dusty.")
+    await receptionist.asyncio.sleep(0.3)
+    assert pages == [] and line.userdata.false_alarm
+
+
+async def test_a_script_that_never_finishes_still_pages_by_the_cap(db, monkeypatch):
+    agent, _, pages, _ = gas_call(db, monkeypatch, hold=5, cap=0.1)
+    with pytest.raises(StopResponse):
+        await turn(agent, "I smell gas.")
+    await receptionist.asyncio.sleep(0.3)  # playout never reported finishing
     assert pages == ["Summit Air emergency #2001"]
 
 
@@ -2653,12 +2762,63 @@ def test_no_heat_in_the_cold_is_urgent_whoever_is_home(said):
         "The heat's out, but it's 65 degrees in here, it's fine.",
         "It's so cold in here, the AC is stuck on high.",  # cold, but the heat hasn't failed
         "No AC and it's 95 out.",
+        # Heat that won't turn off is the opposite failure.
+        "My heating won't turn off even though it's winter.",
+        "My furnace won't shut off and it's freezing outside.",
+        "The heat won't stop running, and it's snowing.",
     ],
 )
 def test_the_cold_rule_needs_both_a_failed_heat_and_the_cold(said):
     call = Call(call_id="call-a")
     receptionist.note_urgency(call, llm.ChatContext(), said)
     assert receptionist.urgent_reason(call) is None
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "my furnace won't turn on",
+        "the heat's off and it's freezing",
+        "my heat won't turn off, and now the furnace died",
+        "the heat won't turn on, it won't stop clicking",
+    ],
+)
+def test_a_failed_heat_still_counts_beside_stuck_on_words(said):
+    assert rules.down_in(rules.HEAT_DOWN, said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "I'm calling for my mom, she's in Florida, the AC at my place is out",
+        "the heat's been off since my dad passed and I'm selling the place",
+        "No, my mom's in Florida, it's just me.",
+        "it was my late father's house and the boiler is broken",
+        "my dad died last year and the house is empty",
+        "my mother passed away and the boiler is broken",
+        "my parents are away, it's just me",
+        "my mom is out of town and the AC died",
+        "my mom doesn't live here anymore",
+    ],
+)
+def test_a_relative_who_isnt_in_the_home_is_not_at_risk(said):
+    assert not receptionist.at_risk_in(said, "")
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "No heat and my mom is 82.",
+        "my mom passed out from the heat",
+        "I'm calling for my mom, she's in Queens and her heat is out",
+        "my mom is in Florida but my dad is here with me",
+        "my mom lives with me, my dad passed last year",
+        "my mom's furnace died and she's 84",
+        "my mom's AC died",
+    ],
+)
+def test_a_relative_in_the_home_is_still_at_risk(said):
+    assert receptionist.at_risk_in(said, "")
 
 
 async def test_the_1008_opener_files_urgent_in_code_on_the_first_turn(db, monkeypatch):

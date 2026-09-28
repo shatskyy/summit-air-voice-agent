@@ -67,26 +67,44 @@ def push_text(call: Call, reason: str, name: str = "", address: str = "", ref=No
 
 
 class HeldPage:
-    """An emergency page that waits for the caller's answer to the safety script: it goes out on
-    release() (any answer but a clear no, or the caller hanging up) or after `wait` seconds, and
-    never after cancel(). The task's result is whether ntfy accepted it."""
+    """An emergency page that waits for the caller's answer to the safety script. It goes out on
+    release() (any answer but a clear no, or the caller hanging up), or `wait` seconds after
+    start(), and never after cancel(). start() is called once the script has finished playing:
+    the script takes about 13 seconds to say, so a countdown from the moment the hazard was heard
+    ran out before any caller could answer, and every "no, it's just dusty" still paged on-call.
+    `cap` bounds the whole hold from the moment the page was filed, so a playout that never
+    reports finishing can't keep a real emergency from going out. The task's result is whether
+    ntfy accepted the page."""
 
-    def __init__(self, title: str, message: str, wait: float) -> None:
+    def __init__(self, title: str, message: str, wait: float, cap: float) -> None:
         self._go = asyncio.Event()
+        self._started = asyncio.Event()
         self.cancelled = False
-        self.task = asyncio.create_task(self._send(title, message, wait))
+        self.task = asyncio.create_task(self._send(title, message, wait, cap))
         _background.add(self.task)
         self.task.add_done_callback(_background.discard)
 
-    async def _send(self, title: str, message: str, wait: float) -> bool:
+    async def _countdown(self, wait: float) -> None:
+        await self._started.wait()
+        await asyncio.sleep(wait)
+        self._go.set()
+
+    async def _send(self, title: str, message: str, wait: float, cap: float) -> bool:
+        countdown = asyncio.create_task(self._countdown(wait))
         try:
-            await asyncio.wait_for(self._go.wait(), wait)
+            await asyncio.wait_for(self._go.wait(), cap)
         except TimeoutError:
             pass
+        finally:
+            countdown.cancel()
         self._go.set()
         if self.cancelled:
             return False
         return await page_on_call(title, message)
+
+    def start(self) -> None:
+        """Start the countdown to the answer: the script has finished playing."""
+        self._started.set()
 
     def release(self) -> None:
         self._go.set()
@@ -98,6 +116,17 @@ class HeldPage:
         self.cancelled = True
         self._go.set()
         return True
+
+
+async def start_hold_after(held: HeldPage | None, handle) -> None:
+    """Start a held page's countdown once `handle`, the safety script, has played out."""
+    if held is None:
+        return
+    try:
+        if handle is not None:
+            await handle.wait_for_playout()
+    finally:
+        held.start()
 
 
 async def release_held_page(call: Call) -> None:

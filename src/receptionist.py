@@ -48,6 +48,7 @@ from paging import (
     push,
     push_text,
     release_held_page,
+    start_hold_after,
     start_page,
     zip_of,
 )
@@ -59,6 +60,7 @@ from rules import (
     caller_digits,
     clear_no,
     confirms,
+    gas_suspected,
     given,
     hazard_in,
     history_of,
@@ -171,7 +173,10 @@ PROMPT = (Path(__file__).parent / "prompt.md").read_text()
 DEFAULT_DB = Path(os.getenv("SUMMIT_AIR_DB", ROOT / "data" / "summit-air.db"))
 
 
-PAGE_HOLD_SECONDS = 15.0  # how long the emergency page waits for the answer to the script
+# How long the emergency page waits for the answer to the safety script, counted from the end of
+# the script, and the most it can wait in all, counted from when the hazard was heard.
+PAGE_HOLD_SECONDS = 15.0
+PAGE_HOLD_CAP_SECONDS = 45.0
 
 
 @dataclass
@@ -390,7 +395,7 @@ async def file_task(
     title = f"Summit Air {kind} #{ref}"
     message = push_text(call, reason, name, address or call.checked_address, ref)
     if hold:
-        call.held_page = HeldPage(title, message, PAGE_HOLD_SECONDS)
+        call.held_page = HeldPage(title, message, PAGE_HOLD_SECONDS, PAGE_HOLD_CAP_SECONDS)
         return ref, due, call.held_page.task
     return ref, due, start_page(title, message)
 
@@ -470,7 +475,10 @@ class SummitAirAgent(Agent):
         if note := repair_note(call, was_down):
             await self.add_note(turn_ctx, note)
         if await flag_hazard(call, text):
-            await self.speak_over(SAFETY_SCRIPT, new_message)
+            handle = await self.speak_over(SAFETY_SCRIPT, new_message)
+            hold = asyncio.create_task(start_hold_after(call.held_page, handle))
+            _background.add(hold)
+            hold.add_done_callback(_background.discard)
             raise StopResponse()
         call.caller_turns += 1
         if call.caller_turns <= 2 and not call.spanish and SPANISH.search(text):
@@ -1181,7 +1189,7 @@ async def flag_hazard(call: Call, text: str) -> bool:
     script. A failed write still pages on-call at once, because once the script has played the
     prompt tells the model the task exists, so the model won't file it either. A written task's page
     is held for the answer to the script (HeldPage)."""
-    if not hazard_in(text):
+    if not (hazard_in(text, after_script=call.warned) or (not call.warned and gas_suspected(text))):
         return False
     if call.false_alarm:
         await reopen_emergency(call)
