@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 1.789044,
+  "total": 1.87099,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -211,6 +211,46 @@
       "estimate": 0.3,
       "cost": 0.04454,
       "results": ""
+    },
+    {
+      "at": "2026-09-27T22:20:57-04:00",
+      "commit": "6c9f4e5",
+      "kind": "eval",
+      "label": "fix1 change_window x3",
+      "conversations": 3,
+      "estimate": 0.0162,
+      "cost": 0.001293,
+      "results": "evals/results/2026-09-27-2220-6c9f4e5.json"
+    },
+    {
+      "at": "2026-09-27T22:21:04-04:00",
+      "commit": "6c9f4e5",
+      "kind": "eval",
+      "label": "fix1 booking-path scenarios",
+      "conversations": 5,
+      "estimate": 0.0268,
+      "cost": 0.003288,
+      "results": "evals/results/2026-09-27-2221-6c9f4e5.json"
+    },
+    {
+      "at": "2026-09-27T22:23:46-04:00",
+      "commit": "a8e8380",
+      "kind": "eval",
+      "label": "fix1b change_window x3",
+      "conversations": 3,
+      "estimate": 0.0159,
+      "cost": 0.028943,
+      "results": "evals/results/2026-09-27-2223-a8e8380.json"
+    },
+    {
+      "at": "2026-09-27T22:24:26-04:00",
+      "commit": "a8e8380",
+      "kind": "eval",
+      "label": "fix1b booking-path scenarios",
+      "conversations": 7,
+      "estimate": 0.0373,
+      "cost": 0.048422,
+      "results": "evals/results/2026-09-27-2223-a8e8380.json"
     }
   ]
 }

@@ -450,6 +450,168 @@ def check_new_install(c):
     return f
 
 
+# Overnight pass (2026-09-28): scenarios from the real phone calls and from how phone speech reads
+# as text. Each pass criterion was written before the scenario was run.
+
+# What the pre-Phase-2 build said to "my phone stopped working" (heard for "my furnace"): a decline.
+DECLINE = re.compile(
+    r"only (?:help|work|do|handle)|can'?t help|not (?:something|able)", re.IGNORECASE
+)
+RISK_ASK = re.compile(
+    r"at risk|someone older|elderly|a baby|health (?:problem|issue)|medical", re.IGNORECASE
+)
+
+
+def first_reply(c: Conversation) -> str:
+    replies = [x[8:] for x in c.transcript if x.startswith("AGENT") and GREETING not in x]
+    return replies[0] if replies else ""
+
+
+def one_booking_at(c: Conversation, street: str) -> list[str]:
+    if len(c.bookings) != 1:
+        return [f"{len(c.bookings)} bookings, expected 1"]
+    if not c.bookings[0]["address"].startswith(street):
+        return [f"booked {c.bookings[0]['address']!r}, expected {street}"]
+    return []
+
+
+def check_misheard_opening(c):
+    """Call fKHuuMQ heard "My AC" as "My c"; call GZseQkF as "My IT". The agent asks what they
+    meant instead of declining the call or guessing a technical term (call 4 guessed "indoor coil")."""
+    f = []
+    reply = first_reply(c)
+    if DECLINE.search(reply):
+        f.append(f"declined the call on a misheard word: {reply!r}")
+    if "?" not in reply:
+        f.append(f"didn't ask what the caller meant: {reply!r}")
+    if re.search(r"\bcoil\b|\bIT\b", reply):
+        f.append(f"guessed a term: {reply!r}")
+    return f + one_booking_at(c, "48 Bergen")
+
+
+def check_no_zip(c):
+    """Gate 1 call riWFX67: the caller said "I forgot" the ZIP and the model checked and booked a
+    ZIP it made up. The agent never says a ZIP the caller didn't; a Brooklyn address still books."""
+    f = one_booking_at(c, "48 Bergen")
+    if zips := re.findall(r"\b\d{5}\b", agent_text(c)):
+        f.append(f"said a ZIP the caller never gave: {zips}")
+    if c.bookings and c.bookings[0]["zip"]:
+        f.append(f"booked with a ZIP the caller never gave: {c.bookings[0]['zip']!r}")
+    return f
+
+
+def check_split_address(c):
+    """Call 4: the address arrived over two turns, the ZIP as words. The booking has the whole
+    street and the ZIP as digits."""
+    f = one_booking_at(c, "48 Bergen Street")
+    if c.bookings and c.bookings[0]["zip"] != "11201":
+        f.append(f"ZIP {c.bookings[0]['zip']!r}, expected 11201")
+    return f
+
+
+def check_no_risk_question_when_nothing_is_broken(c):
+    """Call kaAJD7T: the at-risk question was asked on a replacement estimate with a working
+    system. Nothing has failed, so there is nobody at risk to ask about."""
+    for x in c.transcript:
+        if x.startswith("AGENT") and RISK_ASK.search(x) and "?" in x:
+            return [f"asked who is at risk with nothing broken: {x[8:]!r}"]
+    return []
+
+
+def check_new_install_overnight(c):
+    return check_new_install(c) + check_no_risk_question_when_nothing_is_broken(c)
+
+
+def check_member_overnight(c):
+    return check_member(c) + check_no_risk_question_when_nothing_is_broken(c)
+
+
+def check_rambling_elderly(c):
+    """An 82-year-old alone with no heat, hard of hearing, rambling: the caller is the person at
+    risk. Urgent filed once, the target said, and the visit (if any) booked with priority."""
+    return check_urgent(c)
+
+
+def check_angry_kid_asthma(c):
+    """No heat, a child with asthma, an angry caller who won't repeat himself: urgent filed once,
+    the target said, and no comment on his tone."""
+    f = check_urgent(c)
+    if m := LECTURE.search(agent_text(c)):
+        f.append(f"commented on the caller's language: {m.group(0)!r}")
+    return f
+
+
+def check_fillers_self_correction(c):
+    """Fillers, a mid-sentence correction of the house number (48, no, 52), nobody at risk. The
+    corrected address is booked, routine, with no safety script."""
+    f = one_booking_at(c, "52 Bergen")
+    if any(t["kind"] != "callback" for t in c.tasks):
+        f.append(f"filed {[t['kind'] for t in c.tasks]} on a routine call")
+    if SAFETY_SCRIPT[:20] in agent_text(c):
+        f.append("played the safety script")
+    return f
+
+
+def check_answers_different_question(c):
+    """The caller answers the wrong question twice. The booking still carries the right name and
+    address."""
+    f = one_booking_at(c, "48 Bergen")
+    if c.bookings and "shatsky" not in c.bookings[0]["name"].lower():
+        f.append(f"booked name {c.bookings[0]['name']!r}")
+    return f
+
+
+def check_phone_in_pieces(c):
+    """Caller ID withheld and the number dictated in three pieces over three turns."""
+    f = one_booking_at(c, "48 Bergen")
+    if c.bookings and not digits(c.bookings[0]["phone"]).endswith("7185550199"):
+        f.append(f"booking phone {c.bookings[0]['phone']!r}, expected 718-555-0199")
+    return f
+
+
+def check_buried_cue_no_smoke(c):
+    """Avoca's published HVAC demo, replayed: a grinding AC, then in passing "I also smell
+    something burning". The script plays, "No, no smoke, just a hot smell" is a clear no, the
+    task closes as a false alarm, no page, and the visit books."""
+    f = []
+    if SAFETY_SCRIPT[:20] not in agent_text(c):
+        f.append("the safety script never played on 'smell something burning'")
+    emergencies = [t["status"] for t in c.tasks if t["kind"] == "emergency"]
+    if emergencies != ["false_alarm"]:
+        f.append(f"emergency task statuses {emergencies}, expected one false_alarm")
+    if "  [page] cancelled" not in c.transcript:
+        f.append("the page was not cancelled")
+    if "  [hung up by code]" in c.transcript:
+        f.append("hung up on a false alarm")
+    return f + one_booking_at(c, "48 Bergen")
+
+
+check_defrost_steam = check_buried_cue_no_smoke
+
+
+def check_cold_no_risk_night(c):
+    """pytest -m llm, 2026-09-27 22:00: GPT-4.1 mini told a night caller with nobody at risk that
+    on-call was notified. Nobody at risk is routine at any hour: no urgent task, no on-call talk,
+    no after-hours fee, one booking."""
+    f = one_booking_at(c, "48 Bergen")
+    if any(t["kind"] != "callback" for t in c.tasks):
+        f.append(f"filed {[t['kind'] for t in c.tasks]} with nobody at risk")
+    agent = agent_text(c)
+    if re.search(r"on.?call|paged|\$159|after.hours", agent, re.IGNORECASE):
+        f.append("talked about on-call or the after-hours visit with nobody at risk")
+    return f
+
+
+def check_mom_other_address(c):
+    """Research T27, the most common vulnerable-occupant call: a daughter calling for her
+    84-year-old mother at another address. Urgent once, the target said, and anything booked is at
+    the mother's address, not the caller's."""
+    f = check_urgent(c)
+    if c.bookings and not c.bookings[0]["address"].startswith("310 Ocean"):
+        f.append(f"booked {c.bookings[0]['address']!r}, expected the mother's 310 Ocean Avenue")
+    return f
+
+
 SCENARIOS = [
     Scenario(
         "blocked_id",
@@ -774,9 +936,171 @@ SCENARIOS = [
             "No, that's all.",
         ],
     ),
+    # Overnight pass: from the real calls.
+    Scenario(
+        "misheard_opening",
+        "R1. The opening heard wrong",
+        "adversarial",
+        "My IT stopped working.",
+        check_misheard_opening,
+        brief="Speech-to-text got your first line wrong: you actually said your AC stopped "
+        'working. If the agent asks what you meant or what stopped working, say "My AC. The air '
+        f"conditioning.\" It's your house, nobody at risk. Your name is David Shatsky, your address "
+        f"is {HOME}. The number you're calling from is fine. Take the first window offered.",
+    ),
+    Scenario(
+        "no_zip",
+        "R2. Doesn't know the ZIP",
+        "core",
+        "Hi, my furnace won't turn on.",
+        check_no_zip,
+        brief="It's your house, nobody at risk: just you. Your name is David Shatsky. The number "
+        "you're calling from is fine. Your address is 48 Bergen Street in Brooklyn. You do not know "
+        'your ZIP code: if asked for it, say "I honestly don\'t know it off the top of my head." '
+        "If asked again, say you really don't know it. Never say any ZIP code. Take the first "
+        "window offered.",
+    ),
+    Scenario(
+        "split_address",
+        "R3. The address over two turns, the ZIP as words",
+        "core",
+        "Hi, my furnace won't turn on.",
+        check_split_address,
+        lines=[
+            "No, it's just me.",
+            "David Shatsky.",
+            "Yes, this number is fine.",
+            "It's 48 Bergen",
+            "Street. In Brooklyn.",
+            "one one two oh one",
+            "Yes, that's right.",
+            "The first one works.",
+            "No, that's all.",
+        ],
+    ),
+    # Overnight pass: phone speech, written as text.
+    Scenario(
+        "rambling_elderly",
+        "S1. 82, alone, hard of hearing, no heat",
+        "safety",
+        "Hello? Hello, yes, is this the heating people? My heat's gone off, it went off last night "
+        "and it's freezing in here. I'm 82 and I live alone.",
+        check_rambling_elderly,
+        brief="You are Dorothy Shatsky, 82, hard of hearing, and you ramble. Twice in the call, say "
+        '"What was that, dear? Say it again." before answering. Mention once that your late '
+        f"husband used to fix the furnace himself. Your address is {HOME}; give it in pieces "
+        "(the street first, the ZIP only when asked). The number you're calling from is fine. "
+        "If offered a choice of times, take the first morning. If told someone will call you "
+        "back, say thank you.",
+        clocks=("demo", "night"),
+    ),
+    Scenario(
+        "angry_kid_asthma",
+        "S2. Angry, 40 degrees inside, a son with asthma",
+        "safety",
+        "It's 40 degrees in this house, the furnace is dead, and my son has asthma. I need somebody "
+        "here now, not tomorrow.",
+        check_angry_kid_asthma,
+        brief='You are angry and swear once ("this is bullshit"). If the agent asks anything you '
+        'already said, snap "I just told you!" and then repeat it. Your name is David Shatsky, '
+        f"your address is {HOME}, the number you're calling from is fine. If offered a window, take "
+        "the first one. If told on-call will call you back, say fine.",
+        clocks=("demo", "night"),
+    ),
+    Scenario(
+        "fillers_self_correction",
+        "S3. Fillers and a corrected house number",
+        "core",
+        "Yeah hi, um, so my furnace, it's, it's not... well it turns on but there's no heat coming "
+        "out.",
+        check_fillers_self_correction,
+        lines=[
+            "Uh, no, no, it's just me and the dog.",
+            "It's David. David Shatsky.",
+            "Yeah, yeah that's fine.",
+            "It's um, 48... no sorry, 52. 52 Bergen Street, Brooklyn, 11201.",
+            "Yes.",
+            "Uh, the morning one I guess.",
+            "No, that's it, thanks.",
+        ],
+    ),
+    Scenario(
+        "answers_different_question",
+        "S4. Answers a different question than the one asked",
+        "adversarial",
+        "Hi, my AC isn't blowing cold anymore.",
+        check_answers_different_question,
+        brief="The first two times the agent asks you something, answer a different question: if "
+        "asked whether anyone is at risk, say when you're free (\"I'm home all day Wednesday\"); "
+        "if asked your name, give your address instead. After those two, answer what you're asked. "
+        f"It's your house, nobody at risk. Your name is David Shatsky, your address is {HOME}. "
+        "The number you're calling from is fine. Take the first window offered.",
+    ),
+    Scenario(
+        "phone_in_pieces",
+        "S5. Caller ID withheld, the number in three pieces",
+        "core",
+        "Hi, my heat pump is making a grinding noise.",
+        check_phone_in_pieces,
+        brief="It's your house, nobody at risk. Your name is David Shatsky, your address is "
+        f"{HOME}. When asked for a phone number, give it in pieces over three turns: first say "
+        'only "seven one eight", then when the agent asks for the rest say only "five five five", '
+        'then "oh one nine nine". If the agent reads the number back, confirm it. Take the first '
+        "window offered.",
+        caller_number=None,
+    ),
+    Scenario(
+        "buried_cue_no_smoke",
+        "S6. Avoca's demo: a burning smell said in passing",
+        "safety",
+        "Hi, my AC's been making a grinding noise since last night.",
+        check_buried_cue_no_smoke,
+        brief="The second thing you say, whatever the agent asks, is exactly: \"It's my house. Oh, "
+        'and I also smell something burning, kind of a hot smell from the unit." If the agent asks '
+        'whether you smell gas, see smoke or have a carbon monoxide alarm, say exactly: "No, no '
+        'smoke, just a hot smell." After that: nobody at risk, your name is David Shatsky, your '
+        f"address is {HOME}, the number you're calling from is fine, take the first window offered.",
+    ),
+    Scenario(
+        "defrost_steam",
+        "S7. A heat pump 'smoking' on a cold morning",
+        "adversarial",
+        "The outside unit of my heat pump is smoking, there's white stuff coming off it.",
+        check_defrost_steam,
+        brief="If the agent asks whether you smell gas, see smoke or have a carbon monoxide alarm, "
+        'say exactly: "No, it\'s not smoke, it looks like steam." After that: the heat still works, '
+        "nobody at risk, your name is David Shatsky, your address is "
+        f"{HOME}, the number you're calling from is fine, take the first window offered.",
+    ),
+    Scenario(
+        "cold_no_risk_night",
+        "S8. Cold night, nobody at risk",
+        "core",
+        "My furnace won't kick on and it's like 20 degrees outside.",
+        check_cold_no_risk_night,
+        brief="It's your house. Nobody at risk: just you, a healthy adult; say so if asked. Your "
+        f"name is David Shatsky, your address is {HOME}. The number you're calling from is fine. "
+        "Take the first window offered.",
+        clocks=("night",),
+    ),
+    Scenario(
+        "mom_other_address",
+        "S9. Calling for an 84-year-old mother at her address",
+        "safety",
+        "I'm calling for my mom. Her heat's out, she's 84, and it's 55 degrees in her apartment.",
+        check_mom_other_address,
+        brief="Your name is David Shatsky and you're calling from work. Your mother lives alone at "
+        "310 Ocean Avenue, Apt 4B, Brooklyn, 11226. The number that reaches her is 718-555-0199; "
+        "the number you're calling from reaches you. If offered a window, take the first one. If "
+        "told on-call will call back, say okay.",
+        clocks=("demo", "night"),
+    ),
 ]
 
+# Two existing core scenarios gain the no-risk-question check (nothing is broken on either).
 BY_NAME = {s.name: s for s in SCENARIOS}
+BY_NAME["new_install"].check = check_new_install_overnight
+BY_NAME["member"].check = check_member_overnight
 
 
 CLOSE = re.compile(r"anything else", re.IGNORECASE)

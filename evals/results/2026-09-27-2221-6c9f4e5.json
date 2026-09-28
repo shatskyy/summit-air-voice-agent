@@ -1,0 +1,335 @@
+{
+  "meta": {
+    "started": "2026-09-27T22:21:00-04:00",
+    "stamp": "2026-09-27-2221",
+    "commit": "6c9f4e5",
+    "models": [
+      "openai/gpt-4.1-mini"
+    ],
+    "runs": "1 run(s) per scenario and clock",
+    "scenarios": [
+      "address_change",
+      "commercial",
+      "no_show",
+      "two_issues"
+    ],
+    "compare": "",
+    "estimate": 0.0268
+  },
+  "results": [
+    {
+      "scenario": "two_issues",
+      "title": "A2. Two problems, one visit",
+      "category": "adversarial",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": false,
+      "failures": [
+        "0 bookings, expected 1",
+        "crashed: APIStatusError: message='Error code: 400 - {\\'error\\': {\\'message\\': \"Invalid value for \\'parallel_tool_calls\\': \\'parallel_tool_calls\\' is only allowed when \\'tools\\' are specified.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'parallel_tool_calls\\', \\'code\\': None}}', status_code=400, retryable=False, request_id=req_5d4675d6f0e041cda7bd212b1fe71e2d, body={'message': \"Invalid value for 'parallel_tool_calls': 'parallel_tool_calls' is only allowed when 'tools' are specified.\", 'type': 'invalid_request_error', 'param': 'parallel_tool_calls', 'code': None}"
+      ],
+      "error": "APIStatusError: message='Error code: 400 - {\\'error\\': {\\'message\\': \"Invalid value for \\'parallel_tool_calls\\': \\'parallel_tool_calls\\' is only allowed when \\'tools\\' are specified.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'parallel_tool_calls\\', \\'code\\': None}}', status_code=400, retryable=False, request_id=req_5d4675d6f0e041cda7bd212b1fe71e2d, body={'message': \"Invalid value for 'parallel_tool_calls': 'parallel_tool_calls' is only allowed when 'tools' are specified.\", 'type': 'invalid_request_error', 'param': 'parallel_tool_calls', 'code': None}",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 1,
+        "lists": 0,
+        "words": 10.0
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 3367,
+          "cached": 3200,
+          "output": 13,
+          "requests": 1,
+          "cost": 0.000408
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 0,
+          "cached": 0,
+          "output": 0,
+          "requests": 0,
+          "cost": 0.0
+        }
+      },
+      "cost": 0.000408,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: My AC is leaking, and while you're here I need my furnace tune-up.",
+        "AGENT : Got it. Is this for your home or a business?",
+        "  [outcome] abandoned"
+      ],
+      "bookings": [],
+      "tasks": [
+        {
+          "ref": 2001,
+          "call_id": "eval-two_issues-demo-1",
+          "kind": "callback",
+          "reason": "Hung up before booking: My AC is leaking, and while you're here I need my furnace tune-up.",
+          "summary": "Agent: Thanks for calling Summit Air. This is the automated assistant. How can I help?\nCaller: My AC is leaking, and while you're here I need my furnace tune-up.\nAgent: Got it. Is this for your home or a business?",
+          "name": "",
+          "phone": "+19145550100",
+          "address": "",
+          "due_at": "2026-09-29T14:35-04:00",
+          "status": "open",
+          "created_at": "2026-09-28 02:21:01"
+        }
+      ],
+      "transcript_file": "results/transcripts/2026-09-27-2221-two_issues-demo-gpt-4.1-mini-1.txt"
+    },
+    {
+      "scenario": "no_show",
+      "title": "6. Angry no-show",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": false,
+      "failures": [
+        "0 bookings, expected 1",
+        "crashed: APIStatusError: message='Error code: 400 - {\\'error\\': {\\'message\\': \"Invalid value for \\'parallel_tool_calls\\': \\'parallel_tool_calls\\' is only allowed when \\'tools\\' are specified.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'parallel_tool_calls\\', \\'code\\': None}}', status_code=400, retryable=False, request_id=req_e040642fbaa24dda98bd0e48d2674a70, body={'message': \"Invalid value for 'parallel_tool_calls': 'parallel_tool_calls' is only allowed when 'tools' are specified.\", 'type': 'invalid_request_error', 'param': 'parallel_tool_calls', 'code': None}"
+      ],
+      "error": "APIStatusError: message='Error code: 400 - {\\'error\\': {\\'message\\': \"Invalid value for \\'parallel_tool_calls\\': \\'parallel_tool_calls\\' is only allowed when \\'tools\\' are specified.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'parallel_tool_calls\\', \\'code\\': None}}', status_code=400, retryable=False, request_id=req_e040642fbaa24dda98bd0e48d2674a70, body={'message': \"Invalid value for 'parallel_tool_calls': 'parallel_tool_calls' is only allowed when 'tools' are specified.\", 'type': 'invalid_request_error', 'param': 'parallel_tool_calls', 'code': None}",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 29.0
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 6851,
+          "cached": 6400,
+          "output": 94,
+          "requests": 2,
+          "cost": 0.000971
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 0,
+          "cached": 0,
+          "output": 0,
+          "requests": 0,
+          "cost": 0.0
+        }
+      },
+      "cost": 0.000971,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Your technician was supposed to come Friday morning and nobody showed up. I took the morning off work. This is ridiculous.",
+        "  tool  create_dispatch_task({\"kind\": \"callback\", \"reason\": \"technician no-show Friday morning\", \"summary\": \"technician no-show Friday morning, caller upset, requesting manager callback\", \"name\": null, \"callback_number\": \"914-555-0100\", \"address\": null})",
+        "  ->    Task 2001 created. Dispatch has the callback. The callback target is 2:35 PM. Tell the caller the target, and never promise an arrival time.",
+        "AGENT : I see, I'll have a manager call you back by 2:35 PM today to sort this out. Can I get your name to also offer a next visit window?",
+        "  [outcome] callback"
+      ],
+      "bookings": [],
+      "tasks": [
+        {
+          "ref": 2001,
+          "call_id": "eval-no_show-demo-1",
+          "kind": "callback",
+          "reason": "technician no-show Friday morning",
+          "summary": "technician no-show Friday morning, caller upset, requesting manager callback",
+          "name": "",
+          "phone": "914-555-0100",
+          "address": "",
+          "due_at": "2026-09-29T14:35-04:00",
+          "status": "open",
+          "created_at": "2026-09-28 02:21:01"
+        }
+      ],
+      "transcript_file": "results/transcripts/2026-09-27-2221-no_show-demo-gpt-4.1-mini-1.txt"
+    },
+    {
+      "scenario": "address_change",
+      "title": "9. Address change during the read-back",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": false,
+      "failures": [
+        "0 bookings, expected 1",
+        "crashed: APIStatusError: message='Error code: 400 - {\\'error\\': {\\'message\\': \"Invalid value for \\'parallel_tool_calls\\': \\'parallel_tool_calls\\' is only allowed when \\'tools\\' are specified.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'parallel_tool_calls\\', \\'code\\': None}}', status_code=400, retryable=False, request_id=req_2a38c644c0e54840b6af335d6ee60d2d, body={'message': \"Invalid value for 'parallel_tool_calls': 'parallel_tool_calls' is only allowed when 'tools' are specified.\", 'type': 'invalid_request_error', 'param': 'parallel_tool_calls', 'code': None}"
+      ],
+      "error": "APIStatusError: message='Error code: 400 - {\\'error\\': {\\'message\\': \"Invalid value for \\'parallel_tool_calls\\': \\'parallel_tool_calls\\' is only allowed when \\'tools\\' are specified.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'parallel_tool_calls\\', \\'code\\': None}}', status_code=400, retryable=False, request_id=req_2a38c644c0e54840b6af335d6ee60d2d, body={'message': \"Invalid value for 'parallel_tool_calls': 'parallel_tool_calls' is only allowed when 'tools' are specified.\", 'type': 'invalid_request_error', 'param': 'parallel_tool_calls', 'code': None}",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 7.0
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 3363,
+          "cached": 3200,
+          "output": 10,
+          "requests": 1,
+          "cost": 0.000401
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 0,
+          "cached": 0,
+          "output": 0,
+          "requests": 0,
+          "cost": 0.0
+        }
+      },
+      "cost": 0.000401,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: My AC isn't cooling well, can someone come check it?",
+        "AGENT : Got it. Is this for your home?",
+        "  [outcome] abandoned"
+      ],
+      "bookings": [],
+      "tasks": [
+        {
+          "ref": 2001,
+          "call_id": "eval-address_change-demo-1",
+          "kind": "callback",
+          "reason": "Hung up before booking: My AC isn't cooling well, can someone come check it?",
+          "summary": "Agent: Thanks for calling Summit Air. This is the automated assistant. How can I help?\nCaller: My AC isn't cooling well, can someone come check it?\nAgent: Got it. Is this for your home?",
+          "name": "",
+          "phone": "+19145550100",
+          "address": "",
+          "due_at": "2026-09-29T14:35-04:00",
+          "status": "open",
+          "created_at": "2026-09-28 02:21:01"
+        }
+      ],
+      "transcript_file": "results/transcripts/2026-09-27-2221-address_change-demo-gpt-4.1-mini-1.txt"
+    },
+    {
+      "scenario": "commercial",
+      "title": "8. Commercial rooftop",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": false,
+      "failures": [
+        "0 bookings, expected 1",
+        "crashed: APIStatusError: message='Error code: 400 - {\\'error\\': {\\'message\\': \"Invalid value for \\'parallel_tool_calls\\': \\'parallel_tool_calls\\' is only allowed when \\'tools\\' are specified.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'parallel_tool_calls\\', \\'code\\': None}}', status_code=400, retryable=False, request_id=req_3ae28cc3eecc4f12b5aff570fffec57f, body={'message': \"Invalid value for 'parallel_tool_calls': 'parallel_tool_calls' is only allowed when 'tools' are specified.\", 'type': 'invalid_request_error', 'param': 'parallel_tool_calls', 'code': None}"
+      ],
+      "error": "APIStatusError: message='Error code: 400 - {\\'error\\': {\\'message\\': \"Invalid value for \\'parallel_tool_calls\\': \\'parallel_tool_calls\\' is only allowed when \\'tools\\' are specified.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'parallel_tool_calls\\', \\'code\\': None}}', status_code=400, retryable=False, request_id=req_3ae28cc3eecc4f12b5aff570fffec57f, body={'message': \"Invalid value for 'parallel_tool_calls': 'parallel_tool_calls' is only allowed when 'tools' are specified.\", 'type': 'invalid_request_error', 'param': 'parallel_tool_calls', 'code': None}",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 8.0
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 3372,
+          "cached": 2944,
+          "output": 11,
+          "requests": 1,
+          "cost": 0.000483
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 0,
+          "cached": 0,
+          "output": 0,
+          "requests": 0,
+          "cost": 0.0
+        }
+      },
+      "cost": 0.000483,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: I manage a dental office in Manhattan. Our rooftop AC stopped working and it's getting really hot in here.",
+        "AGENT : Thanks. What's the name of the dental office?",
+        "  [outcome] abandoned"
+      ],
+      "bookings": [],
+      "tasks": [
+        {
+          "ref": 2001,
+          "call_id": "eval-commercial-demo-1",
+          "kind": "callback",
+          "reason": "Hung up before booking: Our rooftop AC stopped working and it's getting really hot in here.",
+          "summary": "Agent: Thanks for calling Summit Air. This is the automated assistant. How can I help?\nCaller: I manage a dental office in Manhattan. Our rooftop AC stopped working and it's getting really hot in here.\nAgent: Thanks. What's the name of the dental office?",
+          "name": "",
+          "phone": "+19145550100",
+          "address": "",
+          "due_at": "2026-09-29T14:35-04:00",
+          "status": "open",
+          "created_at": "2026-09-28 02:21:02"
+        }
+      ],
+      "transcript_file": "results/transcripts/2026-09-27-2221-commercial-demo-gpt-4.1-mini-1.txt"
+    },
+    {
+      "scenario": "no_show",
+      "title": "6. Angry no-show",
+      "category": "core",
+      "clock": "night",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": false,
+      "failures": [
+        "0 bookings, expected 1",
+        "crashed: APIStatusError: message='Error code: 400 - {\\'error\\': {\\'message\\': \"Invalid value for \\'parallel_tool_calls\\': \\'parallel_tool_calls\\' is only allowed when \\'tools\\' are specified.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'parallel_tool_calls\\', \\'code\\': None}}', status_code=400, retryable=False, request_id=req_9c72831fd9b34197b8ce7e203a3073ad, body={'message': \"Invalid value for 'parallel_tool_calls': 'parallel_tool_calls' is only allowed when 'tools' are specified.\", 'type': 'invalid_request_error', 'param': 'parallel_tool_calls', 'code': None}"
+      ],
+      "error": "APIStatusError: message='Error code: 400 - {\\'error\\': {\\'message\\': \"Invalid value for \\'parallel_tool_calls\\': \\'parallel_tool_calls\\' is only allowed when \\'tools\\' are specified.\", \\'type\\': \\'invalid_request_error\\', \\'param\\': \\'parallel_tool_calls\\', \\'code\\': None}}', status_code=400, retryable=False, request_id=req_9c72831fd9b34197b8ce7e203a3073ad, body={'message': \"Invalid value for 'parallel_tool_calls': 'parallel_tool_calls' is only allowed when 'tools' are specified.\", 'type': 'invalid_request_error', 'param': 'parallel_tool_calls', 'code': None}",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 27.0
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 6839,
+          "cached": 6144,
+          "output": 83,
+          "requests": 2,
+          "cost": 0.001025
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 0,
+          "cached": 0,
+          "output": 0,
+          "requests": 0,
+          "cost": 0.0
+        }
+      },
+      "cost": 0.001025,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Your technician was supposed to come Friday morning and nobody showed up. I took the morning off work. This is ridiculous.",
+        "  tool  create_dispatch_task({\"kind\": \"callback\", \"reason\": \"technician no show Friday morning\", \"summary\": \"technician missed Friday morning visit\", \"name\": null, \"callback_number\": \"914-555-0100\", \"address\": null})",
+        "  ->    Task 2001 created. Dispatch has the callback. The callback target is 10 AM tomorrow. Tell the caller the target, and never promise an arrival time.",
+        "AGENT : I'm sorry about that. A manager will call you back by 10 AM tomorrow. Can you tell me the address where the technician was supposed to come?",
+        "  [outcome] callback"
+      ],
+      "bookings": [],
+      "tasks": [
+        {
+          "ref": 2001,
+          "call_id": "eval-no_show-night-1",
+          "kind": "callback",
+          "reason": "technician no show Friday morning",
+          "summary": "technician missed Friday morning visit",
+          "name": "",
+          "phone": "914-555-0100",
+          "address": "",
+          "due_at": "2026-09-29T10:00-04:00",
+          "status": "open",
+          "created_at": "2026-09-28 02:21:03"
+        }
+      ],
+      "transcript_file": "results/transcripts/2026-09-27-2221-no_show-night-gpt-4.1-mini-1.txt"
+    }
+  ]
+}
