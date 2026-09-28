@@ -839,6 +839,9 @@ async def push(
 
 
 CLOSING_QUESTION = re.compile(r"anything else", re.IGNORECASE)
+# What a caller says to mean nothing more. "No. All good. Thank you." missed the shorter list and
+# the agent asked again (call Awb8xx294NFr).
+DONE = r"nothing else|that['’]?s (?:all|it)|all (?:good|set)|(?:I['’]?m|we['’]?re) (?:all )?(?:good|set)"
 
 
 def closing_confirmed(items) -> bool:
@@ -858,8 +861,7 @@ def closing_confirmed(items) -> bool:
         previous
         and CLOSING_QUESTION.search(previous.text_content or "")
         and re.fullmatch(
-            r"\W*(?:no|nope|nah|nothing else|that['’]?s all|all set)"
-            r"(?:[\s,.!]+(?:thanks|thank you|that['’]?s all|I['’]?m good|we['’]?re good))*[\s.!]*",
+            rf"\W*(?:no|nope|nah|{DONE})(?:[\s,.!]+(?:thanks|thank you|{DONE}))*[\s.!]*",
             answer,
             re.IGNORECASE,
         )

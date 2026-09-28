@@ -797,6 +797,15 @@ GREETED = said("assistant", receptionist.GREETING)
             ],
             True,
         ),
+        (
+            [
+                said("assistant", "Is there anything else?"),
+                said("user", "No. All good. Thank you."),
+            ],
+            True,
+        ),  # the Awb8xx294NFr call, asked twice
+        ([said("assistant", "Anything else?"), said("user", "That's it, thanks.")], True),
+        ([said("assistant", "Anything else?"), said("user", "Nope, I'm all set.")], True),
     ],
 )
 def test_the_call_ends_only_after_anything_else_is_answered(history, ends):
