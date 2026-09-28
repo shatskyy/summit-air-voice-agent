@@ -27,7 +27,7 @@ Deploy a new worker build (never while a `call-*` room is open, and never run a 
 ```sh
 set -a; source .env.local; set +a; lk room list   # must show no room named call-*
 launchctl kickstart -k gui/$(id -u)/com.shatsky.summit-air-agent
-tail -f logs/worker.log                            # wait for "registered worker"
+tail -f logs/worker.log                            # verify "worker source revision", then "registered worker"
 ```
 
 Logs: `logs/worker.log`, `logs/watchdog.log`, `logs/usage-monitor.log`. The watchdog's last state is

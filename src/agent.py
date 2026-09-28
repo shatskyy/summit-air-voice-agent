@@ -9,6 +9,7 @@ import json
 import logging
 import math
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -324,4 +325,19 @@ if __name__ == "__main__":
         logging.basicConfig()
         logger.critical("not starting: %s missing from .env.local", ", ".join(missing))
         sys.exit(1)
+    # Record the deployed source revision once at startup, without logging environment values.
+    logging.basicConfig(level=logging.INFO)
+    try:
+        root = Path(__file__).resolve().parent.parent
+        revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=root, text=True, timeout=5
+        ).strip()
+        dirty = bool(
+            subprocess.check_output(
+                ["git", "status", "--porcelain"], cwd=root, text=True, timeout=5
+            ).strip()
+        )
+        logger.info("worker source revision=%s dirty=%s", revision, dirty)
+    except (OSError, subprocess.SubprocessError):
+        logger.warning("worker source revision unavailable")
     cli.run_app(server)

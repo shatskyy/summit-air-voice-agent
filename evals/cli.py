@@ -118,7 +118,9 @@ async def main() -> int:
     if args.dry_run:
         for s, c, m, i in todo:
             print(f"  {s.name} / {c} / {m} / run {i}")
-        ledger.check(estimate, args.budget)
+        print(
+            f"Estimated total: ${estimate:.2f}. Budget and balance are checked only for a live run."
+        )
         return 0
     try:
         allowed = ledger.check(estimate, args.budget)

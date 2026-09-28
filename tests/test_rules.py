@@ -637,6 +637,7 @@ async def test_the_safety_script_plays_even_when_the_emergency_task_cannot_be_wr
         )
     assert line.said[0] == receptionist.SAFETY_SCRIPT and len(line.said) == 2
     assert line.said[1].startswith("Okay. Get everyone outside now")
+    assert "will call" not in line.said[1]  # no saved task or reachable number
 
 
 async def test_on_call_is_paged_even_when_the_emergency_task_cannot_be_written(db, monkeypatch):
@@ -2695,3 +2696,156 @@ def test_the_urgent_line_the_prompt_dictates_is_one_keep_promise_recognizes():
 
 def test_the_prompt_asks_for_the_street_before_the_borough():
     assert "Ask for the town or borough before the street" in receptionist.PROMPT
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Yes, one more thing.",
+        "No, wait, the address is wrong.",
+        "My furnace is also broken.",
+        "What was the reference?",
+    ],
+)
+def test_an_answer_to_anything_else_is_not_automatically_goodbye(answer):
+    assert not closing_confirmed(
+        [
+            said("assistant", "Is there anything else?"),
+            said("user", answer),
+        ]
+    )
+
+
+def test_an_old_closing_question_does_not_authorize_a_later_hangup():
+    assert not closing_confirmed(
+        [
+            said("assistant", "Anything else?"),
+            said("user", "Yes, change the address."),
+            said("assistant", "What is the new address?"),
+            said("user", "14 Maple Street."),
+        ]
+    )
+
+
+@pytest.mark.parametrize("answer", ["No, thanks.", "That's all.", "Nothing else, thank you."])
+def test_clear_closing_answers_still_allow_hangup(answer):
+    assert closing_confirmed([said("assistant", "Anything else?"), said("user", answer)])
+
+
+async def test_failed_task_write_never_promises_a_callback(db, monkeypatch):
+    def fail(*args, **kwargs):
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr(store, "add_task", fail)
+    lines, kinds, hung_up = await ladder_run(db, "llm_error")
+    assert lines == [receptionist.TROUBLE_NO_NUMBER]
+    assert kinds == [] and hung_up == [True]
+
+
+async def test_dropped_cold_weather_call_is_urgent_without_vulnerable_resident(db):
+    _, kinds, _ = await ladder_run(db, "llm_error", heat_down=True, cold=True)
+    assert kinds == ["urgent"]
+
+
+async def test_later_contact_details_update_urgent_task_without_a_booking(db):
+    agent = SummitAirAgent("")
+    call = Call(call_id="call-a", db=db, caller_number="+19145550100")
+    ref, due, _ = await file_task(call, "urgent", "no heat", "cold")
+    await agent.create_dispatch_task(
+        FakeContext(call),
+        "urgent",
+        "no heat",
+        "cold",
+        name="Maria",
+        callback_number="+19145550101",
+        address="14 Maple Street, Brooklyn",
+    )
+    tasks = store.tasks_for(db, call.call_id)
+    assert len(tasks) == 1
+    assert (tasks[0]["ref"], tasks[0]["due_at"]) == (ref, due.isoformat(timespec="minutes"))
+    assert (tasks[0]["name"], tasks[0]["phone"], tasks[0]["address"]) == (
+        "Maria",
+        "+19145550101",
+        "14 Maple Street, Brooklyn",
+    )
+
+
+async def test_booking_corrections_update_copied_task_contact(db):
+    agent, ctx = await checked_call(db)
+    call = ctx.userdata
+    call.caller_number = "+19145550100"
+    await file_task(call, "urgent", "no heat", "cold")
+    await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    call.turn += 1
+    await agent.check_address(ctx, "40 Maple Street", "Brooklyn", "11225")
+    await agent.book_appointment(
+        ctx,
+        "2026-09-29-0800",
+        "residential",
+        "Maria Lopez",
+        "+19145550101",
+        "40 Maple Street, Brooklyn",
+        "11225",
+        "no heat",
+    )
+    task = store.tasks_for(db, call.call_id)[0]
+    assert task["address"] == "40 Maple Street, Brooklyn"
+    assert task["phone"] == "+19145550101"
+
+
+async def test_emergency_cannot_be_booked_even_if_model_requests_it(db):
+    agent, ctx = await checked_call(db)
+    ctx.userdata.warned = True
+    with pytest.raises(ToolError, match="emergency is active"):
+        await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    assert store.booking_for(db, ctx.userdata.call_id) is None
+
+
+async def test_failed_address_correction_invalidates_previous_check(db):
+    agent, ctx = await checked_call(db)
+    assert ctx.userdata.checked_zip == "11225"
+    await agent.check_address(ctx, "14 Maple Street", "White Plains", "10601")
+    with pytest.raises(ToolError, match="hasn't been checked"):
+        await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    assert not ctx.userdata.pending_windows
+
+
+def test_fixed_goodbye_preserves_closed_outcome():
+    assert closing_confirmed(
+        [
+            said("assistant", "Anything else?"),
+            said("user", "No, thanks."),
+            said("assistant", receptionist.GOODBYE),
+        ]
+    )
+
+
+async def test_interrupted_write_keeps_lock_until_database_finishes(db, monkeypatch):
+    import asyncio
+    import threading
+
+    agent, ctx = await checked_call(db)
+    entered, release = threading.Event(), threading.Event()
+    real_book = store.book
+
+    def slow_book(*args, **kwargs):
+        entered.set()
+        assert release.wait(timeout=5)
+        return real_book(*args, **kwargs)
+
+    monkeypatch.setattr(store, "book", slow_book)
+    first = asyncio.create_task(agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS))
+    try:
+        assert await asyncio.to_thread(entered.wait, 3)
+        first.cancel()
+        await asyncio.sleep(0)
+        retry = asyncio.create_task(agent.book_appointment(ctx, "2026-09-29-1200", *BOOK_ARGS))
+        await asyncio.sleep(0.02)
+        assert not first.done() and ctx.userdata.book_lock.locked()
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    with pytest.raises(ToolError, match="already booked"):
+        await retry
+    assert store.booking_for(db, ctx.userdata.call_id)["slot_id"] == "2026-09-29-0800"

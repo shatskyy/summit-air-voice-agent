@@ -106,3 +106,17 @@ def test_the_urgent_target_counts_however_it_is_worded(said, counts):
     from evals.scenarios import TARGET_SAID
 
     assert bool(TARGET_SAID.search(said)) is counts
+
+
+async def test_dry_run_needs_no_balance_or_spending_permission(monkeypatch, capsys):
+    import sys
+
+    from evals import cli
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("a preview must not check billing or start a paid run")
+
+    monkeypatch.setattr(sys, "argv", ["evals", "--dry-run"])
+    monkeypatch.setattr(ledger, "check", forbidden)
+    assert await cli.main() == 0
+    assert "Estimated total:" in capsys.readouterr().out

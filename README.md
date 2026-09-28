@@ -53,10 +53,11 @@ correction for its next reply, but cannot take back what the caller already hear
 
 ## Testing
 
-The latest full text simulation passed 82 of 82 conversations across 46 scenarios, including
+The September 27 text simulation (`1e01941`) passed 82 of 82 conversations across 46 scenarios, including
 changed addresses, vulnerable residents, refused information and off-script requests. Six results
 were regraded after correcting the checks. The [report](evals/REPORT.md) links the evidence.
-These tests exercise the prompt, tools and database; they don't test hearing or turn-taking.
+That run predates the September 28 fixes. Offline checks cover the current code; neither kind of
+test proves hearing or turn-taking. [Final-pass notes](docs/final-pass.md) separate the evidence.
 
 Routine booking, urgent escalation and the gas response have been tested by phone. The latest
 changes still need a fresh phone pass. The [call notes](docs/scenarios.md) also include failures

@@ -218,20 +218,43 @@ def add_task(path: Path, **task) -> int:
         return conn.execute(sql, task).fetchone()["ref"]
 
 
-def fill_task_contact(path: Path, call_id: str, name: str, phone: str, address: str) -> None:
-    """Fill a call's tasks' blank name, phone and address from its booking. An urgent task filed
-    by code on the caller's first turn has none of them (2026-09-28 10:01, task 2015), so
-    dispatch reading the task alone saw an urgent job with no address. A field already set keeps
-    its value."""
+def fill_task_contact(
+    path: Path, call_id: str, name: str, phone: str, address: str, previous: dict | None = None
+) -> None:
+    """Copy booked contact details to tasks, including corrections to earlier copied values.
+    Keep independently supplied task contacts (for example, a different on-site person)."""
+    previous = previous or {}
     sql = """
         update tasks set
-            name = case when name = '' then :name else name end,
-            phone = case when phone = '' then :phone else phone end,
-            address = case when address = '' then :address else address end
+            name = case when name = '' or name = :old_name then :name else name end,
+            phone = case when phone = '' or phone = :old_phone then :phone else phone end,
+            address = case when address = '' or address = :old_address then :address else address end
         where call_id = :call_id
     """
     with connect(path) as conn:
-        conn.execute(sql, {"call_id": call_id, "name": name, "phone": phone, "address": address})
+        conn.execute(
+            sql,
+            {
+                "call_id": call_id,
+                "name": name,
+                "phone": phone,
+                "address": address,
+                "old_name": previous.get("name", ""),
+                "old_phone": previous.get("phone", ""),
+                "old_address": previous.get("address", ""),
+            },
+        )
+
+
+def update_task_contact(path: Path, ref: int, name: str, phone: str, address: str) -> None:
+    """Retain new details on an existing escalation without filing or paging it twice."""
+    with connect(path) as conn:
+        conn.execute(
+            """update tasks set name = coalesce(nullif(?, ''), name),
+               phone = coalesce(nullif(?, ''), phone),
+               address = coalesce(nullif(?, ''), address) where ref = ?""",
+            (name, phone, address, ref),
+        )
 
 
 def set_task_status(path: Path, ref: int, status: str) -> None:

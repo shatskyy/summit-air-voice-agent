@@ -842,17 +842,28 @@ CLOSING_QUESTION = re.compile(r"anything else", re.IGNORECASE)
 
 
 def closing_confirmed(items) -> bool:
-    """Whether the caller has spoken since the agent last asked if there is anything else. The
-    history is the record, so this needs no state of its own."""
-    caller_spoke = False
-    for item in reversed(items):
-        if getattr(item, "type", None) != "message":
-            continue
-        if item.role == "user":
-            caller_spoke = True
-        elif item.role == "assistant" and CLOSING_QUESTION.search(item.text_content or ""):
-            return caller_spoke
-    return False
+    """Only a clear closing answer to the latest agent question permits hanging up."""
+    messages = [
+        i
+        for i in items
+        if getattr(i, "type", None) == "message" and i.role in ("user", "assistant")
+    ]
+    if messages and messages[-1].role == "assistant" and messages[-1].text_content == GOODBYE:
+        messages.pop()  # finish_call sees the fixed goodbye after the caller's closing answer
+    if not messages or messages[-1].role != "user":
+        return False
+    answer = messages[-1].text_content or ""
+    previous = next((i for i in reversed(messages[:-1]) if i.role == "assistant"), None)
+    return bool(
+        previous
+        and CLOSING_QUESTION.search(previous.text_content or "")
+        and re.fullmatch(
+            r"\W*(?:no|nope|nah|nothing else|that['’]?s all|all set)"
+            r"(?:[\s,.!]+(?:thanks|thank you|that['’]?s all|I['’]?m good|we['’]?re good))*[\s.!]*",
+            answer,
+            re.IGNORECASE,
+        )
+    )
 
 
 # An explicit goodbye in the caller's last turn ends a call without the closing question: a wrong
@@ -967,9 +978,12 @@ class SummitAirAgent(Agent):
             minutes=CONFIG["callback_target_minutes"]["urgent"]
         )
         call.closing = True
-        handle = await self.speak_over(
-            EMERGENCY_CLOSE.format(target=speak_due(due, now())), new_message
+        line = (
+            EMERGENCY_CLOSE.format(target=speak_due(due, now()))
+            if call.hazard_task is not None and call.caller_number
+            else "Okay. Get everyone outside now and call 911 from there. Please hang up and go."
         )
+        handle = await self.speak_over(line, new_message)
         task = asyncio.create_task(hang_up_after(call, handle))
         _background.add(task)
         task.add_done_callback(_background.discard)
@@ -1066,6 +1080,10 @@ class SummitAirAgent(Agent):
             town: The town or city.
             zip_code: The five-digit ZIP code.
         """
+        call = context.userdata
+        call.checked_zip = None
+        call.checked_street = []
+        call.pending_windows = ""
         if problem := street_problem(street):
             raise ToolError(problem)
         zip_code = re.sub(r"\D", "", zip_code)
@@ -1202,6 +1220,10 @@ class SummitAirAgent(Agent):
             site_contact: For commercial, who meets the technician on site. Required.
         """
         call = context.userdata
+        if (call.warned or call.hazard_task is not None) and not call.false_alarm:
+            raise ToolError(
+                "An emergency is active. Do not book a visit; follow the safety instructions."
+            )
         if not is_real_name(name):
             # Both gaps in one refusal: on the 10:01 call the model was refused for the name, asked
             # it, and was refused again for the number, a second round trip of about a second.
@@ -1277,20 +1299,51 @@ class SummitAirAgent(Agent):
             # The confirmation stays interruptible. LiveKit drops a caller turn that completes
             # while the agent can't be interrupted, without running on_user_turn_completed, so an
             # uninterruptible confirmation would lose "hold on, I smell gas" said over it.
-            booking = await asyncio.to_thread(
-                store.book,
-                call.db,
-                call_id=call.call_id,
-                slot_id=slot_id,
-                customer_type=customer_type,
-                priority=int(priority or call.urgent_task is not None),
-                name=name,
-                phone=phone,
-                address=address,
-                zip=zip_code,
-                issue=issue,
-                note=note,
+            write = asyncio.create_task(
+                asyncio.to_thread(
+                    store.book,
+                    call.db,
+                    call_id=call.call_id,
+                    slot_id=slot_id,
+                    customer_type=customer_type,
+                    priority=int(priority or call.urgent_task is not None),
+                    name=name,
+                    phone=phone,
+                    address=address,
+                    zip=zip_code,
+                    issue=issue,
+                    note=note,
+                )
             )
+            cancelled = False
+            while True:
+                try:
+                    booking = await asyncio.shield(write)
+                    break
+                except asyncio.CancelledError:
+                    if write.cancelled():
+                        raise  # process shutdown cancelled the write task itself
+                    # Cancelling to_thread does not stop SQLite. Keep the lock until the actual
+                    # write finishes, so an interrupted turn cannot race its retry.
+                    cancelled = True
+            if booking is not None:
+                call.booked_turn = turn
+                call.moved = call.moved or booking["change"] == "moved"
+                # Contact corrections commit with the booking even if speech was interrupted.
+                try:
+                    await asyncio.to_thread(
+                        store.fill_task_contact,
+                        call.db,
+                        call.call_id,
+                        name,
+                        phone,
+                        address,
+                        booking["previous"] or {"phone": call.caller_number or ""},
+                    )
+                except Exception:
+                    logger.exception("the booking's contact was not copied onto the call's tasks")
+            if cancelled:
+                raise asyncio.CancelledError
             if booking is None:
                 held = await asyncio.to_thread(store.booking_for, call.db, call.call_id)
                 kept = f" Their booking for {speak_window(held)} still stands." if held else ""
@@ -1298,15 +1351,7 @@ class SummitAirAgent(Agent):
                     f"That window just filled up.{kept} Call check_availability again and offer "
                     "another."
                 )
-            call.booked_turn = turn
-        try:
-            await asyncio.to_thread(
-                store.fill_task_contact, call.db, call.call_id, name, phone, address
-            )
-        except Exception:
-            logger.exception("the booking's contact was not copied onto the call's tasks")
         window = speak_window(booking)
-        call.moved = call.moved or booking["change"] == "moved"
         ref = f'{booking["ref"]} (say "{speak_digits(booking["ref"])}")'
         if booking["change"] == "moved":
             return (
@@ -1353,6 +1398,14 @@ class SummitAirAgent(Agent):
         """
         call = context.userdata
         if kind == "urgent" and call.urgent_task is not None:
+            await asyncio.to_thread(
+                store.update_task_contact,
+                call.db,
+                call.urgent_task,
+                given(name),
+                given(callback_number),
+                given(address),
+            )
             return (
                 f"Urgent task {call.urgent_task} already exists and on-call has it. The callback "
                 f"target is {speak_due(call.urgent_due, now())}. Tell the caller the target, and "
@@ -1375,6 +1428,14 @@ class SummitAirAgent(Agent):
         if kind == "emergency" and call.hazard_task is not None and call.false_alarm:
             await reopen_emergency(call)
         if kind == "emergency" and call.hazard_task is not None:
+            await asyncio.to_thread(
+                store.update_task_contact,
+                call.db,
+                call.hazard_task,
+                given(name),
+                given(callback_number),
+                given(address),
+            )
             target = (
                 f" The callback target is {speak_due(call.hazard_due, now())}."
                 if call.hazard_due
@@ -1533,11 +1594,11 @@ class FailureLadder:
             due = await file_dropped_call(call, transcript_text(self._session.history.items))
         except Exception:
             logger.exception("the dropped call's task was not recorded")
-            due = office_minutes_from(now(), CONFIG["callback_target_minutes"]["callback"])
+            due = None
         if spoken:
             line = (
                 TROUBLE.format(target=speak_due(due, now()))
-                if call.caller_number
+                if call.caller_number and due is not None
                 else TROUBLE_NO_NUMBER
             )
             try:
@@ -1556,12 +1617,11 @@ class FailureLadder:
 async def file_dropped_call(call: Call, transcript: str) -> datetime:
     """File the task for a call we are ending on our side, and return the soonest callback target
     the caller is owed: this task's, or an urgent or emergency one already filed."""
-    urgent = call.system_down and call.at_risk and call.urgent_task is None
+    urgent = urgent_reason(call) is not None and call.urgent_task is None
     _, due, _ = await file_task(
         call,
         "urgent" if urgent else "callback",
-        "the call failed on our side"
-        + (", no heat or cooling with someone at risk" if urgent else ""),
+        "the call failed on our side" + (f", {urgent_reason(call)}" if urgent else ""),
         transcript or "(nothing said yet)",
     )
     owed = [due, call.urgent_due] + ([call.hazard_due] if not call.false_alarm else [])
