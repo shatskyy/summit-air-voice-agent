@@ -156,7 +156,7 @@ async def save_call_record(ctx: JobContext) -> None:
 # caller hears silence. The log shows it six times on 2026-09-27 while simulations ran here. Load is
 # CPU as a fraction capped at 1.0, and the check is load >= threshold with reserved jobs added on, so
 # any finite value can still refuse; infinity is the value `dev` uses and the one the server treats
-# as always available. It logs a startup warning that a production threshold should be under 1.
+# as always available (livekit-agents 1.8, worker.py `_is_available`).
 server = AgentServer(num_idle_processes=1, load_threshold=math.inf)
 
 
