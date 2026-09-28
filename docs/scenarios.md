@@ -145,7 +145,9 @@ found. Twelve scenarios were added (`misheard_opening`, `no_zip`, `split_address
 | Fix 2 | `5ef7a37` | The four discovery failures x3, and every scenario the ZIP check touches | cold_no_risk_night 3/3, misheard_opening 3/3, no_zip 3/3, split_address 0/3 (the model skipped the ZIP once it had the borough); 7/8 on the rest, relative_address missing the sister's number |
 | Fix 2b | `c106fd6` | split_address and relative_address x3, then a 16-scenario style subset after the prompt pass | 3/3 and 2/3; 16/16, with home-or-business re-asks 0.27 to 0 a conversation, bundled questions 0.34 to 0.19, words a turn 16.2 to 14.6 |
 | Comparison | `e27c29b` (Stage 4, worktree) | relative_address x3 | 2/3 with the same miss, so the miss is baseline variance |
-| Fix 3 | `345bd20` | The scenarios the review's fixes touch | see the final eval |
+| Fix 3 | `345bd20` | The scenarios the review's fixes touch, 1 run each | 10/11; the 11th was the model confirming a booking it never made, with a made-up reference |
+| Fix 4, reverted in fix 5 | `b146ca5`, `1e01941` | A sentence filter on the reply, then, after the third review showed it silencing honest lines, a post-hoc correction note instead | 4/4 and 3/3 on the real streaming path |
+| Final | `1e01941` | The full suite: 46 scenarios, 2 runs on safety and adversarial, 1 on core, both clocks where time matters, against the Stage 4 final | 82/82 after re-grading six conversations the old checks had misread (the agent said "our target is 9:15 PM" without "by"; "**Go**t it, rooftop AC" matched the roof pattern); 76/82 before the re-grade, $0.52 |
 
 ## Text tests (`uv run pytest -m llm`)
 

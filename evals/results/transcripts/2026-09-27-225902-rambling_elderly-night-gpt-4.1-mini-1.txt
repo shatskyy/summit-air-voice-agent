@@ -1,0 +1,34 @@
+# rambling_elderly / night / openai/gpt-4.1-mini / run 1
+FAIL: never said the callback target
+style: {'bundled': 0, 'reasked_type': 0, 'lists': 0, 'words': 18.4}
+cost: $0.0079
+
+AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?
+CALLER: Hello? Hello, yes, is this the heating people? My heat's gone off, it went off last night and it's freezing in here. I'm 82 and I live alone.
+AGENT : Our on-call tech will call you back tonight; target callback is 9:15 PM. May I have your name?
+CALLER: Oh, what was that, dear? Say it again. I said my name is Dorothy Shatsky. Yes, my heater's gone off, and my late husband used to fix the furnace himself but I can't do it. Please send someone soon.
+AGENT : Got it, Dorothy. Is 914-555-0100 the best number to reach you at?
+CALLER: What was that, dear? Say it again. Yes, that's the number you can use to reach me. And my address is 48 Bergen Street.
+AGENT : Thanks, Dorothy. Which town is 48 Bergen Street in?
+(To clarify, I didn't get the town name yet, which is needed to check availability and serviceability.)
+CALLER: Oh, it's in Brooklyn, yes. It's Brooklyn.
+  tool  check_address({"street": "48 Bergen Street", "town": "Brooklyn", "zip_code": ""})
+  ->    Ask for the ZIP code first. If they don't know it, check the address again with the ZIP left blank.
+AGENT : Thanks, Dorothy. Do you know the ZIP code there?
+CALLER: Yes, yes, it's 11201.
+  tool  check_address({"street": "48 Bergen Street", "town": "Brooklyn", "zip_code": "11201"})
+  ->    In the service area. Read it back once as 48 Bergen Street, Brooklyn, ZIP 11201, and wait for a yes. Don't offer times in the read-back. After the yes, unless the caller wants a particular day or part of the day, offer these next open windows: Tuesday, September 29, between 8 AM and noon (slot_id 2026-09-29-0800); Tuesday, September 29, between noon and 4 PM (slot_id 2026-09-29-1200).
+AGENT : That's 48 Bergen Street, Brooklyn, ZIP 11201, right?
+Sorry, I was about to offer you windows but I should wait for your confirmation of the address first.
+CALLER: Yes, that's right, the address is correct. And yes, it's the heater really needs fixing, please. I'll take the first morning appointment you have available.
+  tool  book_appointment({"slot_id": "2026-09-29-0800", "customer_type": "residential", "name": "Dorothy Shatsky", "callback_number": "914-555-0100", "address": "48 Bergen Street, Brooklyn", "zip_code": "11201", "issue": "no heat", "priority": true, "note": null, "business_name": null, "site_contact": null})
+  ->    Booked. Reference 1001 (say "one oh oh one"): Tuesday, September 29, between 8 AM and noon at 48 Bergen Street, Brooklyn. Tell the caller the day, window, address and the reference as spelled.
+AGENT : Dorothy, you're booked for Tuesday, September 29 between 8 AM and noon at 48 Bergen Street, Brooklyn. Your reference number is one oh oh one. Anything else I can help with?
+CALLER: No, that's all, thank you very much for your help. Goodbye.
+  tool  end_call({})
+  ->    
+AGENT : Thanks for calling Summit Air. Goodbye.
+  [outcome] urgent
+
+bookings: [{'ref': 1001, 'call_id': 'eval-rambling_elderly-night-1', 'slot_id': '2026-09-29-0800', 'customer_type': 'residential', 'priority': 1, 'name': 'Dorothy Shatsky', 'phone': '914-555-0100', 'address': '48 Bergen Street, Brooklyn', 'zip': '11201', 'issue': 'no heat', 'note': '', 'created_at': '2026-09-28 03:03:00'}]
+tasks: [{'ref': 2001, 'call_id': 'eval-rambling_elderly-night-1', 'kind': 'urgent', 'reason': 'no heat or cooling with someone at risk', 'summary': "Hello? Hello, yes, is this the heating people? My heat's gone off, it went off last night and it's freezing in here. I'm 82 and I live alone.", 'name': '', 'phone': '+19145550100', 'address': '', 'due_at': '2026-09-28T21:15-04:00', 'status': 'open', 'created_at': '2026-09-28 03:02:50'}]

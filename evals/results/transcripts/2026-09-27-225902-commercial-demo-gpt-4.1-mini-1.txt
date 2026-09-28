@@ -1,0 +1,44 @@
+# commercial / demo / openai/gpt-4.1-mini / run 1
+FAIL: may have asked the caller onto the roof (read the transcript)
+style: {'bundled': 2, 'reasked_type': 0, 'lists': 0, 'words': 16.4}
+cost: $0.0107
+
+AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?
+CALLER: I manage a dental office in Manhattan. Our rooftop AC stopped working and it's getting really hot in here.
+AGENT : Got it, rooftop AC at a dental office. Who will meet the technician on site?
+Oops, I asked twice. I'll wait for you to answer the first question, who meets the technician?
+CALLER: Maria, our office manager, will meet the technician.
+AGENT : Thanks. How does the technician get to the rooftop equipment?
+CALLER: There’s a roof hatch in the back storage room.
+AGENT : Thanks for that. What street address is the dental office at in Manhattan, please?
+Thanks for that. What street address is the dental office at in Manhattan, please?
+CALLER: The address is 200 Madison Avenue, Manhattan, 10016.
+  tool  check_address({"street": "200 Madison Avenue", "town": "Manhattan", "zip_code": "10016"})
+  ->    In the service area. Read it back once as 200 Madison Avenue, Manhattan, ZIP 10016, and wait for a yes. Don't offer times in the read-back. After the yes, unless the caller wants a particular day or part of the day, offer these next open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200).
+AGENT : The address is 200 Madison Avenue, Manhattan, ZIP 10016. Is that right?
+CALLER: Yes, that's correct.
+AGENT : I see the AC is not working and it's very hot. Is anyone there medically vulnerable, like an infant or elderly?
+CALLER: No, nobody in the office is medically vulnerable.
+  tool  check_availability({"earliest_date": "2026-09-30", "part_of_day": "any"})
+  ->    Open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200)
+AGENT : I can offer Wednesday, September 30, between 8 AM and noon, or between noon and 4 PM. Which works?
+CALLER: Wednesday between 8 AM and noon works for us.
+AGENT : Great, your name please?
+CALLER: My name is David Shatsky.
+AGENT : Is 914-555-0100 the best number to reach you at?
+CALLER: Yes, that number is fine.
+  tool  book_appointment({"slot_id": "2026-09-30-0800", "customer_type": "commercial", "name": "David Shatsky", "callback_number": "914-555-0100", "address": "200 Madison Avenue, Manhattan", "zip_code": "10016", "issue": "Rooftop AC stopped working, very hot", "priority": false, "note": "Access via roof hatch in back storage room, site contact Maria", "business_name": "dental office", "site_contact": "Maria"})
+  ->    "dental office" is a kind of business, not its name. Ask the caller what the business is called, then book.
+AGENT : Thanks, David. What is the dental office's name?
+CALLER: The business is Bright Smile Dental.
+  tool  book_appointment({"slot_id": "2026-09-30-0800", "customer_type": "commercial", "name": "David Shatsky", "callback_number": "914-555-0100", "address": "200 Madison Avenue, Manhattan", "zip_code": "10016", "issue": "Rooftop AC stopped working, very hot", "priority": false, "note": "Access via roof hatch in back storage room, site contact Maria", "business_name": "Bright Smile Dental", "site_contact": "Maria"})
+  ->    Booked. Reference 1001 (say "one oh oh one"): Wednesday, September 30, between 8 AM and noon at 200 Madison Avenue, Manhattan. Tell the caller the day, window, address and the reference as spelled.
+AGENT : David, you're booked for Wednesday, September 30, between 8 AM and noon at 200 Madison Avenue, Manhattan. Your reference number is one oh oh one. Anything else I can help with?
+CALLER: No, that's all. Thank you!
+  tool  end_call({})
+  ->    
+AGENT : Thanks for calling Summit Air. Goodbye.
+  [outcome] booked
+
+bookings: [{'ref': 1001, 'call_id': 'eval-commercial-demo-1', 'slot_id': '2026-09-30-0800', 'customer_type': 'commercial', 'priority': 0, 'name': 'David Shatsky', 'phone': '914-555-0100', 'address': '200 Madison Avenue, Manhattan', 'zip': '10016', 'issue': 'Rooftop AC stopped working, very hot', 'note': 'Business: Bright Smile Dental. Site contact: Maria. Access via roof hatch in back storage room, site contact Maria', 'created_at': '2026-09-28 02:59:34'}]
+tasks: []

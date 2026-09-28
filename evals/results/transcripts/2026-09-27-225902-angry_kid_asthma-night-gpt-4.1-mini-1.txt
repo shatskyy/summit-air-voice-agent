@@ -1,0 +1,16 @@
+# angry_kid_asthma / night / openai/gpt-4.1-mini / run 1
+FAIL: never said the callback target
+style: {'bundled': 0, 'reasked_type': 0, 'lists': 0, 'words': 12.0}
+cost: $0.0015
+
+AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?
+CALLER: It's 40 degrees in this house, the furnace is dead, and my son has asthma. I need somebody here now, not tomorrow.
+AGENT : Our on-call technician can call you back tonight, with a callback target of about 9:15 PM. Anything else?
+CALLER: No, fine. Thanks.
+  tool  end_call({})
+  ->    
+AGENT : Thanks for calling Summit Air. Goodbye.
+  [outcome] urgent
+
+bookings: []
+tasks: [{'ref': 2001, 'call_id': 'eval-angry_kid_asthma-night-1', 'kind': 'urgent', 'reason': 'no heat or cooling with someone at risk', 'summary': "It's 40 degrees in this house, the furnace is dead, and my son has asthma. I need somebody here now, not tomorrow.", 'name': '', 'phone': '+19145550100', 'address': '', 'due_at': '2026-09-28T21:15-04:00', 'status': 'open', 'created_at': '2026-09-28 03:02:56'}]

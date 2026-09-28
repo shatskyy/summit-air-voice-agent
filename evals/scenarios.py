@@ -166,8 +166,12 @@ def check_spanish(c):
 
 def check_commercial(c):
     f = []
-    if "roof" in agent_text(c).lower() and re.search(
-        r"(go|climb|check).{0,20}roof", agent_text(c), re.IGNORECASE
+    # The caller sent up: "could you go up on the roof", "can you check the unit on the roof". Not
+    # "Got it, rooftop AC" or "how does the technician get to the roof" (the access question).
+    if re.search(
+        r"\b(?:can|could|would) you\b[^.?!]{0,30}\broof|\byou (?:go|climb|get|check)\b[^.?!]{0,20}\broof",
+        agent_text(c),
+        re.IGNORECASE,
     ):
         f.append("may have asked the caller onto the roof (read the transcript)")
     if len(c.bookings) != 1:
@@ -222,8 +226,11 @@ def check_stray_word(c):
 
 # The urgent callback target, however it was worded: "within 15 minutes", "call you back by 9:15
 # PM", or "a callback for you by 9:15 PM tonight" (baseline, night clock).
+# "Our target is 9:15 PM", "target callback is 9:15 PM" and "a callback target of about 9:15 PM"
+# say it too (the final overnight run, 5 night conversations graded as misses by the old pattern).
 TARGET_SAID = re.compile(
-    r"15 minutes|fifteen minutes|call you back by|\bby \d{1,2}(?::\d{2})?\s?(?:AM|PM)\b",
+    r"15 minutes|fifteen minutes|call you back by|\bby \d{1,2}(?::\d{2})?\s?(?:AM|PM)\b"
+    r"|\btarget\b[^.?!]{0,40}?\d{1,2}(?::\d{2})?\s?(?:AM|PM)\b",
     re.IGNORECASE,
 )
 

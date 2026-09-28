@@ -110,3 +110,22 @@ words rather than a confirmation spoken by code from the tool result; why one to
 (latency on the urgent path, unmeasured on a phone); why the ZIP check reads every digit said
 rather than a span near the question; what reconciles the store with what the caller heard when
 the confirmation is talked over; the worst-case silence on a five-step turn.
+
+### 8. The final eval (`1e01941`, `evals/results/2026-09-27-225902-1e01941-rescored.json`)
+
+82 conversations (46 scenarios; 2 runs on safety and adversarial, 1 on core; both clocks where time
+matters), $0.520: **76/82 as graded, 82/82 after re-grading with two corrected checks, no model
+calls.** The six: five night-clock urgent conversations where the agent said "our target is 9:15
+PM" or "target callback is 9:15 PM" (the check wanted "call you back by"), and the commercial
+call where "**Go**t it, rooftop AC" matched the roof pattern. Every transcript read; the agent was
+right in all six. Ledger $2.977 of $3.00. Style on the 57 conversations the Stage 4 final also
+ran: bundled questions 12 to 10, home-or-business re-asks 4 to 0, words a turn 18.9 to 16.4. Over
+all 82: bundled 23 (0.28 a conversation; the new commercial-style and speech scenarios bundle
+more), re-asks 1, words 16.4. The fabricated-confirmation backstop fired once in 82 (below).
+
+The one firing, no_show on demo run 1: the first `book_appointment` was refused because the
+callback number hadn't come up; the model asked, got a yes, then said "You're booked for Wednesday,
+September 30..." with nothing written. The note landed and its next turn made the real booking
+call and confirmed with the true reference. The caller would have heard a premature "booked"
+before the real one; without the note there would have been no booking. So the number-step rule
+can confuse the model once, and the backstop catches what it causes.

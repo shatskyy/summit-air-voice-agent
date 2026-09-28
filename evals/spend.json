@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 2.346462,
+  "total": 2.976973,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -311,6 +311,56 @@
       "estimate": 0.0162,
       "cost": 0.019104,
       "results": ""
+    },
+    {
+      "at": "2026-09-27T22:44:14-04:00",
+      "commit": "345bd20",
+      "kind": "eval",
+      "label": "fix3: age anchors, denial words, address tie, number step",
+      "conversations": 9,
+      "estimate": 0.0514,
+      "cost": 0.063214,
+      "results": "evals/results/2026-09-27-224335-345bd20.json"
+    },
+    {
+      "at": "2026-09-27T22:44:37-04:00",
+      "commit": "345bd20",
+      "kind": "eval",
+      "label": "fix3: second run on the two variance scenarios",
+      "conversations": 2,
+      "estimate": 0.0115,
+      "cost": 0.012372,
+      "results": "evals/results/2026-09-27-224417-345bd20.json"
+    },
+    {
+      "at": "2026-09-27T22:49:40-04:00",
+      "commit": "0a4b362",
+      "kind": "eval",
+      "label": "fix4: the confirmation filter on the real streaming path",
+      "conversations": 4,
+      "estimate": 0.023,
+      "cost": 0.01848,
+      "results": "evals/results/2026-09-27-224921-0a4b362.json"
+    },
+    {
+      "at": "2026-09-27T22:58:49-04:00",
+      "commit": "1e01941",
+      "kind": "eval",
+      "label": "fix5: the correction backstop on the real path",
+      "conversations": 3,
+      "estimate": 0.0172,
+      "cost": 0.016209,
+      "results": "evals/results/2026-09-27-225834-1e01941.json"
+    },
+    {
+      "at": "2026-09-27T23:03:18-04:00",
+      "commit": "32e941d",
+      "kind": "eval",
+      "label": "overnight final (after)",
+      "conversations": 82,
+      "estimate": 0.4698,
+      "cost": 0.520236,
+      "results": "evals/results/2026-09-27-225902-1e01941.json"
     }
   ]
 }
