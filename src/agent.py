@@ -7,6 +7,7 @@ prompt.md; this file only wires speech, the model, turn-taking and the per-call 
 import asyncio
 import json
 import logging
+import math
 import os
 from pathlib import Path
 
@@ -148,7 +149,14 @@ async def save_call_record(ctx: JobContext) -> None:
 
 # One warm process answers the next call immediately. dev mode keeps none, which delayed the
 # greeting by about 2.7 seconds on the first test calls.
-server = AgentServer(num_idle_processes=1)
+# Never refuse a call for CPU load. Under `start` the server marks itself unavailable once machine
+# CPU passes load_threshold (default 0.7), which is right for a fleet where another worker takes the
+# job, but this line has one worker on one Mac: a call that arrives then has nowhere to go and the
+# caller hears silence. The log shows it six times on 2026-09-27 while simulations ran here. Load is
+# CPU as a fraction capped at 1.0, and the check is load >= threshold with reserved jobs added on, so
+# any finite value can still refuse; infinity is the value `dev` uses and the one the server treats
+# as always available. It logs a startup warning that a production threshold should be under 1.
+server = AgentServer(num_idle_processes=1, load_threshold=math.inf)
 
 
 @server.rtc_session(agent_name=AGENT_NAME, on_session_end=save_call_record)

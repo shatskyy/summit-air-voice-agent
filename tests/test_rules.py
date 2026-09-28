@@ -911,3 +911,13 @@ def test_a_heartbeat_is_recorded_per_room(db):
     store.add_heartbeat(db, "health-1")
     assert store.heartbeat_at(db, "health-1") is not None
     assert store.heartbeat_at(db, "health-2") is None
+
+
+def test_the_single_worker_never_refuses_a_call_for_cpu_load():
+    """Under `start` the default threshold (0.7) marked the only worker unavailable six times on
+    2026-09-27 while simulations ran on the Mac, and a call then has nowhere to go."""
+    import math
+
+    import agent
+
+    assert math.isinf(agent.server._load_threshold)
