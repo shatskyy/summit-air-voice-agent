@@ -223,6 +223,7 @@ class Call:
     booked_turn: int = -1  # the turn whose booking write went through
     book_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     fabricated_confirmations: int = 0  # "you're booked for" said with nothing in the store
+    pending_windows: str = ""  # windows found with the address, for the note on the caller's yes
     repeats_dropped: int = 0  # sentences the reply guard kept from being said twice in one reply
     bookings_held: int = 0  # book_appointment calls held because the caller hadn't answered yet
 
@@ -582,6 +583,33 @@ def risk_denied_last(items) -> bool:
     return False
 
 
+# A yes to the address read-back. Wider than CONFIRM, which also decides whether the caller confirmed
+# a hazard, so "Right." or "Mm-hmm." here can't change what the safety script does.
+ADDRESS_YES = re.compile(
+    r"^\W*(?:yes|yeah|yep|yup|ya|right|correct|that'?s (?:right|it|correct)|it is|exactly|sure"
+    r"|perfect|uh.?huh|mm.?hmm|mhm|you got it|sounds (?:good|right))\b",
+    re.IGNORECASE,
+)
+
+
+def windows_note(call: Call, text: str, items) -> str | None:
+    """The note for the model once the caller says yes to the address read-back: the windows found
+    with the address, and what booking still needs, so the model asks for it before trying to book
+    instead of after a refusal (two refused bookings on the 2026-09-28 10:01 call, about a second
+    each). None while the caller hasn't said yes."""
+    if not call.pending_windows or not ADDRESS_YES.match(text):
+        return None
+    windows, call.pending_windows = call.pending_windows, ""
+    still = "their name if you don't have it yet"
+    if items is not None and not number_settled(items):
+        still += ", and, in its own turn after they pick, whether this number is the best one to reach them"
+    return (
+        "The caller confirmed the address. Answer anything they just asked, then, unless they "
+        f"want a particular day or part of the day, offer these next open windows: {windows}. "
+        f"Before booking the window they pick, you still need {still}."
+    )
+
+
 def number_settled(items) -> bool:
     """Whether the callback number has come up on this call: the agent asked about it or the
     caller spoke to it ("this number is fine"). A booking without that step skipped what Summit
@@ -882,6 +910,9 @@ class SummitAirAgent(Agent):
             await self.answer_in_spanish(call, new_message)  # raises StopResponse
         if not call.warned or call.false_alarm:  # never while an emergency stands
             await self.flag_urgent(call, turn_ctx, new_message)
+        items = [*turn_ctx.items, new_message]
+        if note := windows_note(call, text, items):
+            await self.add_note(turn_ctx, note)
 
     async def speak_over(self, line: str, new_message: llm.ChatMessage):
         """Say a fixed line in place of the model's reply to this turn."""
@@ -1058,17 +1089,21 @@ class SummitAirAgent(Agent):
                 f"In the service area. Read it back once as {street}, {town}, ZIP {zip_code}, and "
                 "wait for a yes."
             )
-        # The next open windows come back with the address, so the turn after the caller's yes can
-        # offer them without a second model round trip through check_availability (A7).
+        # The next open windows are found now, so the turn after the caller's yes can offer them
+        # without a second model round trip through check_availability (A7). They reach the model
+        # in a note on that yes (windows_note), not in this result: handed over with the read-back,
+        # the model offered them in the same breath ("is that right? We have openings...", the
+        # 2026-09-28 10:01 call).
+        call.pending_windows = ""
         slots = await asyncio.to_thread(store.open_slots, call.db, now().date(), "any", now())
         if not slots:
             return checked
         for slot in slots:
             call.offered[slot["id"]] = speak_window(slot)
-        windows = "; ".join(f"{speak_window(s)} (slot_id {s['id']})" for s in slots)
+        call.pending_windows = "; ".join(f"{speak_window(s)} (slot_id {s['id']})" for s in slots)
         return (
-            f"{checked} Don't offer times in the read-back. After the yes, unless the caller wants "
-            f"a particular day or part of the day, offer these next open windows: {windows}."
+            f"{checked} Say only the read-back this turn, no times. Once the caller confirms it, "
+            "the next open windows are given to you; if they correct it, check it again."
         )
 
     @function_tool
@@ -1137,6 +1172,16 @@ class SummitAirAgent(Agent):
         """
         call = context.userdata
         if not is_real_name(name):
+            # Both gaps in one refusal: on the 10:01 call the model was refused for the name, asked
+            # it, and was refused again for the number, a second round trip of about a second.
+            items = history_of(context)
+            if items is not None and not number_settled(items):
+                raise ToolError(
+                    "Nothing is booked yet. Ask the caller for their name. Then, in its own turn, "
+                    "confirm the number they're calling from is the best one to reach them (for "
+                    "someone else's home, which number reaches someone there). Then book. Don't "
+                    "use a placeholder name."
+                )
             raise ToolError(
                 "No name yet. Ask the caller for their name, then book. Don't use a placeholder."
             )

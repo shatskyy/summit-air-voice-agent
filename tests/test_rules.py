@@ -1748,16 +1748,21 @@ def test_the_prompt_names_the_services_and_opens_neutrally():
 # Latency (A7)
 
 
-async def test_a_checked_address_comes_back_with_the_next_two_windows_already_offered(
+async def test_a_checked_address_finds_the_next_two_windows_but_keeps_them_for_the_yes(
     db, monkeypatch
 ):
+    """2026-09-28 10:01: with the windows in check_address's result, the model said "is that
+    right?" and offered them in the same reply. They are found with the address (A7, no second
+    round trip) but reach the model only in the note on the caller's yes."""
     monkeypatch.setattr(receptionist, "now", lambda: MONDAY_9AM)
     call = Call(call_id="call-a", db=db, caller_number="+19145550100")
     ctx = FakeContext(call)
     agent = SummitAirAgent("")
     result = await agent.check_address(ctx, "48 Bergen Street", "Brooklyn", "11201")
-    assert "Don't offer times in the read-back" in result
-    assert "Monday, September 28, between noon and 4 PM (slot_id 2026-09-28-1200)" in result
+    assert "no times" in result and "slot_id" not in result and "Monday" not in result
+    assert "Monday, September 28, between noon and 4 PM (slot_id 2026-09-28-1200)" in (
+        call.pending_windows
+    )
     assert list(call.offered) == ["2026-09-28-1200", "2026-09-29-0800"]
     # Bookable straight away, with no check_availability call.
     booked = await agent.book_appointment(
@@ -2534,3 +2539,74 @@ async def test_the_agent_sends_every_model_reply_through_the_guard(monkeypatch):
     said = "".join(c.delta.content or "" for c in out if c.delta)
     assert said.strip() == DOUBLED.split("\n")[0]
     assert call.repeats_dropped == 2 and call.bookings_held == 1
+
+
+# The windows arrive on the caller's yes to the address (2026-09-28 10:01)
+
+
+@pytest.mark.parametrize(
+    ("said", "noted"),
+    [
+        ("Yes.", True),
+        ("Yeah. What's the ZIP code?", True),  # 10:04: the yes and a question in one turn
+        ("That's right.", True),
+        ("Right.", True),
+        ("Mm-hmm.", True),
+        ("No, it's 84 Bergen.", False),
+        ("Actually it's Bergen Place.", False),
+    ],
+)
+def test_the_windows_note_comes_only_on_a_yes(said, noted):
+    call = Call(call_id="call-a", pending_windows="Monday (slot_id 2026-09-28-1200)")
+    note = receptionist.windows_note(call, said, [])
+    assert (note is not None) is noted
+    if noted:
+        assert "Monday (slot_id 2026-09-28-1200)" in note
+        assert call.pending_windows == ""  # given once
+    else:
+        assert call.pending_windows  # kept for the yes after the correction
+
+
+def test_the_windows_note_names_the_number_step_only_while_it_is_open():
+    history = llm.ChatContext()
+    history.add_message(role="user", content="Yes.")
+    call = Call(call_id="call-a", pending_windows="Monday")
+    assert "best one to reach them" in receptionist.windows_note(call, "Yes.", history.items)
+    history.add_message(role="assistant", content="Is this number the best one to reach you?")
+    call.pending_windows = "Monday"
+    assert "best one to reach them" not in receptionist.windows_note(call, "Yes.", history.items)
+
+
+def test_the_safety_scripts_yes_is_unchanged_by_the_wider_address_yes():
+    """ADDRESS_YES is its own pattern: "Right." to the gas script still isn't a confirmed hazard."""
+    assert not receptionist.confirms("Right.")
+    assert receptionist.ADDRESS_YES.match("Right.")
+
+
+async def test_the_callers_yes_to_the_address_puts_the_windows_in_front_of_the_model(
+    db, monkeypatch
+):
+    monkeypatch.setattr(receptionist, "now", lambda: MONDAY_9AM)
+    line = UrgentLine(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    agent = urgent_agent(line, monkeypatch, [])
+    await agent.check_address(FakeContext(line.userdata), "48 Bergen Street", "Brooklyn", "11201")
+    turn_ctx = llm.ChatContext()
+    await turn(agent, "Yes.", turn_ctx)
+    notes = [m.text_content for m in turn_ctx.items if m.type == "message" and m.role == "system"]
+    assert len(notes) == 1 and "slot_id 2026-09-28-1200" in notes[0]
+
+
+async def test_a_missing_name_and_number_are_asked_for_in_one_refusal(db):
+    """10:01: refused for the name, then refused again for the number, two round trips."""
+    ctx = SpokenContext(
+        Call(call_id="call-a", db=db, caller_number="+19145550100"),
+        ["48 Bergen Street, Brooklyn 11201", "AGENT: 48 Bergen Street, Brooklyn? ", "Yes."],
+    )
+    agent = SummitAirAgent("")
+    await agent.check_address(ctx, "48 Bergen Street", "Brooklyn", "11201")
+    with pytest.raises(ToolError) as refused:
+        await agent.book_appointment(
+            ctx, "2026-09-28-1200", "residential", "", "", "48 Bergen Street, Brooklyn", "11201",
+            "no heat",
+        )  # fmt: skip
+    assert "name" in str(refused.value) and "best one to reach them" in str(refused.value)

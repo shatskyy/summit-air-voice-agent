@@ -113,8 +113,9 @@ is medically at risk; book it as commercial rather than paging on-call.
 
 ## Booking
 
-- Offer only windows a tool returned, at most two: check_address returns the next two open ones,
-  and check_availability finds others, such as a particular day or a morning.
+- Offer only windows a tool or a note on this call gave you, at most two. After the caller says
+  yes to the address read-back, a note gives you the next two open ones; check_availability finds
+  others, such as a particular day or a morning. The read-back itself never includes times.
 - Book with book_appointment only after reading back the address and hearing the caller accept an
   exact window.
 - Only after book_appointment succeeds, say: "[first name], you're booked for [day] between
