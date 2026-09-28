@@ -47,14 +47,15 @@ The voice model runs the conversation. It does not get to decide what is true ab
 | Agent framework | [LiveKit Agents](https://github.com/livekit/agents) 1.8, Python |
 | Telephony | Twilio number on an Elastic SIP trunk into LiveKit Cloud |
 | Speech to text | Deepgram Nova-3, with territory and HVAC keyterms |
-| Language model | Gemma 4 31B and GPT-4.1 mini through LiveKit Inference, each the other's fallback. Which one leads is still being decided on phone calls |
-| Text to speech | Deepgram Aura-2, with Inworld TTS-2 Flash through LiveKit Inference taking over if Deepgram can't be reached |
+| Language model | GPT-4.1 mini on OpenAI's API, with GPT-4.1 taking over after 2.5 s without an answer |
+| Text to speech | Deepgram Aura-2, with OpenAI's gpt-4o-mini-tts taking over if Deepgram can't be reached |
 | Turn-taking | LiveKit's hosted turn detector (v1), adaptive interruption, telephony noise cancellation |
 | Store | SQLite |
 | On-call page | [ntfy](https://ntfy.sh) push |
 
-Without a Deepgram key, speech falls back to AssemblyAI Universal-3.5 Pro and Inworld TTS-2 Flash
-through LiveKit Inference. Why each choice, and what was rejected or reversed:
+No model or voice runs on LiveKit Inference: without the OpenAI or Deepgram key the worker refuses
+to start. If a provider still fails for good mid-call, code says a fixed line, files a callback
+task with the transcript and hangs up. Why each choice, and what was rejected or reversed:
 [docs/decisions.md](docs/decisions.md).
 
 ## Architecture
@@ -147,8 +148,8 @@ sqlite3 data/summit-air.db "select ref, kind, reason, due_at from tasks order by
 - **Latency.** Replies took 0.9 to 1.8 s end to end on call 6, after the turn-detector fix. An answer
   the detector thinks is unfinished can still wait up to 2 s.
 - **Listening is one vendor, and a dropped sentence stays dropped.** Deepgram handles listening
-  with no backup. Speaking falls over to Inworld when Deepgram can't be reached, which a forced
-  failure confirmed, but not partway through a sentence: on call 6 Deepgram's voice dropped
+  with no backup. Speaking falls over to OpenAI's voice when Deepgram can't be reached (a forced
+  failure confirmed the fallover with Inworld, the earlier backup), but not partway through a sentence: on call 6 Deepgram's voice dropped
   mid-sentence and the caller had to ask again.
 
 ## Before this could take real calls

@@ -194,6 +194,7 @@ class Call:
     awaiting_answer: bool = False  # the safety script asked "Is that what's happening?"
     false_alarm: bool = False  # the caller answered the script with a clear no
     closing: bool = False  # the emergency closing line is playing; the call ends after it
+    errors: list[str] = field(default_factory=list)  # unrecoverable provider errors (A5)
     hang_up: Callable[[], Awaitable[object]] | None = None  # ends the call; None in simulations
 
 
@@ -959,6 +960,95 @@ class SilenceWatch:
         self._closing = True  # the goodbye has started, so speech no longer calls it off
         await self._session.say(SILENT_GOODBYE, allow_interruptions=False)
         await self._hang_up()
+
+
+# Said by code when the model or speech-to-text fails for good during a call (A5). Without a number
+# nobody can call back, so that caller is asked to call again instead.
+TROUBLE = (
+    "I'm sorry, I'm having trouble on my end. Someone from Summit Air will call you back at this "
+    "number by {target}."
+)
+TROUBLE_NO_NUMBER = (
+    "I'm sorry, I'm having trouble on my end. Please call Summit Air back in a few minutes."
+)
+
+
+def transcript_text(items) -> str:
+    """The conversation so far as plain lines, for a task summary or the call record."""
+    lines = []
+    for item in items:
+        is_turn = getattr(item, "type", None) == "message" and item.role in ("user", "assistant")
+        if is_turn and (text := item.text_content):
+            lines.append(f"{'Caller' if item.role == 'user' else 'Agent'}: {text}")
+    return "\n".join(lines)
+
+
+class FailureLadder:
+    """The last rung when a provider fails for good mid-call. The fallback model and the backup voice
+    come first; when an error still reaches the session as unrecoverable, LiveKit keeps the call open
+    through three of them in a row while the caller hears silence. Here the first one ends the call
+    in code, once: a task holding the transcript so far (urgent when the system is down and someone
+    is at risk), a fixed line saying when we'll call back, and the hang-up once it has played. When
+    the voice is what failed there is nothing to say it with, so the task is filed and the call
+    ended."""
+
+    def __init__(self, session, call: Call) -> None:
+        self._session = session
+        self._call = call
+        self.task: asyncio.Task | None = None
+
+    def on_error(self, event) -> None:
+        error = event.error
+        if getattr(error, "recoverable", False):
+            return
+        kind = getattr(error, "type", "error")
+        self._call.errors.append(f"{kind}: {getattr(error, 'error', error)}")
+        if self.task is not None or self._call.closing:
+            return
+        logger.error("unrecoverable %s; ending the call with a callback", kind)
+        self.task = asyncio.create_task(self._end(spoken=kind != "tts_error"))
+        _background.add(self.task)
+        self.task.add_done_callback(_background.discard)
+
+    async def _end(self, spoken: bool) -> None:
+        call = self._call
+        try:
+            due = await file_dropped_call(call, transcript_text(self._session.history.items))
+        except Exception:
+            logger.exception("the dropped call's task was not recorded")
+            due = office_minutes_from(now(), CONFIG["callback_target_minutes"]["callback"])
+        if spoken:
+            line = (
+                TROUBLE.format(target=speak_due(due, now()))
+                if call.caller_number
+                else TROUBLE_NO_NUMBER
+            )
+            try:
+                self._session.interrupt(force=True)
+            except RuntimeError:
+                pass
+            handle = self._session.say(line, allow_interruptions=False)
+            try:
+                await asyncio.wait_for(handle.wait_for_playout(), 20)
+            except TimeoutError:
+                logger.warning("the trouble line did not finish playing; hanging up anyway")
+        if call.hang_up is not None:
+            await call.hang_up()
+
+
+async def file_dropped_call(call: Call, transcript: str) -> datetime:
+    """File the task for a call we are ending on our side, and return the soonest callback target
+    the caller is owed: this task's, or an urgent or emergency one already filed."""
+    urgent = call.system_down and call.at_risk and call.urgent_task is None
+    _, due, _ = await file_task(
+        call,
+        "urgent" if urgent else "callback",
+        "the call failed on our side"
+        + (", no heat or cooling with someone at risk" if urgent else ""),
+        transcript or "(nothing said yet)",
+    )
+    owed = [due, call.urgent_due] + ([call.hazard_due] if not call.false_alarm else [])
+    return min(d for d in owed if d is not None)
 
 
 async def say_goodbye(event: llm.Toolset.ToolCalledEvent) -> None:

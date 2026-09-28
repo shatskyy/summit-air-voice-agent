@@ -9,6 +9,7 @@ import json
 import logging
 import math
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -16,6 +17,7 @@ from livekit import rtc
 from livekit.agents import (
     AgentServer,
     AgentSession,
+    APIConnectOptions,
     ConversationItemAddedEvent,
     JobContext,
     TurnHandlingOptions,
@@ -25,6 +27,7 @@ from livekit.agents import (
     room_io,
     tts,
 )
+from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import deepgram, noise_cancellation, openai
 
 import store
@@ -35,6 +38,7 @@ from receptionist import (
     DICTATION_MAX_DELAY,
     MAX_DELAY,
     Call,
+    FailureLadder,
     SilenceWatch,
     SummitAirAgent,
     init_store,
@@ -65,31 +69,52 @@ SILENCE_SECONDS = 12.0  # quiet before the check-in, and again before hanging up
 
 
 def backup_voice():
-    """OpenAI's voice when the key is set, since Inworld runs on the spent LiveKit credit."""
-    if os.getenv("OPENAI_API_KEY"):
-        return openai.TTS(model="gpt-4o-mini-tts", voice="coral")
-    return inworld_voice()
-
-
-def inworld_voice():
-    return inference.TTS(
-        model="inworld/inworld-tts-2-flash",
-        voice="Ashley",
-        extra_kwargs={"apply_text_normalization": "ON"},
-    )
+    """OpenAI's voice, on its own key: the LiveKit Inference voices bill the spent LiveKit credit."""
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY is not set, so there is no backup voice")
+    return openai.TTS(model="gpt-4o-mini-tts", voice="coral")
 
 
 def speech():
-    """Deepgram runs on its own free credit. Without a key, speech runs on LiveKit Inference."""
-    if os.getenv("DEEPGRAM_API_KEY"):
-        return (
-            deepgram.STT(model="nova-3", keyterm=CONFIG["keyterms"], smart_format=True),
-            # The backup voice takes over if Deepgram can't be reached. It can't rescue a sentence
-            # that drops partway (call 6): the adapter never replays audio already heard.
-            tts.FallbackAdapter([deepgram.TTS(model=TTS_VOICE), backup_voice()]),
-        )
-    logger.warning("DEEPGRAM_API_KEY is not set; speech runs on the LiveKit Inference credit")
-    return inference.STT(model="assemblyai/universal-3-5-pro", language="en"), inworld_voice()
+    """Deepgram listens and speaks on its own free credit. There is no fallback onto the LiveKit
+    Inference credit: a missing key stops the worker at startup (missing_keys)."""
+    if not os.getenv("DEEPGRAM_API_KEY"):
+        raise RuntimeError("DEEPGRAM_API_KEY is not set")
+    return (
+        deepgram.STT(model="nova-3", keyterm=CONFIG["keyterms"], smart_format=True),
+        # The backup voice takes over if Deepgram can't be reached. It can't rescue a sentence
+        # that drops partway (call 6): the adapter never replays audio already heard.
+        tts.FallbackAdapter([deepgram.TTS(model=TTS_VOICE), backup_voice()]),
+    )
+
+
+# Each model attempt gets 2.5 s before the other model takes over, and the session doesn't retry
+# the pair: its default (3 retries, 2 s apart) left a caller in silence for up to about 24 s before
+# the error reached FailureLadder. Both models run on one OpenAI key, so an outage of the key takes
+# out both, and the ladder's line and callback are the only rescue.
+LLM_ATTEMPT_TIMEOUT = 2.5
+LLM_CONN = APIConnectOptions(max_retry=0)
+
+
+def language_model() -> llm.FallbackAdapter:
+    return llm.FallbackAdapter(
+        [make_llm(LLM_MODEL), make_llm(FALLBACK_LLM_MODEL)], attempt_timeout=LLM_ATTEMPT_TIMEOUT
+    )
+
+
+# Without these the worker would run on nothing or on the LiveKit Inference credit, so it refuses to
+# start: launchd restarts it every 10 s and the watchdog pages that the line is down.
+REQUIRED_KEYS = (
+    "LIVEKIT_URL",
+    "LIVEKIT_API_KEY",
+    "LIVEKIT_API_SECRET",
+    "OPENAI_API_KEY",
+    "DEEPGRAM_API_KEY",
+)
+
+
+def missing_keys() -> list[str]:
+    return [key for key in REQUIRED_KEYS if not os.getenv(key)]
 
 
 def turn_detector() -> inference.TurnDetector:
@@ -184,7 +209,7 @@ async def entrypoint(ctx: JobContext) -> None:
         userdata=call,
         stt=listening,
         tts=speaking,
-        llm=llm.FallbackAdapter([make_llm(LLM_MODEL), make_llm(FALLBACK_LLM_MODEL)]),
+        llm=language_model(),
         turn_handling=TurnHandlingOptions(
             turn_detection=turn_detector(),
             # Deepgram's final transcript can land after a 0.5 s wait, splitting one sentence into
@@ -194,7 +219,10 @@ async def entrypoint(ctx: JobContext) -> None:
             interruption={"mode": "adaptive"},
         ),
         user_away_timeout=SILENCE_SECONDS,
+        conn_options=SessionConnectOptions(llm_conn_options=LLM_CONN),
     )
+    # A provider that fails for good ends the call in code: a line, a callback task, the hang-up.
+    session.on("error", FailureLadder(session, call).on_error)
     session.on("conversation_item_added", log_turn_latency)
 
     def check_promise(event: ConversationItemAddedEvent) -> None:
@@ -238,4 +266,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 if __name__ == "__main__":
+    if missing := missing_keys():
+        logging.basicConfig()
+        logger.critical("not starting: %s missing from .env.local", ", ".join(missing))
+        sys.exit(1)
     cli.run_app(server)

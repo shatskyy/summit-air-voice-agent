@@ -1,9 +1,11 @@
 """Deterministic checks: no model, no network, no credit. Run after every change."""
 
+import contextlib
 from datetime import date, datetime
 
 import pytest
-from livekit.agents import StopResponse, ToolError, llm
+from livekit.agents import AgentSession, APIConnectionError, StopResponse, ToolError, llm
+from livekit.agents.voice.agent_session import SessionConnectOptions
 
 import receptionist
 import store
@@ -1466,3 +1468,148 @@ async def test_the_booking_result_spells_the_reference(db):
     assert "1001" in booked and '"one oh oh one"' in booked
     moved = await agent.book_appointment(ctx, "2026-09-29-1200", *BOOK_ARGS)
     assert '"one oh oh one"' in moved
+
+
+# The failure ladder (A5)
+
+
+class FailingLLM(llm.LLM):
+    """A model whose every request fails the way an unreachable OpenAI does."""
+
+    def chat(self, *, chat_ctx, tools=None, conn_options=None, **kwargs):
+        return FailingStream(self, chat_ctx=chat_ctx, tools=tools or [], conn_options=conn_options)
+
+
+class FailingStream(llm.LLMStream):
+    async def _run(self):
+        raise APIConnectionError("OpenAI can't be reached")
+
+
+async def test_a_model_that_fails_for_good_gets_the_line_a_callback_and_the_hang_up(db):
+    import agent
+
+    hung_up = []
+
+    async def hang_up():
+        hung_up.append(True)
+
+    call = Call(call_id="call-a", db=db, caller_number="+19145550100", hang_up=hang_up)
+    failing = llm.FallbackAdapter([FailingLLM(), FailingLLM()], attempt_timeout=0.5)
+    async with AgentSession(
+        llm=failing,
+        userdata=call,
+        conn_options=SessionConnectOptions(llm_conn_options=agent.LLM_CONN),
+    ) as session:
+        ladder = receptionist.FailureLadder(session, call)
+        session.on("error", ladder.on_error)
+        await session.start(SummitAirAgent(""))
+        # The run fails with the model; what matters is what the ladder did about it.
+        with contextlib.suppress(APIConnectionError, RuntimeError):
+            await session.run(user_input="My AC stopped working.")
+        for _ in range(100):
+            if hung_up:
+                break
+            await receptionist.asyncio.sleep(0.05)
+        said = [i.text_content for i in session.history.items
+                if i.type == "message" and i.role == "assistant"]  # fmt: skip
+    assert hung_up == [True]
+    assert any(s.startswith("I'm sorry, I'm having trouble on my end.") for s in said)
+    with store.connect(db) as conn:
+        tasks = conn.execute("select kind, summary from tasks").fetchall()
+    assert [t["kind"] for t in tasks] == ["callback"]
+    assert "My AC stopped working." in tasks[0]["summary"]
+    assert call.errors and call.errors[0].startswith("llm_error")
+
+
+class Failed:
+    def __init__(self, kind, recoverable=False):
+        self.error = type("E", (), {"type": kind, "recoverable": recoverable, "error": "down"})()
+
+
+async def ladder_run(db, kind, **flags):
+    hung_up = []
+
+    async def hang_up():
+        hung_up.append(True)
+
+    call = Call(call_id="call-a", db=db, caller_number="+19145550100", hang_up=hang_up, **flags)
+    line = HazardLine(call)
+    ladder = receptionist.FailureLadder(line, call)
+    ladder.on_error(Failed(kind))
+    ladder.on_error(Failed(kind))  # a second error files nothing more
+    await ladder.task
+    with store.connect(db) as conn:
+        kinds = [r[0] for r in conn.execute("select kind from tasks")]
+    return line.said, kinds, hung_up
+
+
+async def test_speech_to_text_failing_gets_the_line_too(db):
+    said, kinds, hung_up = await ladder_run(db, "stt_error")
+    assert len(said) == 1 and "call you back at this number by" in said[0]
+    assert kinds == ["callback"] and hung_up == [True]
+
+
+async def test_a_failed_voice_files_the_task_and_hangs_up_without_speaking(db):
+    said, kinds, hung_up = await ladder_run(db, "tts_error")
+    assert said == [] and kinds == ["callback"] and hung_up == [True]
+
+
+async def test_a_dropped_call_with_someone_at_risk_is_filed_urgent(db, monkeypatch):
+    async def fake_page(title, message):
+        return True
+
+    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    said, kinds, _ = await ladder_run(db, "llm_error", system_down=True, at_risk=True)
+    assert kinds == ["urgent"]
+    # The urgent target (15 minutes), not the routine one (two office hours).
+    due = receptionist.now() + receptionist.timedelta(minutes=15)
+    assert said[0].endswith(f"by {receptionist.speak_due(due, receptionist.now())}.")
+
+
+def test_a_recoverable_error_is_left_to_the_retry(db):
+    call = Call(call_id="call-a", db=db)
+    ladder = receptionist.FailureLadder(HazardLine(call), call)
+    ladder.on_error(Failed("llm_error", recoverable=True))
+    assert ladder.task is None and call.errors == []
+
+
+def test_only_openai_models_run_and_only_on_the_key(monkeypatch):
+    from models import make_llm
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert make_llm("openai/gpt-4.1-mini").model == "gpt-4.1-mini"
+    with pytest.raises(ValueError):
+        make_llm("google/gemma-4-31b-it")
+    monkeypatch.delenv("OPENAI_API_KEY")
+    with pytest.raises(RuntimeError):
+        make_llm("openai/gpt-4.1-mini")
+
+
+def test_speech_never_falls_back_to_the_livekit_credit(monkeypatch):
+    import agent
+
+    assert not hasattr(agent, "inworld_voice")
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    with pytest.raises(RuntimeError):
+        agent.speech()
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(RuntimeError):
+        agent.backup_voice()
+
+
+def test_the_worker_names_every_missing_key(monkeypatch):
+    import agent
+
+    for key in agent.REQUIRED_KEYS:
+        monkeypatch.setenv(key, "x")
+    assert agent.missing_keys() == []
+    monkeypatch.delenv("DEEPGRAM_API_KEY")
+    assert agent.missing_keys() == ["DEEPGRAM_API_KEY"]
+
+
+def test_each_model_gets_two_and_a_half_seconds_and_the_pair_is_not_retried(monkeypatch):
+    import agent
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert agent.language_model()._attempt_timeout == 2.5
+    assert agent.LLM_CONN.max_retry == 0
