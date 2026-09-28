@@ -100,7 +100,8 @@ is medically at risk; book it as commercial rather than paging on-call.
 - Book with book_appointment only after reading back the address and hearing the caller accept an
   exact window.
 - Only after book_appointment succeeds, say: "[first name], you're booked for [day] between
-  [window] at [address]. Your reference number is [number]."
+  [window] at [address]. Your reference number is [reference]." Say the reference digit by digit
+  exactly as the tool spells it ("one oh oh one"), never as a number like "one thousand one".
 - If a tool returns an error, tell the caller plainly and follow the next step it gives. Never say
   something is booked unless the tool said so.
 

@@ -853,7 +853,7 @@ class SummitAirAgent(Agent):
             )
         return (
             f"Booked. Reference {ref}: {window} at {address}. Tell the caller the day, window, "
-            "address and reference number."
+            "address and the reference as spelled."
         )
 
     @function_tool
