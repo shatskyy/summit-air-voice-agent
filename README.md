@@ -17,13 +17,15 @@ technician is dispatched.
 ## How I built it
 
 Twilio carries the call into LiveKit, which handles the audio session and turn-taking. Deepgram
-Nova-3 transcribes the caller, GPT-4.1 mini runs the conversation, and Gemini 3.8 Flash TTS
-(Achird, a male voice) speaks the response. GPT-4.1 backs up the conversation model. Speech falls back to Gemini
-3.8 Flash Lite and 3.1 Flash in the same voice, since each has its own rate limit, then to male
-Deepgram Aura-2 and OpenAI voices. [Voice setup and rollback](docs/gemini-voice.md) are documented separately.
+Nova-3 transcribes the caller, GPT-4.1 mini runs the conversation, and Deepgram Aura-2 (Arcas, a
+male voice) speaks the response, with OpenAI's Onyx voice as its backup. GPT-4.1 backs up the
+conversation model.
 
-I preferred Gemini's voice on the phone, so I kept it despite slower speech startup than Deepgram
-in the calls I tested.
+I tried Gemini 3.8 Flash TTS on September 28 and preferred how it sounded, but on a real call it
+took 1.0 to 1.8 s to start each reply against about 0.5 s for Deepgram, and its limit of 10
+requests a minute (one per sentence) switched the voice about a minute into the call. The Gemini
+path is still in the code behind `TTS_PROVIDER=gemini`; [voice setup and rollback](docs/gemini-voice.md)
+are documented separately.
 
 The model gathers information in whatever order the caller gives it and uses tools to check the
 address, find availability, book, or create a dispatch task. The tools validate bookings and write
@@ -66,8 +68,8 @@ from earlier model tests, rather than treating the simulation score as proof tha
 
 ## Run locally
 
-You'll need Python 3.11–3.14, uv, a LiveKit Cloud project, OpenAI and Deepgram keys, plus a Google
-API key and `TTS_PROVIDER=gemini` for the deployed voice. Phone calls also
+You'll need Python 3.11–3.14, uv, a LiveKit Cloud project, and OpenAI and Deepgram keys (a Google
+API key only if you set `TTS_PROVIDER=gemini`). Phone calls also
 need a Twilio number routed through an Elastic SIP trunk into LiveKit.
 
 ```sh

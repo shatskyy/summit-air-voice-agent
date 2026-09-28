@@ -1,5 +1,14 @@
 # Gemini voice
 
+**Off since September 28, 2026, 1:30 PM ET; Deepgram Aura-2 Arcas leads again.** On the 1:06 PM
+phone call (`RM_RhLPj79o2kFx`) Gemini 3.8 Flash took 1.0 to 1.8 s to first audio on every turn,
+against 0.5 to 0.85 s on the turns another voice took, and the median reply was 2.96 s. The call
+used Gemini's 10-requests-a-minute limit in about 50 seconds: the three-sentence greeting was three
+requests, and replies begun for four fragments of the caller's opening sentence, then dropped,
+were four more. The eleventh request got HTTP 429 and a different model spoke until 3.8 Flash
+recovered 20 s later. Every call longer than a minute would do the same. The record of the
+activation follows.
+
 Activated on the demo host September 28, 2026, after a direct synthesis test returned first audio
 in 0.807 seconds (3.72 seconds of generated speech). This is one API measurement, not end-to-end
 phone latency. A phone check of the new voice is still required.
