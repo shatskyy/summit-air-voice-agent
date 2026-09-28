@@ -77,12 +77,21 @@ def benign_detector(text: str, start: int, after_script: bool) -> bool:
     return battery and (smoke or after_script)
 
 
+# "I smoke" or "my husband smokes" is a habit, not smoke in the house.
+SMOKER = re.compile(
+    r"\b(?:i|we|you|he|she|they|husband|wife|son|daughter|roommate|tenant|dad|mom)\W+$",
+    re.IGNORECASE,
+)
+
+
 def hazard_in(text: str, after_script: bool = False) -> bool:
-    """Whether the turn names a hazard that isn't negated in its own clause and isn't a detector
-    asking for a battery. `after_script`: the caller has already heard the safety script."""
+    """Whether the turn names a hazard that isn't negated in its own clause, isn't a detector
+    asking for a battery and isn't someone who smokes. `after_script`: the caller has already
+    heard the safety script."""
     return any(
         not NEGATED.search(CLAUSE.split(text[: m.start()])[-1])
         and not benign_detector(text, m.start(), after_script)
+        and not (m.group().lower() == "smoke" and SMOKER.search(text[: m.start()]))
         for m in HAZARD.finditer(text)
     )
 
@@ -271,6 +280,14 @@ THEIR_HOME = re.compile(
 SENTENCE_END = re.compile(r"[.;!?]|\bbut\b", re.IGNORECASE)
 
 
+EQUIPMENT_AGE = re.compile(r"\w+\W+months?\W+old$", re.IGNORECASE)
+EQUIPMENT = re.compile(
+    r"\b(?:it|it'?s|its|unit|system|furnace|boiler|ac|a/c|air conditioner|heater|heat pump"
+    r"|thermostat|filter|compressor|condenser|install\w*|replaced|new)\b",
+    re.IGNORECASE,
+)
+
+
 def not_home(text: str, match: re.Match) -> bool:
     """Whether the relative named at `match` is someone who isn't in the home."""
     if not RELATIVE.fullmatch(match.group()):
@@ -292,6 +309,8 @@ def at_risk_in(text: str, last_agent: str) -> bool:
     risk."""
     for match in AT_RISK.finditer(text):
         clause = re.split(r"[,.;!?]|\bbut\b", text[: match.start()])[-1]
+        if EQUIPMENT_AGE.match(match.group()) and EQUIPMENT.search(clause):
+            continue  # "it's only 3 months old" about the AC, not a baby
         if not RISK_DENIED.search(clause) and not not_home(text, match):
             return True
     return bool(
@@ -387,7 +406,9 @@ def same_visit(held: dict, address: str, zip_code: str) -> bool:
     of one part of it in the same ZIP: "it's forty, not fourteen" or "Bergen, not Burger" keeps
     the number or the street and changes the other. A different number on a different street is a
     second address, which is a callback, so the first visit is never moved to it by mistake."""
-    if held["zip"] != zip_code:
+    # A borough-only booking has no ZIP, so a ZIP given for the same street afterwards is the
+    # same visit, not a second address.
+    if held["zip"] and zip_code and held["zip"] != zip_code:
         return False
     was, now = street_key(held["address"]), street_key(address)
     if was == now:

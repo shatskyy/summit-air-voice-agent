@@ -3086,3 +3086,33 @@ def test_a_yes_to_the_risk_question_counts_the_system_as_down():
     fine = Call(call_id="call-b")
     receptionist.note_urgency(fine, history, "No, it's just me.")
     assert receptionist.urgent_reason(fine) is None
+
+
+# The three bugs listed as known on September 28
+
+
+@pytest.mark.parametrize(
+    ("said", "fires"),
+    [("I smoke", False), ("we smoke, but not inside", False), ("I smell smoke", True),
+     ("I see smoke by the furnace", True)],
+)  # fmt: skip
+def test_someone_who_smokes_is_not_a_hazard(said, fires):
+    assert receptionist.hazard_in(said) is fires
+
+
+@pytest.mark.parametrize(
+    ("said", "at_risk"),
+    [("the AC is only 3 months old and it died", False), ("it's only 3 months old", False),
+     ("my baby is 3 months old", True), ("I have a 6 month old at home", True)],
+)  # fmt: skip
+def test_an_equipment_age_is_not_an_infant(said, at_risk):
+    assert receptionist.at_risk_in(said, "") is at_risk
+
+
+def test_a_zip_added_to_a_borough_only_booking_is_the_same_visit():
+    held = {"zip": "", "address": "48 Bergen Street, Brooklyn"}
+    assert receptionist.same_visit(held, "48 Bergen Street, Brooklyn", "11201")
+    assert not receptionist.same_visit(held, "150 West 72nd Street, Manhattan", "10023")
+    assert not receptionist.same_visit(
+        {"zip": "11201", "address": "48 Bergen Street"}, "48 Bergen Street", "11225"
+    )
