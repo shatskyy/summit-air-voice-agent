@@ -149,6 +149,22 @@ found. Twelve scenarios were added (`misheard_opening`, `no_zip`, `split_address
 | Fix 4, reverted in fix 5 | `b146ca5`, `1e01941` | A sentence filter on the reply, then, after the third review showed it silencing honest lines, a post-hoc correction note instead | 4/4 and 3/3 on the real streaming path |
 | Final | `1e01941` | The full suite: 46 scenarios, 2 runs on safety and adversarial, 1 on core, both clocks where time matters, against the Stage 4 final | 82/82 after re-grading six conversations the old checks had misread (the agent said "our target is 9:15 PM" without "by"; "**Go**t it, rooftop AC" matched the roof pattern); 76/82 before the re-grade, $0.52 |
 
+### Morning calls (2026-09-28 10:01 to 10:08, `736e913`)
+
+David's three calls on the overnight build, reviewed from `scripts/calls.py` and the worker log.
+All three booked correctly; the defects are what the morning commits fix.
+
+| Time | Room | What the caller said | What happened | Defects |
+|---|---|---|---|---|
+| 10:01 | `call-..._eQGJXmApj2C5` | "Heat's out, my mother's 80", 48 Bergen Street, Brooklyn, no ZIP | Code filed urgent task 2015 on the first turn and the target came in the first reply; booking 1006 today noon to 4 PM with priority | Asked for the ZIP after "I don't know the ZIP"; read-back and windows in one reply; refused for the name, then again for the number; a 3.5 s pause after the address; the task had no address |
+| 10:04 | `call-..._KwzEuKkUqMrK` | A new AC install estimate in one 14 s turn, then a move to Tuesday afternoon | Booking 1007 Tuesday morning, moved to Tuesday noon to 4 PM, reference unchanged; no at-risk question on an estimate | Asked for the ZIP again; said a two-sentence reply twice; asked "Which do you want?" and moved the booking in the same reply, then was talked over |
+| 10:08 | `call-..._F2VQyNc5ZTBV` | "Furnace won't kick on, 20 degrees out, just me", then "as soon as possible" | Offered routine windows, then the model paged on-call (task 2016) and booked 1009 today with priority | Routine, then urgent on the same facts; asked the borough before the street; "An on-call tech has been paged for urgency" |
+
+Proven on these calls, from the overnight list: one tool call per turn (about a second a tool
+turn), the borough without a ZIP, the ZIP the caller never said, the number step, and the
+interruptible confirmation (the store held on the 10:04 move). The booking lock and the correction
+note didn't fire.
+
 ## Text tests (`uv run pytest -m llm`)
 
 Run on 2026-09-23 against the new prompt, with no filler line. Each test ran against both candidates.

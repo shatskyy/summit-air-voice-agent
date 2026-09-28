@@ -31,11 +31,20 @@ in [scenarios.md](scenarios.md); simulated-call results are in [the eval report]
 - **Pushes carry no caller details**: the outcome, a first name, the ZIP and a lookup, never the
   number, the street or the caller's words. `scripts/calls.py` has the rest. `DISPATCH_NTFY_TOPIC` falls back to `NTFY_TOPIC`, so without it dispatch summaries
   and on-call pages share one topic.
-- **Latency.** Replies ran 0.9 to 2.6 s end to end on the 2026-09-27 phone calls. When the turn
-  detector thinks the caller is mid-sentence it waits up to 1.1 s, and up to 2.0 s after the agent
-  asks for an address or a number. Since 2026-09-28 the model makes one tool call at a time, so a
-  turn that needs two tools (file a task, then check the address) takes one more model round trip;
-  not yet measured on a phone call.
+- **Latency.** On the 2026-09-28 10:0x phone calls the median reply was 1.8 to 3.0 s, from the end
+  of the caller's speech to the agent's first audio. A turn with no tool call took about 1.2 to 1.6
+  s. A turn with a tool call took about 2.5 to 2.9 s, because the model makes one tool call at a time
+  ([ADR-014](decisions.md#adr-014-one-tool-call-per-turn)), so each tool adds a model round trip of
+  roughly a second. When the turn detector thinks the caller is mid-sentence it waits up to 1.1 s,
+  and up to 2.0 s after the agent asks for an address or a number (2.5 s until that morning, when a
+  finished address waited the full 2.5 s). The windows note on the address yes throws away that
+  turn's preemptive reply, a few hundred milliseconds.
+- **The reply guard catches exact repeats only.** A sentence said twice in one reply is dropped,
+  a paraphrase is not. A booking made before the caller answered the agent's question is held;
+  the model has to book again on the answer ([ADR-017](decisions.md#adr-017-a-reply-guard-on-the-models-output)).
+- **The cold cue is a word list.** No heat is urgent when the caller says freezing, cold in here,
+  a cold snap, snow, winter or 45 degrees or below. "It's chilly" or "the house is 50" don't count,
+  and the model is the backstop for them ([ADR-018](decisions.md#adr-018-no-heat-in-the-cold-is-urgent-whoever-is-home)).
 - **Short acknowledgments cut the agent off.** On the phone calls "Alright." and "Okay." over an
   agent question interrupted it mid-sentence (calls `riWFX67`, `NpW9kct`). Only a phone call can
   show whether the adaptive interruption model handles a given caller's backchannels.

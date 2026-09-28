@@ -281,6 +281,11 @@ flags are clear. "No, she just had a stroke" and "no, but my son is sick" are no
 model keeps its say over what the lists can't see; a fresh-context review caught a first cut that
 took any short "No, ..." as one. `cold_no_risk_night` 3 of 3 after the change, 0 of 1 before.
 
+**Revision, 2026-09-28 morning: no heat in the cold is urgent on its own.** Superseded in part by
+[ADR-018](#adr-018-no-heat-in-the-cold-is-urgent-whoever-is-home): the denial above still holds
+for a cooling failure, or no heat when the caller hasn't said it's cold, but not for no heat in the
+cold.
+
 **Evidence.** Simulated `elderly_no_heat`, `infant_no_heat`, `ac_oxygen` and `risk_during_readback`,
 on both clocks, 16 of 16 in the final run. On the phone, Gate 2 call 1: "My heat went out and my
 mother is 80" filed urgent task 2011 on the first turn, and the target was said before the name.
@@ -474,3 +479,61 @@ caught; the final eval, where every conversation runs the check.
 
 **Would reverse it.** A model that never does this, or a confirmation spoken by code from the
 tool result, the way the greeting and the emergency closing line already are.
+
+## ADR-017: A reply guard on the model's output
+
+**Status:** Accepted 2026-09-28. Not yet run in a simulation (rule 9); the first live runs are the
+phone calls after the deploy.
+
+**Decision.** Every model reply passes through `guard_reply` in `llm_node`, before the voice, the
+transcript and the tool calls see it. It does two things. A sentence identical to one already said
+in the same reply is dropped. A `book_appointment` call made after the agent asked the caller
+something they haven't answered yet, earlier in the same reply or in an earlier step of the same
+turn, is held and never runs. The first sentence always streams straight through, no sentence that
+isn't an exact repeat is dropped, no other tool call is touched, and if the guard throws, the rest
+of the reply goes through as the model wrote it. The call record counts `repeats_dropped` and
+`bookings_held`.
+
+**Why.** Two model mistakes on the 10:04 phone call. The agent said "We don't need the ZIP for
+Brooklyn. You want an estimate to install a new AC, right?" twice in one reply. Then it asked
+"Which do you want?" and moved the booking in the same reply, so the caller's answer talked over
+"Moved to Tuesday," and the confirmation had to start again. The prompt already forbade both.
+
+**How it differs from the filter reverted in ADR-016.** That filter cut sentences by meaning (a
+confirmation with nothing booked), which silenced honest lines, and it dropped the booking call
+that arrived beside them. This one cuts only exact repeats, which no honest reply contains, and
+holds only a booking the prompt forbids, made before the caller answered.
+
+**Cost.** Sentences after the first are held to their end, behind the first sentence's audio, so
+nothing is added to the first audio. A paraphrased repeat is not caught. A held booking relies on
+the model booking again on the caller's answer, which it does whenever the caller picks a window.
+
+**Evidence.** 19 offline tests from the 10:04 transcript, including the lines that must pass whole
+("Oh no, in this cold? What's the address there?", the booking confirmation).
+
+**Would reverse it.** A phone call where a held booking leaves a caller who has already picked a
+window without one.
+
+## ADR-018: No heat in the cold is urgent whoever is home
+
+**Status:** Accepted 2026-09-28 (David's call). Not yet run in a simulation (rule 9).
+
+**Decision.** Code files the urgent task and pages on-call the turn the caller has said the heat is
+down (`HEAT_DOWN`: no heat, a furnace, boiler, heater or heat pump out, off, dead or won't come on,
+never a water heater) and that it is cold (`COLD`: freezing, cold in here, a cold snap, snow,
+winter, 45 degrees or below), with reason "no heat in cold weather". Cooling still needs someone at
+risk. The denial guard in ADR-009 no longer turns this case routine, and the prompt says the same.
+
+**Why.** Rainey's brief lists "no heat in winter" as urgent on its own, beside "no AC with a medical
+condition or elderly resident". On the 10:08 call, "My furnace won't kick on. It's 20 degrees out.
+It's just me." ran routine, then the model paged on-call when the caller said "as soon as
+possible", so the agent did both on one call.
+
+**Cost.** More pages: every no-heat call in the cold goes to on-call, a healthy adult alone
+included. The cold cue is a word list, so "it's chilly" or "the house is 50" don't count.
+
+**Evidence.** Offline tests: the 10:08 opener files urgent on the first turn; an iced coil, an AC
+blowing cold, a water heater and no heat at 65 degrees stay routine. The `cold_no_risk_night`
+scenario now expects one urgent task.
+
+**Would reverse it.** On-call load from healthy callers that Summit Air says it doesn't want.
