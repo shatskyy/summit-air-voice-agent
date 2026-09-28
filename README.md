@@ -21,6 +21,9 @@ Nova-3 transcribes the caller, GPT-4.1 mini runs the conversation, and Gemini 3.
 (Kore) speaks the response. GPT-4.1 backs up the conversation model; Deepgram Aura-2 and an OpenAI
 voice back up speech. [Voice setup and rollback](docs/gemini-voice.md) are documented separately.
 
+I preferred Gemini's voice on the phone, so I kept it despite slower speech startup than Deepgram
+in the calls I tested.
+
 The model gathers information in whatever order the caller gives it and uses tools to check the
 address, find availability, book, or create a dispatch task. The tools validate bookings and write
 them to SQLite. Code also checks caller turns for common danger and vulnerability cues, so those
