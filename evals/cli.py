@@ -130,7 +130,7 @@ async def main() -> int:
     started = datetime.now(ledger.TZ)
     meta = {
         "started": started.isoformat(timespec="seconds"),
-        "stamp": started.strftime("%Y-%m-%d-%H%M"),
+        "stamp": started.strftime("%Y-%m-%d-%H%M%S"),
         "commit": commit,
         "models": sorted({m for _, _, m, _ in todo}),
         "runs": report.runs_text(args.runs, args.runs_for),
