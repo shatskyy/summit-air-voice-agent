@@ -89,3 +89,24 @@ booking confirmation (booked, scheduled, all set, a reference) while the call ho
 with the rest of that reply, and tells the model it was never spoken. Six offline tests; the
 real streaming path is checked by the sims below and the final eval. The prompt-pass line
 "unless a tool said so on this call" was a loophole and now reads "in this same turn".
+
+### 7. Fix 5 (`1e01941`): the third review, and the filter reverted
+
+The third fresh-context review, on the filter, found offline that it cut 8 of 8 honest
+pre-booking lines it tried ("You're all set. Our target is to call you back by 10 AM" became dead
+air after any callback task), dropped a `book_appointment` call that arrived beside the
+confirmation, and missed 14 of 14 fabricated paraphrases. Per rule 5 the filter went, not
+forward. In its place: the `keep_promise` shape, a post-hoc check of the agent's words against
+the store ("you're booked for", "I have you down for", "reference number is") that adds a
+correction note for the next reply and counts in the call record. Also fixed from that review:
+"Park Slope, Brooklyn" covered; a bare "No." a denial only to the at-risk question; "my
+husband's 81"; "150 West 72nd" vs "73rd"; a unit before the street; "double one"; the
+house-number question not settling the callback number. 411 offline tests. Sims through the
+real path (abusive_human, status_call, routine_furnace): 3/3, $0.016. Ledger $2.457 before the
+final.
+
+Things the reviews raised for David to defend, verbatim in spirit: why a regex over the agent's
+words rather than a confirmation spoken by code from the tool result; why one tool call per turn
+(latency on the urgent path, unmeasured on a phone); why the ZIP check reads every digit said
+rather than a span near the question; what reconciles the store with what the caller heard when
+the confirmation is talked over; the worst-case silence on a five-step turn.
