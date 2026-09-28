@@ -216,7 +216,7 @@ def readme_block(meta: dict, results: list[dict], before: list[dict] | None) -> 
             "",
             (
                 f"Baseline: `{Path(meta['compare']).name}`, {len({r['scenario'] for r in was})} "
-                "scenarios before the Phase 2 changes, graded by the checks of that time. Several "
+                "scenarios in the earlier run, graded by the checks of that time. Several "
                 "checks are stricter now, so a baseline pass is not a pass today. A dash means the "
                 "scenario did not exist yet."
             ),

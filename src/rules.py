@@ -146,10 +146,10 @@ SYSTEM_DOWN = re.compile(
     r"|\bfreezing\b|\bcold in (?:here|the (?:house|apartment|home))\b|\btoo hot\b|\bsweltering\b",
     re.IGNORECASE,
 )
-# No heat in the cold is urgent on its own, whoever is home: Rainey's brief lists "no heat in
-# winter" as urgent beside "no AC with a medical condition or elderly resident" (David, 2026-09-28,
-# after the 10:08 call ran routine for "20 degrees out, just me" and paged only on "as soon as
-# possible"). Cooling still needs someone at risk. The heat half of SYSTEM_DOWN, with no cooling
+# No heat in the cold is urgent on its own, whoever is home: the brief lists "no heat in winter" as
+# urgent beside "no AC with a medical condition or elderly resident", and a test call ran routine
+# for "20 degrees out, just me" and paged only on "as soon as possible". Cooling still needs
+# someone at risk. The heat half of SYSTEM_DOWN, with no cooling
 # words and no water heater (plumbing, which Summit Air doesn't do).
 HEAT_DOWN = re.compile(
     r"\bno (?:heat|heating|hot air)\b|\bno heat\b"
@@ -201,8 +201,8 @@ AT_RISK = re.compile(
     r"|\b(?:6[5-9]|[7-9]\d|10\d|110)\W*years?\W*old\b"
     # "I'm 82 and I live alone", "she's 84", "my wife is 79": an age said as a bare number right
     # after a person. Only a pronoun or a relation anchors it: "address is 72 Bergen", "it is 88
-    # in here" and "the thermostat is 66" are not people (a fresh-context review caught the first
-    # cut, which pages on-call for "address is 72 Bergen Street").
+    # in here" and "the thermostat is 66" are not people (the first cut paged on-call for "address
+    # is 72 Bergen Street").
     r"|\b(?:i'?m|i am|she'?s|she is|he'?s|he is|(?:wife|husband|aunt|uncle|mother|mom|father|dad"
     r"|grandmother|grandfather|grandma|grandpa|sister|brother|neighbor|tenant|roommate|partner)"
     r"(?:'s|\W+(?:is|who'?s|who is|turned|just turned)))\W+(?:6[5-9]|[7-9]\d|10\d|110)\b"

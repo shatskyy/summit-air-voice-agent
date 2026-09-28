@@ -640,8 +640,8 @@ class SummitAirAgent(Agent):
         else:
             if len(zip_code) != 5:
                 raise ToolError("Ask for the five-digit ZIP code, then check the address again.")
-            # A ZIP the caller never said is one the model made up (Gate 1 call riWFX67: "I
-            # forgot", and the model checked and booked 11201 on its own).
+            # A ZIP the caller never said is one the model made up (call riWFX67: "I forgot", and
+            # the model checked and booked 11201 on its own).
             if (said := caller_digits(history_of(context))) and zip_code not in said:
                 raise ToolError(
                     f"The caller never said ZIP {zip_code} on this call, so don't use it. Ask "

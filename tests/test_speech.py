@@ -89,7 +89,7 @@ def test_the_gemini_order_is_configuration(monkeypatch):
 
 
 def test_every_voice_in_the_chain_is_male(monkeypatch):
-    """David, 2026-09-28: a man's voice, kept through a fallback."""
+    """A man's voice, kept through a fallback."""
     monkeypatch.setenv("OPENAI_API_KEY", "test")
     made = {}
     monkeypatch.setattr(agent.openai, "TTS", lambda **kwargs: made.update(kwargs))

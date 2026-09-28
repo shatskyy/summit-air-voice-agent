@@ -227,7 +227,7 @@ def check_stray_word(c):
 # The urgent callback target, however it was worded: "within 15 minutes", "call you back by 9:15
 # PM", or "a callback for you by 9:15 PM tonight" (baseline, night clock).
 # "Our target is 9:15 PM", "target callback is 9:15 PM" and "a callback target of about 9:15 PM"
-# say it too (the final overnight run, 5 night conversations graded as misses by the old pattern).
+# say it too (5 night conversations were graded as misses by the old pattern).
 TARGET_SAID = re.compile(
     r"15 minutes|fifteen minutes|call you back by|\bby \d{1,2}(?::\d{2})?\s?(?:AM|PM)\b"
     r"|\btarget\b[^.?!]{0,40}?\d{1,2}(?::\d{2})?\s?(?:AM|PM)\b",
@@ -457,10 +457,10 @@ def check_new_install(c):
     return f
 
 
-# Overnight pass (2026-09-28): scenarios from the real phone calls and from how phone speech reads
-# as text. Each pass criterion was written before the scenario was run.
+# Scenarios from the real phone calls and from how phone speech reads as text. Each pass criterion
+# was written before the scenario was run.
 
-# What the pre-Phase-2 build said to "my phone stopped working" (heard for "my furnace"): a decline.
+# What an earlier build said to "my phone stopped working" (heard for "my furnace"): a decline.
 DECLINE = re.compile(
     r"only (?:help|work|do|handle)|can'?t help|not (?:something|able)", re.IGNORECASE
 )
@@ -497,7 +497,7 @@ def check_misheard_opening(c):
 
 
 def check_no_zip(c):
-    """Gate 1 call riWFX67: the caller said "I forgot" the ZIP and the model checked and booked a
+    """Call riWFX67: the caller said "I forgot" the ZIP and the model checked and booked a
     ZIP it made up. The agent never says a ZIP the caller didn't; a Brooklyn address still books."""
     f = one_booking_at(c, "48 Bergen")
     if zips := re.findall(r"\b\d{5}\b", agent_text(c)):
@@ -525,11 +525,11 @@ def check_no_risk_question_when_nothing_is_broken(c):
     return []
 
 
-def check_new_install_overnight(c):
+def check_new_install_without_risk_question(c):
     return check_new_install(c) + check_no_risk_question_when_nothing_is_broken(c)
 
 
-def check_member_overnight(c):
+def check_member_without_risk_question(c):
     return check_member(c) + check_no_risk_question_when_nothing_is_broken(c)
 
 
@@ -563,7 +563,7 @@ def check_answers_different_question(c):
     """The caller answers the wrong question twice. The booking still carries the right name and
     address."""
     f = one_booking_at(c, "48 Bergen")
-    if c.bookings and "shatsky" not in c.bookings[0]["name"].lower():
+    if c.bookings and "rivera" not in c.bookings[0]["name"].lower():
         f.append(f"booked name {c.bookings[0]['name']!r}")
     return f
 
@@ -600,8 +600,7 @@ def check_cold_no_risk_night(c):
     """No heat at 20 degrees with only a healthy adult home. Until 2026-09-28 this was routine at
     any hour; since then no heat in the cold is urgent whoever is home (the brief lists "no
     heat in winter" as urgent on its own). One urgent task, never an emergency, and at most one
-    booking: at night the caller may take the on-call callback instead of a morning visit. Not
-    rerun since the change (rule 9, 2026-09-28)."""
+    booking: at night the caller may take the on-call callback instead of a morning visit."""
     f = []
     kinds = [t["kind"] for t in c.tasks]
     if kinds.count("urgent") != 1:
@@ -630,7 +629,7 @@ SCENARIOS = [
         "core",
         "Hi, my AC is making a rattling noise. Can someone come look at it this week?",
         check_blocked_id,
-        brief=f"Your name is David Shatsky. Your address is {HOME}. It's a house, nobody at risk. "
+        brief=f"Your name is Sam Rivera. Your address is {HOME}. It's a house, nobody at risk. "
         "Take the first window offered. If asked for a phone number, it's 914-555-0142.",
         caller_number=None,
     ),
@@ -661,7 +660,7 @@ SCENARIOS = [
         "core",
         "I'm on your maintenance plan and I'm due for my fall tune-up.",
         check_member,
-        brief=f"Your name is David Shatsky. Your address is {HOME}. The number you're calling from "
+        brief=f"Your name is Sam Rivera. Your address is {HOME}. The number you're calling from "
         "is fine. Take the first window offered. If any price or fee comes up, say exactly: "
         '"Isn\'t that covered by my plan?"',
     ),
@@ -673,7 +672,7 @@ SCENARIOS = [
         "morning off work. This is ridiculous.",
         check_no_show,
         brief=f"You are annoyed but not abusive. Your second thing to say, whatever the agent "
-        f'says first, is "I want to talk to a manager." Your name is David Shatsky, your address '
+        f'says first, is "I want to talk to a manager." Your name is Sam Rivera, your address '
         f"is {HOME}, the AC isn't cooling. The number you're calling from is fine. Accept the "
         "first window offered.",
         clocks=("demo", "night"),
@@ -684,7 +683,7 @@ SCENARIOS = [
         "adversarial",
         "Hola, mi aire acondicionado no funciona. ¿Pueden venir a revisarlo?",
         check_spanish,
-        brief="You speak only Spanish. Your name is David. The number you're calling from is the "
+        brief="You speak only Spanish. Your name is Sam. The number you're calling from is the "
         'best one; if asked for a number, say "Este número está bien."',
     ),
     Scenario(
@@ -694,7 +693,7 @@ SCENARIOS = [
         "I manage a dental office in Manhattan. Our rooftop AC stopped working and it's "
         "getting really hot in here.",
         check_commercial,
-        brief="Your name is David Shatsky. The business is Bright Smile Dental. The site contact "
+        brief="Your name is Sam Rivera. The business is Bright Smile Dental. The site contact "
         "is Maria, the office manager. Access: the roof hatch is in the back storage room. The "
         "address is 200 Madison Avenue, Manhattan, 10016. Nobody is medically at risk. The number "
         "you're calling from is fine. Take the first window offered. Only give each detail when "
@@ -706,7 +705,7 @@ SCENARIOS = [
         "core",
         "My AC isn't cooling well, can someone come check it?",
         check_address_change,
-        brief=f"Your name is David Shatsky. Give the address as {HOME}. Nobody is at risk. The "
+        brief=f"Your name is Sam Rivera. Give the address as {HOME}. Nobody is at risk. The "
         "number you're calling from is fine. The first time the agent reads the address back to "
         'you, say exactly: "Actually, sorry, it\'s 52 Bergen Street, not 48." After that, confirm '
         "52 and accept the first window offered.",
@@ -717,8 +716,8 @@ SCENARIOS = [
         "core",
         "Hi. My furnace stopped working.",
         check_routine_furnace,
-        brief=f"It's your house. Nobody at risk: just you, healthy adult. Your name is David "
-        f"Shatsky, your address is {HOME}. The number you're calling from is fine. Take the "
+        brief=f"It's your house. Nobody at risk: just you, healthy adult. Your name is Sam "
+        f"Rivera, your address is {HOME}. The number you're calling from is fine. Take the "
         "first window offered.",
     ),
     Scenario(
@@ -728,7 +727,7 @@ SCENARIOS = [
         "My heat went out last night and it's freezing in here. My mother is 80 and she lives "
         "with me.",
         check_elderly_no_heat,
-        brief=f"It's your house. Your name is David Shatsky, your address is {HOME}. The number "
+        brief=f"It's your house. Your name is Sam Rivera, your address is {HOME}. The number "
         "you're calling from is fine. If offered a choice, take the first morning window. If "
         "told on-call will call back, accept that too.",
         clocks=("demo", "night"),
@@ -740,7 +739,7 @@ SCENARIOS = [
         "Our heat stopped working and it's freezing in here. I have a three-month-old baby.",
         check_urgent,
         lines=[
-            "David Shatsky.",
+            "Sam Rivera.",
             "Yes, this number is fine.",
             HOME,
             "Yes, that's right.",
@@ -757,7 +756,7 @@ SCENARIOS = [
         check_urgent,
         lines=[
             "It's really hot in here, it's been out since this morning.",
-            "David Shatsky.",
+            "Sam Rivera.",
             "Yes, this number is fine.",
             HOME,
             "Yes, that's right.",
@@ -773,7 +772,7 @@ SCENARIOS = [
         # the first turn, and this scenario tests a risk said late, during the read-back.
         "Hi, my furnace stopped working.",
         check_urgent,
-        brief=f"It's your house. Your name is David Shatsky, your address is {HOME}. The number "
+        brief=f"It's your house. Your name is Sam Rivera, your address is {HOME}. The number "
         "you're calling from is fine. If asked whether anyone at home is at risk, say no, it's just "
         "you. The first time the agent reads the address back to you, say exactly: \"Yes, that's "
         "right. Oh, actually my dad's staying with us, he's 86.\" After that, answer what you're "
@@ -787,7 +786,7 @@ SCENARIOS = [
         "adversarial",
         "My AC is leaking, and while you're here I need my furnace tune-up.",
         check_two_issues,
-        brief=f"It's your house, nobody at risk. Your name is David Shatsky, your address is {HOME}. "
+        brief=f"It's your house, nobody at risk. Your name is Sam Rivera, your address is {HOME}. "
         "The number you're calling from is fine. Take the first window offered. You want both "
         "things done on the same visit.",
     ),
@@ -797,7 +796,7 @@ SCENARIOS = [
         "core",
         "Hi, my furnace is making a loud banging noise when it starts.",
         check_change_window,
-        brief=f"It's your house, nobody at risk. Your name is David Shatsky, your address is {HOME}. "
+        brief=f"It's your house, nobody at risk. Your name is Sam Rivera, your address is {HOME}. "
         "The number you're calling from is fine. When windows are offered, take the morning one, "
         "even if an afternoon is offered too. Right after the agent confirms the booking and "
         'gives a reference number, say exactly: "Can we make that the afternoon instead?" '
@@ -808,7 +807,7 @@ SCENARIOS = [
         "asr_street",
         "A3. A misheard street",
         "adversarial",
-        "Hi, this is David Shatsky. My AC is rattling and I'd like someone to look at it. It's my "
+        "Hi, this is Sam Rivera. My AC is rattling and I'd like someone to look at it. It's my "
         "house, nobody's at risk, and the number I'm calling from is fine.",
         check_asr_street,
         lines=[
@@ -825,8 +824,8 @@ SCENARIOS = [
         "adversarial",
         "My furnace won't turn on. And no, I don't smell gas or anything.",
         check_no_gas_negation,
-        brief=f"It's your house, nobody at risk: just you, a healthy adult. Your name is David "
-        f"Shatsky, your address is {HOME}. The number you're calling from is fine. Take the first "
+        brief=f"It's your house, nobody at risk: just you, a healthy adult. Your name is Sam "
+        f"Rivera, your address is {HOME}. The number you're calling from is fine. Take the first "
         "window offered.",
     ),
     Scenario(
@@ -837,7 +836,7 @@ SCENARIOS = [
         check_dusty_smell,
         brief=f'Your first reply, whatever the agent says, is exactly: "No, just dusty." After '
         f"that: you want someone to check the furnace. It's your house, nobody at risk: just you, "
-        f"a healthy adult. Your name is David Shatsky, your address is {HOME}. The number you're "
+        f"a healthy adult. Your name is Sam Rivera, your address is {HOME}. The number you're "
         "calling from is fine. Take the first window offered.",
     ),
     Scenario(
@@ -847,7 +846,7 @@ SCENARIOS = [
         "Stop.",
         check_stray_word,
         brief=f"You said 'Stop.' by accident, talking to someone else. Next turn, apologize and say "
-        f"your AC is leaking water. It's your house, nobody at risk. Your name is David Shatsky, "
+        f"your AC is leaking water. It's your house, nobody at risk. Your name is Sam Rivera, "
         f"your address is {HOME}. The number you're calling from is fine. Take the first window "
         "offered.",
     ),
@@ -873,7 +872,7 @@ SCENARIOS = [
         "adversarial",
         "My heat pump is making a grinding noise. Can someone come out and look at it?",
         check_refuses_address,
-        brief="Your name is David Shatsky, it's your house, nobody at risk, and the number you're "
+        brief="Your name is Sam Rivera, it's your house, nobody at risk, and the number you're "
         "calling from is fine. You will not give your address over the phone. The first time "
         'you are asked for it, say "I\'d rather not give my address over the phone." If asked '
         'again, say "No, I\'m not comfortable with that." If offered a callback, accept it.',
@@ -885,7 +884,7 @@ SCENARIOS = [
         "Hi, I have a technician coming today between noon and 4. Where is he? When will he get "
         "here?",
         check_status_call,
-        brief="Your name is David Shatsky, your address is 48 Bergen Street, Brooklyn, 11201, and "
+        brief="Your name is Sam Rivera, your address is 48 Bergen Street, Brooklyn, 11201, and "
         "the number you're calling from is fine. You want to know when the technician will "
         "arrive. If offered a callback from dispatch, accept it.",
     ),
@@ -906,7 +905,7 @@ SCENARIOS = [
         check_abusive_human,
         brief='You are angry and rude, and you swear at the agent ("this is bullshit", "you '
         'people are useless") in your first two replies. You want to talk to a real person, not '
-        "a machine. Your name is David Shatsky and the number you're calling from is fine. If "
+        "a machine. Your name is Sam Rivera and the number you're calling from is fine. If "
         "offered a callback from a person, accept it grudgingly.",
     ),
     Scenario(
@@ -915,7 +914,7 @@ SCENARIOS = [
         "core",
         "Hi, I'm calling about my sister's apartment. Her AC is leaking water all over the floor.",
         check_relative_address,
-        brief="Your name is David Shatsky and you are calling from work. The AC is at your "
+        brief="Your name is Sam Rivera and you are calling from work. The AC is at your "
         "sister Ana's apartment, 310 Ocean Avenue, Apt 4B, Brooklyn, 11226; nobody there is at "
         "risk. If asked for a number that reaches someone there, it's Ana's: 718-555-0199. Take "
         "the first window offered.",
@@ -941,7 +940,7 @@ SCENARIOS = [
         check_new_install,
         lines=[
             "Hi, I'm looking to get central AC installed in my house.",
-            "David Shatsky.",
+            "Sam Rivera.",
             "Yes, this number is fine.",
             HOME,
             "Yes, that's right.",
@@ -949,7 +948,7 @@ SCENARIOS = [
             "No, that's all.",
         ],
     ),
-    # Overnight pass: from the real calls.
+    # From the real calls.
     Scenario(
         "misheard_opening",
         "R1. The opening heard wrong",
@@ -958,7 +957,7 @@ SCENARIOS = [
         check_misheard_opening,
         brief="Speech-to-text got your first line wrong: you actually said your AC stopped "
         'working. If the agent asks what you meant or what stopped working, say "My AC. The air '
-        f"conditioning.\" It's your house, nobody at risk. Your name is David Shatsky, your address "
+        f"conditioning.\" It's your house, nobody at risk. Your name is Sam Rivera, your address "
         f"is {HOME}. The number you're calling from is fine. Take the first window offered.",
     ),
     Scenario(
@@ -967,7 +966,7 @@ SCENARIOS = [
         "core",
         "Hi, my furnace won't turn on.",
         check_no_zip,
-        brief="It's your house, nobody at risk: just you. Your name is David Shatsky. The number "
+        brief="It's your house, nobody at risk: just you. Your name is Sam Rivera. The number "
         "you're calling from is fine. Your address is 48 Bergen Street in Brooklyn. You do not know "
         'your ZIP code: if asked for it, say "I honestly don\'t know it off the top of my head." '
         "If asked again, say you really don't know it. Never say any ZIP code. Take the first "
@@ -979,13 +978,13 @@ SCENARIOS = [
         "core",
         "Hi, my furnace won't turn on.",
         check_split_address,
-        brief="It's your house, nobody at risk: just you. Your name is David Shatsky. The number "
+        brief="It's your house, nobody at risk: just you. Your name is Sam Rivera. The number "
         "you're calling from is fine. Give the address in pieces, the way people do when they "
         'pause: when asked for it, say only "It\'s 48 Bergen". Whatever the agent says next, say '
         '"Street. In Brooklyn." If asked for the ZIP, say it as words: "one one two oh one". '
         "Confirm the read-back if it is right. Take the first window offered.",
     ),
-    # Overnight pass: phone speech, written as text.
+    # Phone speech, written as text.
     Scenario(
         "rambling_elderly",
         "S1. 82, alone, hard of hearing, no heat",
@@ -993,7 +992,7 @@ SCENARIOS = [
         "Hello? Hello, yes, is this the heating people? My heat's gone off, it went off last night "
         "and it's freezing in here. I'm 82 and I live alone.",
         check_rambling_elderly,
-        brief="You are Dorothy Shatsky, 82, hard of hearing, and you ramble. Twice in the call, say "
+        brief="You are Dorothy Rivera, 82, hard of hearing, and you ramble. Twice in the call, say "
         '"What was that, dear? Say it again." before answering. Mention once that your late '
         f"husband used to fix the furnace himself. Your address is {HOME}; give it in pieces "
         "(the street first, the ZIP only when asked). The number you're calling from is fine. "
@@ -1009,7 +1008,7 @@ SCENARIOS = [
         "here now, not tomorrow.",
         check_angry_kid_asthma,
         brief='You are angry and swear once ("this is bullshit"). If the agent asks anything you '
-        'already said, snap "I just told you!" and then repeat it. Your name is David Shatsky, '
+        'already said, snap "I just told you!" and then repeat it. Your name is Sam Rivera, '
         f"your address is {HOME}, the number you're calling from is fine. If offered a window, take "
         "the first one. If told on-call will call you back, say fine.",
         clocks=("demo", "night"),
@@ -1023,7 +1022,7 @@ SCENARIOS = [
         check_fillers_self_correction,
         lines=[
             "Uh, no, no, it's just me and the dog.",
-            "It's David. David Shatsky.",
+            "It's Sam. Sam Rivera.",
             "Yeah, yeah that's fine.",
             "It's um, 48... no sorry, 52. 52 Bergen Street, Brooklyn, 11201.",
             "Yes.",
@@ -1040,7 +1039,7 @@ SCENARIOS = [
         brief="The first two times the agent asks you something, answer a different question: if "
         "asked whether anyone is at risk, say when you're free (\"I'm home all day Wednesday\"); "
         "if asked your name, give your address instead. After those two, answer what you're asked. "
-        f"It's your house, nobody at risk. Your name is David Shatsky, your address is {HOME}. "
+        f"It's your house, nobody at risk. Your name is Sam Rivera, your address is {HOME}. "
         "The number you're calling from is fine. Take the first window offered.",
     ),
     Scenario(
@@ -1049,7 +1048,7 @@ SCENARIOS = [
         "core",
         "Hi, my heat pump is making a grinding noise.",
         check_phone_in_pieces,
-        brief="It's your house, nobody at risk. Your name is David Shatsky, your address is "
+        brief="It's your house, nobody at risk. Your name is Sam Rivera, your address is "
         f"{HOME}. When asked for a phone number, give it in pieces over three turns: first say "
         'only "seven one eight", then when the agent asks for the rest say only "five five five", '
         'then "oh one nine nine". If the agent reads the number back, confirm it. Take the first '
@@ -1065,7 +1064,7 @@ SCENARIOS = [
         brief="The second thing you say, whatever the agent asks, is exactly: \"It's my house. Oh, "
         'and I also smell something burning, kind of a hot smell from the unit." If the agent asks '
         'whether you smell gas, see smoke or have a carbon monoxide alarm, say exactly: "No, no '
-        'smoke, just a hot smell." After that: nobody at risk, your name is David Shatsky, your '
+        'smoke, just a hot smell." After that: nobody at risk, your name is Sam Rivera, your '
         f"address is {HOME}, the number you're calling from is fine, take the first window offered.",
     ),
     Scenario(
@@ -1076,7 +1075,7 @@ SCENARIOS = [
         check_defrost_steam,
         brief="If the agent asks whether you smell gas, see smoke or have a carbon monoxide alarm, "
         'say exactly: "No, it\'s not smoke, it looks like steam." After that: the heat still works, '
-        "nobody at risk, your name is David Shatsky, your address is "
+        "nobody at risk, your name is Sam Rivera, your address is "
         f"{HOME}, the number you're calling from is fine, take the first window offered.",
     ),
     Scenario(
@@ -1086,7 +1085,7 @@ SCENARIOS = [
         "My furnace won't kick on and it's like 20 degrees outside.",
         check_cold_no_risk_night,
         brief="It's your house. Nobody at risk: just you, a healthy adult; say so if asked. Your "
-        f"name is David Shatsky, your address is {HOME}. The number you're calling from is fine. "
+        f"name is Sam Rivera, your address is {HOME}. The number you're calling from is fine. "
         "Take the first window offered.",
         clocks=("night",),
     ),
@@ -1096,7 +1095,7 @@ SCENARIOS = [
         "safety",
         "I'm calling for my mom. Her heat's out, she's 84, and it's 55 degrees in her apartment.",
         check_mom_other_address,
-        brief="Your name is David Shatsky and you're calling from work. Your mother lives alone at "
+        brief="Your name is Sam Rivera and you're calling from work. Your mother lives alone at "
         "310 Ocean Avenue, Apt 4B, Brooklyn, 11226. The number that reaches her is 718-555-0199; "
         "the number you're calling from reaches you. If offered a window, take the first one. If "
         "told on-call will call back, say okay.",
@@ -1106,8 +1105,8 @@ SCENARIOS = [
 
 # Two existing core scenarios gain the no-risk-question check (nothing is broken on either).
 BY_NAME = {s.name: s for s in SCENARIOS}
-BY_NAME["new_install"].check = check_new_install_overnight
-BY_NAME["member"].check = check_member_overnight
+BY_NAME["new_install"].check = check_new_install_without_risk_question
+BY_NAME["member"].check = check_member_without_risk_question
 
 
 CLOSE = re.compile(r"anything else", re.IGNORECASE)

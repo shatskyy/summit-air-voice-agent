@@ -29,9 +29,9 @@ PAGE_PROMISE = re.compile(
 
 # The booking confirmation the prompt dictates, "[first name], you're booked for [day]", and its
 # close relatives. On one simulated call the model asked "Which works?" and went on, in the same
-# reply, "David, you're booked for Wednesday... Your reference number is one two three four",
+# reply, "Sam, you're booked for Wednesday... Your reference number is one two three four",
 # with no tool call and nothing in the store. A first cut filtered the reply sentence by sentence
-# before the voice; a fresh-context review showed it silencing honest lines ("You're all set. Our
+# before the voice; in review it silenced honest lines ("You're all set. Our
 # target is to call you back by 10 AM") and dropping the tool call that would have made the
 # confirmation true, so this is the keep_promise shape instead: after the fact, never silencing,
 # and precise about the phrase.

@@ -38,7 +38,7 @@ def spoken_list(words: list[str], joiner: str = "and") -> str:
 
 
 def speak_phone(number: str) -> str:
-    """A US number as it is said: "+16505550142" becomes "650-555-0142". On the Gate 1 call the
+    """A US number as it is said: "+16505550142" becomes "650-555-0142". On an early test call the
     model read the caller ID back as "plus one six five oh...". Anything else is left as it came."""
     digits = re.sub(r"\D", "", number)
     if len(digits) == 11 and digits.startswith("1"):

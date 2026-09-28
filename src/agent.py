@@ -68,7 +68,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", CANDIDATE_LLMS[0])
 FALLBACK_LLM_MODEL = os.getenv(
     "FALLBACK_LLM_MODEL", next(m for m in CANDIDATE_LLMS if m != LLM_MODEL)
 )
-# Male voices throughout (David, 2026-09-28): Gemini Achird ("friendly and approachable"),
+# Male voices throughout: Gemini Achird ("friendly and approachable"),
 # Deepgram Arcas (calm, neutral), OpenAI Onyx, so a fallback keeps a man's voice.
 TTS_VOICE = os.getenv("TTS_VOICE", "aura-2-arcas-en")
 SILENCE_SECONDS = 12.0  # quiet before the check-in, and again before hanging up

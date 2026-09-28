@@ -844,7 +844,7 @@ async def test_ordinary_lines_and_filed_pages_file_nothing(db, monkeypatch):
     ("said", "dictation"),
     [
         ("Got it. What's the address there?", True),
-        ("Thanks, David. What's the best number to reach you?", True),
+        ("Thanks, Sam. What's the best number to reach you?", True),
         ("Which town is that in? And the ZIP?", True),
         ("Oh no. What's going on with it?", False),
         ("Is anyone there who'd be at risk in the cold?", False),
@@ -1892,7 +1892,7 @@ async def test_spanish_gets_the_fixed_line_and_a_callback_filed_in_code(db, monk
     assert len(notes) == 1 and "Never promise a Spanish speaker" in notes[0]
     assert "Don't create another callback task" in notes[0]
     # Once only.
-    await turn(agent, "Me llamo David, por favor.")
+    await turn(agent, "Me llamo Sam, por favor.")
     assert len(line.said) == 1
 
 
@@ -1960,11 +1960,11 @@ async def test_a_checked_address_offers_no_times_until_check_availability(db, mo
         )  # fmt: skip
 
 
-# One booking write per caller turn (overnight pass)
+# One booking write per caller turn
 
 
 async def test_two_bookings_in_one_turn_leave_the_store_on_what_the_caller_heard(db):
-    """change_window, 1 of 6 runs at Stage 3: the model sent two book_appointment calls in one
+    """change_window, 1 of 6 simulated runs: the model sent two book_appointment calls in one
     turn, the new window then the old one. LiveKit runs a turn's tool calls concurrently, both came
     back "Moved", and the store ended on the old window while the caller heard the new one. Only the
     first write of a turn may go through; the second is refused and told what stands."""
@@ -2036,7 +2036,7 @@ def test_the_model_may_not_send_two_tool_calls_at_once(monkeypatch):
     assert seen[2]["parallel_tool_calls"] is NOT_GIVEN
 
 
-# A ZIP the caller never said, and an address without one (overnight pass)
+# A ZIP the caller never said, and an address without one
 
 
 class SpokenContext(FakeContext):
@@ -2083,7 +2083,7 @@ async def test_a_zip_the_caller_said_passes(db, said):
 
 
 async def test_a_zip_the_caller_never_said_is_refused(db):
-    """Gate 1 call riWFX67: the caller said "I forgot" and the model checked and booked a ZIP it
+    """Call riWFX67: the caller said "I forgot" and the model checked and booked a ZIP it
     made up."""
     ctx = SpokenContext(
         Call(call_id="call-a", db=db),
@@ -2155,7 +2155,7 @@ def test_a_context_without_a_history_skips_the_zip_check(db):
     assert receptionist.caller_digits(None) == ""
 
 
-# A corrected address is the same visit; a second address is not (overnight pass)
+# A corrected address is the same visit; a second address is not
 
 
 @pytest.mark.parametrize(
@@ -2240,7 +2240,7 @@ def test_the_line_and_the_simulator_allow_the_same_number_of_tool_steps():
     assert runner.MAX_TOOL_STEPS == line.MAX_TOOL_STEPS == 5
 
 
-# An urgent task straight over "no, it's just me" (overnight pass)
+# An urgent task straight over "no, it's just me"
 
 
 @pytest.mark.parametrize(
@@ -2302,7 +2302,7 @@ def test_the_prompt_says_how_to_handle_a_missing_zip_and_a_split_address():
             (
                 "Hi. I wanna mute eight a, uh, AC unit. There's nothing wrong with my current one. "
                 "I just want an upgrade. I'm at 48 Bergen Street, Brooklyn, I don't know the ZIP. "
-                "My name is David Shatsky. I'm available tomorrow morning."
+                "My name is Sam Rivera. I'm available tomorrow morning."
             )
         ],
         ["48 Bergen Street, Brooklyn.", "No zip code, sorry."],
@@ -2322,7 +2322,7 @@ def test_a_relation_is_not_a_name(name):
     assert not receptionist.is_real_name(name)
 
 
-@pytest.mark.parametrize("name", ["Ana", "David Shatsky", "Maria Lopez", "D. Shatsky", "Mrs. Chen"])
+@pytest.mark.parametrize("name", ["Ana", "Sam Rivera", "Maria Lopez", "S. Rivera", "Mrs. Chen"])
 def test_a_real_name_still_is_one(name):
     assert receptionist.is_real_name(name)
 
@@ -2376,16 +2376,16 @@ async def test_a_blank_zip_cannot_carry_an_unchecked_address_into_the_booking(db
         )  # fmt: skip
 
 
-# A booking confirmation with no booking behind it (overnight pass)
+# A booking confirmation with no booking behind it
 
 
 async def test_a_confirmation_with_no_booking_gets_a_correction_note(db, monkeypatch):
     """cold_no_risk_night on the demo clock, 2026-09-27 22:43: "Which works?" then, in the same
-    reply, "David, you're booked for Wednesday... Your reference number is one two three four",
+    reply, "Sam, you're booked for Wednesday... Your reference number is one two three four",
     with nothing booked. The model is told, so its next reply corrects it."""
     line = UrgentLine(Call(call_id="call-a", db=db, caller_number="+19145550100"))
     agent = urgent_agent(line, monkeypatch, [])
-    said = "Which works? David, you're booked for Wednesday. Your reference number is one two three four."
+    said = "Which works? Sam, you're booked for Wednesday. Your reference number is one two three four."
     assert await receptionist.flag_fabricated_confirmation(agent, line.userdata, said)
     assert line.userdata.fabricated_confirmations == 1
     assert any(
@@ -2421,7 +2421,7 @@ def test_honest_lines_are_not_called_fabricated(said):
 @pytest.mark.parametrize(
     "said",
     [
-        "David, you're booked for Wednesday, September 30, between 8 AM and noon.",
+        "Sam, you're booked for Wednesday, September 30, between 8 AM and noon.",
         "You're now booked for Thursday morning.",
         "I have you down for Tuesday between noon and 4.",
         "Your confirmation number is one two three four.",
@@ -2432,7 +2432,7 @@ def test_the_confirmation_phrases_are_recognized(said):
     assert receptionist.FABRICATED.search(said)
 
 
-# The third review's cases (overnight pass)
+# Edge cases from review
 
 
 @pytest.mark.parametrize(
@@ -2573,12 +2573,12 @@ async def test_the_first_sentence_streams_through_before_it_ends():
     [
         "Oh no, in this cold? What's the address there?",
         (
-            "David, you're booked for Monday, September 28, between noon and 4 PM at 48 Bergen "
+            "Sam, you're booked for Monday, September 28, between noon and 4 PM at 48 Bergen "
             "Street, Brooklyn. Your reference number is one oh oh six. Is there anything else I "
             "can do?"
         ),
         "Okay. Okay. Got it.",  # a repeated one-word sentence is dropped like any other repeat
-        "Thanks, David. Is 650-555-0142 the best number to reach you?",
+        "Thanks, Sam. Is 650-555-0142 the best number to reach you?",
     ],
 )
 async def test_an_ordinary_reply_passes_whole(reply):
@@ -2722,16 +2722,16 @@ def test_a_booking_replaces_the_address_code_copied_onto_the_task(db):
         phone="", address="150 West 72nd Street, Manhattan 10023", due_at="2026-09-28T16:06-04:00",
     )  # fmt: skip
     store.fill_task_contact(
-        db, "call-a", "David Shatsky", "+16505550142", "150 West 72nd Street, Apt 3", {},
+        db, "call-a", "Sam Rivera", "+16505550142", "150 West 72nd Street, Apt 3", {},
         {"address": "150 West 72nd Street, Manhattan 10023"},
     )  # fmt: skip
     task = store.tasks_for(db, "call-a")[0]
-    assert (task["name"], task["address"]) == ("David Shatsky", "150 West 72nd Street, Apt 3")
+    assert (task["name"], task["address"]) == ("Sam Rivera", "150 West 72nd Street, Apt 3")
     store.update_task_contact(db, ref, "", "", "")  # empty details never blank a field
-    assert store.tasks_for(db, "call-a")[0]["name"] == "David Shatsky"
+    assert store.tasks_for(db, "call-a")[0]["name"] == "Sam Rivera"
 
 
-# No heat in the cold is urgent whoever is home (David, 2026-09-28, after the 10:08 call)
+# No heat in the cold is urgent whoever is home (after the 10:08 call)
 
 
 @pytest.mark.parametrize(
