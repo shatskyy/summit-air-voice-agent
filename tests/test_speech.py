@@ -32,7 +32,7 @@ def fake_speech(monkeypatch, provider, models=None):
         monkeypatch.delenv("GEMINI_TTS_MODELS", raising=False)
     else:
         monkeypatch.setenv("GEMINI_TTS_MODELS", models)
-    monkeypatch.setenv("GEMINI_TTS_VOICE", "Kore")
+    monkeypatch.delenv("GEMINI_TTS_VOICE", raising=False)
     made = []
 
     def gemini(**kwargs):
@@ -70,7 +70,7 @@ def test_voice_order_and_transcription_are_independent(monkeypatch, provider, re
         else ["deepgram", "openai"]
     )
     assert speaking.max_retry_per_tts == retries
-    assert all(v["vertexai"] is False and v["voice_name"] == "Kore" for v in made)
+    assert all(v["vertexai"] is False and v["voice_name"] == "Achird" for v in made)
 
 
 def test_only_31_gets_the_style_prompt(monkeypatch):
@@ -86,3 +86,15 @@ def test_only_31_gets_the_style_prompt(monkeypatch):
 def test_the_gemini_order_is_configuration(monkeypatch):
     _, speaking, _ = fake_speech(monkeypatch, "gemini", " gemini-3.1-flash-tts-preview , ")
     assert speaking.voices == ["gemini-3.1-flash-tts-preview", "deepgram", "openai"]
+
+
+def test_every_voice_in_the_chain_is_male(monkeypatch):
+    """David, 2026-09-28: a man's voice, kept through a fallback."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test")
+    made = {}
+    monkeypatch.setattr(agent.openai, "TTS", lambda **kwargs: made.update(kwargs))
+    agent.backup_voice()
+    assert made["voice"] == "onyx"
+    assert agent.TTS_VOICE == "aura-2-arcas-en"
+    _, _, gemini = fake_speech(monkeypatch, "gemini")
+    assert {v["voice_name"] for v in gemini} == {"Achird"}

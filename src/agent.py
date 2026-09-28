@@ -68,7 +68,9 @@ LLM_MODEL = os.getenv("LLM_MODEL", CANDIDATE_LLMS[0])
 FALLBACK_LLM_MODEL = os.getenv(
     "FALLBACK_LLM_MODEL", next(m for m in CANDIDATE_LLMS if m != LLM_MODEL)
 )
-TTS_VOICE = os.getenv("TTS_VOICE", "aura-2-thalia-en")
+# Male voices throughout (David, 2026-09-28): Gemini Achird ("friendly and approachable"),
+# Deepgram Arcas (calm, neutral), OpenAI Onyx, so a fallback keeps a man's voice.
+TTS_VOICE = os.getenv("TTS_VOICE", "aura-2-arcas-en")
 SILENCE_SECONDS = 12.0  # quiet before the check-in, and again before hanging up
 
 
@@ -76,7 +78,7 @@ def backup_voice():
     """OpenAI's voice, on its own key: the LiveKit Inference voices bill the spent LiveKit credit."""
     if not os.getenv("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY is not set, so there is no backup voice")
-    return openai.TTS(model="gpt-4o-mini-tts", voice="coral")
+    return openai.TTS(model="gpt-4o-mini-tts", voice="onyx")
 
 
 def voice_provider() -> str:
@@ -122,7 +124,7 @@ def gemini_voice(model: str | None = None):
     model = model or os.getenv("GEMINI_TTS_MODEL") or gemini_models()[0]
     return google.beta.GeminiTTS(
         model=model,
-        voice_name=os.getenv("GEMINI_TTS_VOICE", "Kore"),
+        voice_name=os.getenv("GEMINI_TTS_VOICE", "Achird"),
         vertexai=False,
         instructions=STYLE_PROMPT if model in STYLE_PROMPT_MODELS else None,
     )

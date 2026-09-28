@@ -18,9 +18,9 @@ technician is dispatched.
 
 Twilio carries the call into LiveKit, which handles the audio session and turn-taking. Deepgram
 Nova-3 transcribes the caller, GPT-4.1 mini runs the conversation, and Gemini 3.8 Flash TTS
-(Kore) speaks the response. GPT-4.1 backs up the conversation model. Speech falls back to Gemini
-3.8 Flash Lite and 3.1 Flash in the same voice, since each has its own rate limit, then to Deepgram
-Aura-2 and an OpenAI voice. [Voice setup and rollback](docs/gemini-voice.md) are documented separately.
+(Achird, a male voice) speaks the response. GPT-4.1 backs up the conversation model. Speech falls back to Gemini
+3.8 Flash Lite and 3.1 Flash in the same voice, since each has its own rate limit, then to male
+Deepgram Aura-2 and OpenAI voices. [Voice setup and rollback](docs/gemini-voice.md) are documented separately.
 
 I preferred Gemini's voice on the phone, so I kept it despite slower speech startup than Deepgram
 in the calls I tested.

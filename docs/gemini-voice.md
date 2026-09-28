@@ -10,14 +10,14 @@ this change does not silently switch a running deployment. Set these in `.env.lo
 ```dotenv
 TTS_PROVIDER=gemini
 GOOGLE_API_KEY=your-key
-GEMINI_TTS_VOICE=Kore
+GEMINI_TTS_VOICE=Achird
 # optional; this is the default order
 GEMINI_TTS_MODELS=gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts,gemini-3.1-flash-tts-preview
 ```
 
 **Three Gemini models, best first (2026-09-28).** On the paid Tier 1 key each Gemini TTS model is
 limited to 10 requests a minute, every spoken sentence is one request, and one phone call peaked at
-7 on 3.1 alone. So a sentence a model refuses goes to the next Gemini model, in the same Kore voice,
+7 on 3.1 alone. So a sentence a model refuses goes to the next Gemini model, in the same voice (Achird, male; Kore until 2026-09-28),
 before it goes to Deepgram's different voice. Probes that morning, with each result transcribed:
 
 | Model | First audio | Read the text exactly |
