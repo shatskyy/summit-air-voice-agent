@@ -133,7 +133,7 @@ offered with the address. That build went on the line at 21:38 and took no calls
 worker was running under `caffeinate -s` on power. `caffeinate` holds off idle sleep, not a closed
 lid, so for the review window the laptop stays open and plugged in.
 
-### Late-night simulation pass (2026-09-27, 22:15 to 23:05)
+### Simulation passes (2026-09-27, 22:15 to 23:05, and the final build on 2026-09-28)
 
 No phone calls: the line was dark from 22:03 until the next morning. Everything here is simulation
 and offline tests, so phone calls are still needed to prove it. I went through the 28 stored phone
@@ -153,6 +153,7 @@ and two code reviews found. Twelve scenarios were added (`misheard_opening`, `no
 | Fix 3 | 22:43: the review's fixes | The scenarios the review's fixes touch, 1 run each | 10/11; the 11th was the model confirming a booking it never made, with a made-up reference |
 | Fix 4, reverted in fix 5 | 22:48, then 22:58 (ADR-016) | A sentence filter on the reply, then, after a review showed it silencing honest lines, a correction note after the fact instead | 4/4 and 3/3 on the real streaming path |
 | Final | 22:58, the night's final build | The full suite: 40 scenarios on 49 scenario and clock pairs, 2 runs on safety and adversarial, 1 on core, both clocks where time matters | 82/82 after re-grading six conversations the old checks had misread (the agent said "our target is 9:15 PM" without "by"; "**Go**t it, rooftop AC" matched the roof pattern); 76/82 before the re-grade, $0.52 |
+| Final build | 2026-09-28 17:44, after the split, the safety-rule fixes and the docs | The same suite and run counts, on the build this repo ends on | 80/82, with no re-grading, $0.53. `commercial`: the simulated caller never mentioned the roof hatch, so the booking has no access note, and the agent asked two questions in one turn. `refuses_address`: the model filed two callback tasks for one caller, the missing idempotency key in [limitations](limitations.md). Bundled questions fell from 23 to 8 across the 82 conversations |
 
 ### Morning calls (2026-09-28 10:01 to 10:08)
 
@@ -190,9 +191,14 @@ ADR-020 (no risk denial, no several-day request), so that is still unheard on a 
 | 16:45 | `call-..._7VzXSeGQnxy9` | "Dogs are barking", "Tell me more about what you offer", "What do you have available?" | Services listed; nothing booked or filed; `hung_up_early`; median reply 1.44 s | Asked which service instead of calling `check_availability` when asked what was available (the prompt says answer first) |
 
 Neither call reached the address read-back, a booking or `end_call`, so what ADR-021 and ADR-022
-changed is still unheard on a phone. No phone call has run on the 16:48 fix, or on the later
-changes that evening: the page hold that starts after the safety script, the detector-battery and
-hedged-gas rules (ADR-004), and the at-risk and heat-down fixes (ADR-009).
+changed went unheard on a phone until the calls below.
+
+### Final-build calls (2026-09-28, from 17:31, on the build this repo ends on)
+
+| Time | Room | What the caller said | What happened | Defects |
+|---|---|---|---|---|
+| 17:31 | `call-..._8EKiTd6r65V4` | "One second.", twice | The agent waited, checked in once, and the caller hung up; `hung_up_early` | None |
+| 17:32 | `call-..._QuycDAxskfwi` | "My heat's out, and my eight year old mom lives with me" (speech-to-text for 80), a Manhattan address, "I need something urgent right now", then "I'm a smoker, by the way. And the furnace is about 15 years old" after the booking | Urgent task 2022 filed and paged on the first reply with the target (17:47); the address read back and confirmed; a backup visit booked (1014) with the confirmation spoken by code; "I'm a smoker" got no safety script; median reply 1.72 s | "Ninety two second Avenue" came through as words, so the street check asked for the house number again ([limitations](limitations.md)); "Which borough" was cut off once by the caller's next fragment |
 
 ## Text tests (`uv run pytest -m llm`)
 

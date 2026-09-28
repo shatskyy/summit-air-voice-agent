@@ -232,8 +232,9 @@ after the script) was proven on calls 6 to 9. The held page and the closing line
 the calls of 2026-09-27 between 20:39 and 20:42: "I think gas is leaking from my stove", then
 "Yes", got the script, the closing line and a hang-up 0.17 s after it played, with one emergency
 task (2012); "no, I don't smell gas" got no script. The `false_alarm` path (a clear no after the
-script) is proven in simulation and offline tests only, and the 2026-09-28 evening changes have
-not been simulated or heard on a phone call.
+script) is proven in simulation and offline tests. The 2026-09-28 evening changes ran in the
+final simulation on that build (safety 30 of 30, including `dusty_smell`, `no_gas_negation` and
+`defrost_steam`), and on the 17:32 call "I'm a smoker" got no script.
 
 ## ADR-005: Live transfer, deferred
 
@@ -356,7 +357,9 @@ lists, fixed together with the ADR-004 revision of the same evening:
   won't turn on, it won't stop clicking" still counts, because the check reads only the clause
   the failure is named in.
 
-Offline tests only; not simulated and not heard on a phone call.
+They ran in the final simulation on that build (safety 30 of 30, including `mom_other_address`,
+`elderly_no_heat` and `infant_no_heat`). On the 17:32 phone call "my heat's out, and my mom lives
+with me" filed the urgent task and paged on the first reply.
 
 **Evidence.** Simulated `elderly_no_heat`, `infant_no_heat`, `ac_oxygen` and `risk_during_readback`,
 on both clocks, 16 of 16 in the final run of the night of 2026-09-27. On the phone, the 20:39
@@ -651,7 +654,8 @@ callers finding the fixed wording stiff.
 
 ## ADR-020: A failure mid-call makes it a repair, and a "no" to risk holds for the call
 
-**Status:** Accepted 2026-09-28. Offline tests only; not yet heard on a phone call.
+**Status:** Accepted 2026-09-28. Offline tests, and the final simulation on the evening build
+(80 of 82).
 
 **Decision.** Three changes from the 2:28 PM call, where a caller booked a free AC install
 estimate for Friday, then said "my AC just completely broke", answered "No" to the at-risk
@@ -680,8 +684,8 @@ routine; the model can no longer override that with its own judgment.
 ## ADR-021: Code puts the caller's details on a paged task, and a yes confirms only a read-back heard to the end
 
 **Status:** Accepted 2026-09-28. Parts 2 and 3, and the name taken from speech in part 1, were
-superseded and removed the same day by ADR-022. Offline tests only; not yet heard on a phone
-call. Part 4 is a prompt change and has not been simulated.
+superseded and removed the same day by ADR-022. Offline tests, and the final simulation on the
+evening build (80 of 82).
 
 **Decision.** Four changes from the 3:51 PM call (`KSJ5YTzz9uHA`), an 80-year-old without heat:
 
