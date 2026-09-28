@@ -36,9 +36,14 @@ I kept the prompt, business settings and booking logic separate so I could chang
 speaks without changing what it can book. Every call leaves a transcript, tool results and a record
 of the outcome, which makes it possible to trace a bad conversation back to what happened.
 
-Start with the [prompt](src/prompt.md) and [receptionist](src/receptionist.py).
-The [architecture](docs/architecture.md) covers the rest, and [decisions](docs/decisions.md)
-explains the tradeoffs.
+Start with the [prompt](src/prompt.md) and the [receptionist](src/receptionist.py), which holds the
+call and its tools. The rules code applies to the caller's words are in [rules.py](src/rules.py),
+the lines code speaks in [speech.py](src/speech.py), paging in [paging.py](src/paging.py) and the
+checks on the model's output in [guards.py](src/guards.py). The [architecture](docs/architecture.md)
+covers the rest, and [decisions](docs/decisions.md) explains the tradeoffs.
+
+I built this with Claude Code as my pair programmer. The product decisions, the tradeoffs and the
+review of every change are mine, and the decision log records why each one went the way it did.
 
 ## Scope and limits
 
@@ -50,21 +55,25 @@ confirmation or customer-history lookup.
 The worker runs on one Mac under launchd, with a watchdog checking it every five minutes. That is
 enough for this demo, but a customer deployment needs an always-on host and a real dispatch
 integration. Address recognition and interruptions still need work. The urgency rules use keyword
-patterns, and the model can still say something is booked before writing it; a check adds a
-correction for its next reply, but cannot take back what the caller already heard.
+patterns that lean toward over-triggering. The booking confirmation is spoken by code only after
+the booking is written, but the model can still claim a booking in its own words without calling
+the tool; a check corrects it on the next reply, and cannot take back what the caller already heard.
 [Detailed limits](docs/limitations.md) and [phone-call notes](docs/scenarios.md) are in the repo.
 
 ## Testing
 
-The September 27 text simulation (`c279b81`) passed 82 of 82 conversations across 40 scenarios, including
-changed addresses, vulnerable residents, refused information and off-script requests. Six results
-were regraded after correcting the checks. The [report](evals/REPORT.md) links the evidence.
-That run predates the September 28 fixes. Offline checks cover the current code; neither kind of
-test proves hearing or turn-taking. [Final-pass notes](docs/final-pass.md) separate the evidence.
+The final build passed 80 of 82 simulated conversations across 40 scenarios, with two runs each on
+the safety and adversarial scenarios and no re-grading; the safety scenarios passed 30 of 30. In
+one miss the simulated caller never mentioned the roof hatch, so a commercial booking went in
+without an access note, and in the other the model filed two callback tasks for one caller. The
+[report](evals/REPORT.md) links both transcripts. A simulated caller is another model reading a
+brief, so these runs test the turn logic and what gets written, not hearing or turn-taking.
 
-Routine booking, urgent escalation and the gas response have been tested by phone. The latest
-changes still need a fresh phone pass. The [call notes](docs/scenarios.md) also include failures
-from earlier model tests, rather than treating the simulation score as proof that every call works.
+529 offline tests cover the rules, the tools and the store without any keys or credit, and CI runs
+them on every push.
+
+Routine booking, urgent escalation and the gas response have been tested by phone, most recently
+on this build, where a call about an elderly parent at home paged on-call on the first reply. The [call notes](docs/scenarios.md) record every call, failures included.
 
 ## Run locally
 
