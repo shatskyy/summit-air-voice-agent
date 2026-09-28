@@ -40,6 +40,7 @@ from receptionist import (
     init_store,
     keep_promise,
     now,
+    release_held_page,
     render_instructions,
     wants_dictation,
 )
@@ -172,7 +173,9 @@ async def entrypoint(ctx: JobContext) -> None:
         return
 
     caller = await ctx.wait_for_participant()
-    call = Call(call_id=ctx.room.name, caller_number=caller_number(caller))
+    call = Call(call_id=ctx.room.name, caller_number=caller_number(caller), hang_up=ctx.delete_room)
+    # A caller who hangs up after the safety script, without answering it, gets the page at once.
+    ctx.add_shutdown_callback(lambda: release_held_page(call))
     await asyncio.to_thread(init_store, call.db)
     await asyncio.to_thread(store.save_call, call.db, call.call_id, call.caller_number)
 

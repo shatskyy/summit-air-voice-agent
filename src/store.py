@@ -48,6 +48,7 @@ create table if not exists tasks (
     phone text not null default '',
     address text not null default '',
     due_at text not null,
+    status text not null default 'open',  -- open, or false_alarm when the caller said no hazard
     created_at text not null default (datetime('now'))
 );
 
@@ -102,6 +103,11 @@ def init(path: Path, windows: list[dict], capacity: int, today: date, days_ahead
     ]
     with connect(path) as conn:
         conn.executescript(SCHEMA)
+        # `create table if not exists` leaves an existing table as it was, so a column added later
+        # is added here.
+        columns = {r["name"] for r in conn.execute("pragma table_info(tasks)")}
+        if "status" not in columns:
+            conn.execute("alter table tasks add column status text not null default 'open'")
         conn.executemany("insert or ignore into slots values (?, ?, ?, ?, ?)", rows)
 
 
@@ -190,6 +196,11 @@ def add_task(path: Path, **task) -> int:
     """
     with connect(path) as conn:
         return conn.execute(sql, task).fetchone()["ref"]
+
+
+def set_task_status(path: Path, ref: int, status: str) -> None:
+    with connect(path) as conn:
+        conn.execute("update tasks set status = ? where ref = ?", (status, ref))
 
 
 def save_call(

@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 0.356349,
+  "total": 0.420084,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -61,6 +61,16 @@
       "estimate": 0.0328,
       "cost": 0.039527,
       "results": "evals/results/2026-09-27-2012-030c842-dirty.json"
+    },
+    {
+      "at": "2026-09-27T20:19:19-04:00",
+      "commit": "f6b6003",
+      "kind": "eval",
+      "label": "A4 gas negation, held page, closed emergency",
+      "conversations": 14,
+      "estimate": 0.078,
+      "cost": 0.063735,
+      "results": "evals/results/2026-09-27-2018-f6b6003-dirty.json"
     }
   ]
 }

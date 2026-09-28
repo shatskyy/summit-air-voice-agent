@@ -19,7 +19,14 @@ import store
 from evals.pricing import track
 from evals.scenarios import Conversation, Scenario, style
 from models import make_llm
-from receptionist import GREETING, Call, SummitAirAgent, init_store, keep_promise
+from receptionist import (
+    GREETING,
+    Call,
+    SummitAirAgent,
+    init_store,
+    keep_promise,
+    release_held_page,
+)
 
 CALLER_MODEL = "openai/gpt-4.1-mini"
 HANG_UP = "<hang up>"
@@ -138,10 +145,16 @@ async def play(scenario: Scenario, clock_name: str, model: str, run: int) -> dic
     """One conversation. Call inside `with clock(clock_name)`."""
     db = Path(tempfile.mkdtemp(prefix="eval-")) / "eval.db"
     init_store(db)
+    hung_up: list[bool] = []
+
+    async def hang_up() -> None:
+        hung_up.append(True)
+
     call = Call(
         call_id=f"eval-{scenario.name}-{clock_name}-{run}",
         caller_number=scenario.caller_number,
         db=db,
+        hang_up=hang_up,
     )
     error = ""
     caller_usage = None
@@ -172,6 +185,8 @@ async def play(scenario: Scenario, clock_name: str, model: str, run: int) -> dic
             for _ in range(MAX_TURNS):
                 # The safety script, when it fires, replaces the model's reply, as on a call.
                 spoke_script = await backstop(agent, session, say)
+                if call.closing:  # the emergency closing line: code ends the call after it
+                    break
                 if not spoke_script and ended(await session.run(user_input=say)):
                     break
                 if scenario.brief:
@@ -183,9 +198,16 @@ async def play(scenario: Scenario, clock_name: str, model: str, run: int) -> dic
         except Exception as e:  # noqa: BLE001 - a crash is a finding; keep the transcript
             error = f"{type(e).__name__}: {e}"
         kept_promise = any(await asyncio.gather(*promises))
+        held = call.held_page
+        await release_held_page(call)  # the caller has hung up, as on a call
+        await asyncio.sleep(0.05)  # let a hang-up queued after playout run
         transcript = history_lines(session)
         if kept_promise:
             transcript.append("  [backstop] filed the urgent task the agent promised")
+        if held is not None:
+            transcript.append(f"  [page] {'cancelled' if held.cancelled else 'went out'}")
+        if hung_up:
+            transcript.append("  [hung up by code]")
 
     convo = Conversation(transcript, rows(db, "bookings"), rows(db, "tasks"))
     failures = scenario.check(convo) + ([f"crashed: {error}"] if error else [])

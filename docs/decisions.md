@@ -118,26 +118,46 @@ committed or it raises an error. The lookup returns if the store goes remote aga
 
 ## ADR-004: Emergencies are detected in code
 
-**Status:** Accepted
+**Status:** Accepted, revised 2026-09-27 (negation, a held page, a closed emergency)
 
 **Decision.** Every finished caller turn is checked against a fixed pattern list of hazard signals:
 gas smell or leak, rotten eggs, carbon monoxide or a CO alarm, smoke, fire or flames, a burning smell
-and sparks. On the first match in a call, the agent writes an emergency task (a local write that
-takes milliseconds), cuts off anything already being said, speaks a fixed safety script that cannot
-be interrupted, and skips the model's reply for that turn. The on-call page goes out in the
-background, so a slow or failed page never delays the script.
+and sparks. A match is ignored when the words just before it, in the same clause, end in a negation
+("I don't smell gas", "no smoke", "don't really smell"); "I don't know, I smell gas" still fires. On
+the first match in a call, the agent writes an emergency task (a local write that takes
+milliseconds), cuts off anything already being said, speaks a fixed safety script that cannot be
+interrupted, and skips the model's reply for that turn. The script ends by asking "Is that what's
+happening?", and code acts on the answer:
 
-**Why.** Safety guidance must never wait on a model choosing to follow an instruction. Softer
-urgency, such as no heat in cold weather with an elderly occupant, stays with the model and is
-tested, because it depends on context a pattern list cannot judge.
+- **The page is held, not the script.** The on-call page waits for the caller's next turn, and goes
+  out on the first of: an answer that is anything but a clear no, the caller hanging up, or 15
+  seconds. A clear no (a short negative: "no", "nope", "no, it's not", "no, just dusty") cancels
+  the page, marks the task `false_alarm` in its `status` column, and tells the model to carry on
+  with the normal call. A hazard mentioned after that reopens the task and pages at once.
+- **A confirmed emergency is closed in code.** A yes, or a hazard named in the answer, gets a fixed
+  line in place of a model reply: "Okay. Get everyone outside now and call 911 from there. Our
+  on-call technician will call you at this number by {target}. Please hang up and go." The call
+  ends once it has played.
 
-**Cost.** A pattern list over-triggers. "I don't smell gas" and a chirping smoke detector both match,
-so the script is worded to be harmless when that happens and ends by asking whether it applies. A
-false alarm costs a cautious sentence; a miss costs far more. A classifier is the upgrade if false
-alarms start to cost calls.
+If the task can't be written, the script still plays and the page goes out at once, unheld.
 
-**Evidence.** Offline tests cover the patterns, the phrases that must not match (a furnace that
-"won't fire up"), and one emergency task per call. Not yet tested on the phone.
+**Why.** Safety guidance must never wait on a model choosing to follow an instruction, and neither
+should ending the call: a caller in a house with a gas leak should be walking out, not answering
+questions. Holding the page costs at most 15 seconds on a real emergency and saves a 2 AM page on
+every dusty first-heat smell. Urgency without a hazard (no heat with someone at risk) is now also
+filed by code (`flag_urgent` in `src/receptionist.py`).
+
+**Cost.** A pattern list still over-triggers (a chirping smoke detector matches), and the negation
+rule is lexical, so "it's not like there's no gas smell" would be read as a no. The script is
+worded to be harmless when it fires, and a clear no now undoes the page. A classifier is the upgrade
+if false alarms start to cost calls.
+
+**Evidence.** Offline tests cover the patterns, the negations, the phrases that must not match (a
+furnace that "won't fire up"), one emergency task per call, the held page (cancelled, released,
+timed out, released on hang-up) and the closing line with the hang-up after playout. Simulated
+calls `gas`, `no_gas_negation` and `dusty_smell` check the task, its status, the page and the
+hang-up. On the phone the old version (page at once, model reply after the script) was proven on
+calls 6 to 9; this version has its first phone test at Gate 2.
 
 ## ADR-005: Live transfer, deferred
 

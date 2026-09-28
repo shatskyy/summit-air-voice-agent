@@ -45,9 +45,10 @@ NTFY_URL = "https://ntfy.sh"
 # and it discloses automation before anything else.
 GREETING = "Thanks for calling Summit Air. This is the automated assistant. How can I help?"
 
-# Known shortcut: a keyword list over-triggers by design ("I don't smell gas" matches). The script
-# below is worded to be harmless when that happens; a classifier is the upgrade if false alarms cost
-# calls.
+# Known shortcut: a keyword list over-triggers by design (a chirping smoke detector matches). The
+# script below is worded to be harmless when that happens, and a clear no to it cancels the page; a
+# classifier is the upgrade if false alarms cost calls. A negation just before a match, in the same
+# clause, cancels that match (hazard_in).
 # Words that can stand between the fuel and "leak": "gas is leaking", "the propane tank might be
 # leaking". None names an appliance, so "my gas furnace is leaking water" stays a routine call.
 LEAK_BRIDGE = r"(?:(?:is|was|tank|lines?|pipes?|might|may|could|be|seems|to|still)\W+){0,3}"
@@ -60,6 +61,58 @@ HAZARD = re.compile(
     r"|\bsparks?\b|\bsparking\b",
     re.IGNORECASE,
 )
+# A negation ending the text before a hazard match, with at most one word between: "I don't smell
+# gas", "no smoke", "I don't really smell gas". "I don't know, I smell gas" still fires: the comma
+# starts a new clause.
+NEGATED = re.compile(
+    r"\b(?:no|not|never|don[’']?t|doesn[’']?t|didn[’']?t|isn[’']?t|wasn[’']?t)(?:\W+\w+)?\W*$",
+    re.IGNORECASE,
+)
+CLAUSE = re.compile(r"[,.;!?]|\bbut\b", re.IGNORECASE)
+
+
+def hazard_in(text: str) -> bool:
+    """Whether the turn names a hazard that isn't negated in its own clause."""
+    return any(
+        not NEGATED.search(CLAUSE.split(text[: m.start()])[-1]) for m in HAZARD.finditer(text)
+    )
+
+
+# The answers to the safety script's closing question. A clear no is short and only a no; anything
+# else, a hesitation included, lets the page go.
+# "No heat either" names a problem; "No, just dusty" and "No I said I don't" answer the question.
+CLEAR_NO = re.compile(
+    r"^\W*(?:no|nope|nah|not really)(?:\W*$|\s*[,.!]|\s+(?:i|i'?m|it|it'?s|nothing|not|we|there"
+    r"|that'?s|just|no|sir|ma'?am)\b)",
+    re.IGNORECASE,
+)
+NOT_ONLY_NO = re.compile(r"\b(?:but|yes|yeah|actually)\b", re.IGNORECASE)
+CONFIRM = re.compile(
+    r"^\W*(?:yes|yeah|yep|yup|it is|that'?s right|correct|i do|we do|uh.?huh)\b", re.IGNORECASE
+)
+PAGE_HOLD_SECONDS = 15.0  # how long the emergency page waits for the answer to the script
+
+
+def clear_no(text: str) -> bool:
+    return (
+        bool(CLEAR_NO.match(text))
+        and len(text.split()) <= 8
+        and not NOT_ONLY_NO.search(text)
+        and not hazard_in(text)
+    )
+
+
+def confirms(text: str) -> bool:
+    return bool(CONFIRM.match(text)) or hazard_in(text)
+
+
+# Spoken by code when the caller confirms a hazard, then the call ends: the caller should be leaving,
+# not talking to us.
+EMERGENCY_CLOSE = (
+    "Okay. Get everyone outside now and call 911 from there. Our on-call technician will call you "
+    "at this number by {target}. Please hang up and go."
+)
+
 # Spoken by code when the call ends. On call 5 the model, asked to generate its own goodbye after
 # end_call, repeated the opening greeting after it.
 GOODBYE = "Thanks for calling Summit Air. Goodbye."
@@ -137,6 +190,11 @@ class Call:
     warned: bool = False  # the safety script has been given, whether or not its task was written
     system_down: bool = False  # the caller said the heat or cooling has failed (A1)
     at_risk: bool = False  # the caller said someone vulnerable is in the home (A1)
+    held_page: HeldPage | None = None  # the emergency page, waiting on the answer to the script
+    awaiting_answer: bool = False  # the safety script asked "Is that what's happening?"
+    false_alarm: bool = False  # the caller answered the script with a clear no
+    closing: bool = False  # the emergency closing line is playing; the call ends after it
+    hang_up: Callable[[], Awaitable[object]] | None = None  # ends the call; None in simulations
 
 
 def now() -> datetime:
@@ -317,9 +375,11 @@ async def file_task(
     name: str = "",
     phone: str = "",
     address: str = "",
+    hold: bool = False,
 ) -> tuple[int, datetime, asyncio.Task[bool] | None]:
     """Persist a dispatch task and, for emergency or urgent work, start paging the on-call phone.
-    Returns the task's reference, its due time, and the page, which is still in flight.
+    Returns the task's reference, its due time, and the page, which is still in flight. With
+    `hold`, the page waits for the answer to the safety script (HeldPage).
 
     On-call answers around the clock, so urgent targets run on the wall clock. A routine callback is
     handled by the office, so its target counts office time only.
@@ -347,11 +407,57 @@ async def file_task(
     call.paged = True
     if kind == "urgent":
         call.urgent_task, call.urgent_due = ref, due  # one urgent task per call, like emergencies
-    page = start_page(
-        f"Summit Air {kind} #{ref}",
-        f"{reason}\n{summary}\n{phone or call.caller_number or ''} {address}",
-    )
-    return ref, due, page
+    title = f"Summit Air {kind} #{ref}"
+    message = f"{reason}\n{summary}\n{phone or call.caller_number or ''} {address}"
+    if hold:
+        call.held_page = HeldPage(title, message, PAGE_HOLD_SECONDS)
+        return ref, due, call.held_page.task
+    return ref, due, start_page(title, message)
+
+
+class HeldPage:
+    """An emergency page that waits for the caller's answer to the safety script: it goes out on
+    release() (any answer but a clear no, or the caller hanging up) or after `wait` seconds, and
+    never after cancel(). The task's result is whether ntfy accepted it."""
+
+    def __init__(self, title: str, message: str, wait: float) -> None:
+        self._go = asyncio.Event()
+        self.cancelled = False
+        self.task = asyncio.create_task(self._send(title, message, wait))
+        _background.add(self.task)
+        self.task.add_done_callback(_background.discard)
+
+    async def _send(self, title: str, message: str, wait: float) -> bool:
+        try:
+            await asyncio.wait_for(self._go.wait(), wait)
+        except TimeoutError:
+            pass
+        self._go.set()
+        if self.cancelled:
+            return False
+        return await page_on_call(title, message)
+
+    def release(self) -> None:
+        self._go.set()
+
+    def cancel(self) -> bool:
+        """Call off the page. False when it had already gone out."""
+        if self._go.is_set():
+            return False
+        self.cancelled = True
+        self._go.set()
+        return True
+
+
+async def release_held_page(call: Call) -> None:
+    """Send a held page now and wait up to 5 s for it: the caller hung up without answering."""
+    if call.held_page is None:
+        return
+    call.held_page.release()
+    try:
+        await asyncio.wait_for(asyncio.shield(call.held_page.task), timeout=5)
+    except TimeoutError:
+        pass
 
 
 def start_page(title: str, message: str) -> asyncio.Task[bool]:
@@ -446,24 +552,79 @@ class SummitAirAgent(Agent):
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
     ) -> None:
-        """Speak the safety script before the model replies whenever a hazard is mentioned."""
+        """Speak the safety script before the model replies whenever a hazard is mentioned, act on
+        the answer to it, and file urgent work the model could miss."""
         call: Call = self.session.userdata
-        if not await flag_hazard(call, new_message.text_content or ""):
-            if not call.warned:
-                await self.flag_urgent(call, turn_ctx, new_message)
-            return
+        text = new_message.text_content or ""
+        if call.awaiting_answer:
+            call.awaiting_answer = False
+            if clear_no(text):
+                await self.call_off_emergency(call, turn_ctx)
+            else:
+                if call.held_page is not None:
+                    call.held_page.release()
+                if confirms(text):
+                    await self.close_emergency(call, new_message)  # raises StopResponse
+                    return
+        note_urgency(call, turn_ctx, text)
+        if await flag_hazard(call, text):
+            await self.speak_over(SAFETY_SCRIPT, new_message)
+            raise StopResponse()
+        if not call.warned or call.false_alarm:  # never while an emergency stands
+            await self.flag_urgent(call, turn_ctx, new_message)
+
+    async def speak_over(self, line: str, new_message: llm.ChatMessage):
+        """Say a fixed line in place of the model's reply to this turn."""
         try:
             self.session.interrupt(force=True)  # safety outranks anything already queued
         except RuntimeError:
             pass
-        self.session.say(SAFETY_SCRIPT, allow_interruptions=False)
+        handle = self.session.say(line, allow_interruptions=False)
         # StopResponse makes LiveKit drop this turn, so keep it by hand: the model needs what the
         # caller said, and the call record needs its most important sentence (call 7).
         chat_ctx = self.chat_ctx.copy()
         chat_ctx.insert(new_message)
         await self.update_chat_ctx(chat_ctx)
         self.session.history.insert(new_message)
+        return handle
+
+    async def close_emergency(self, call: Call, new_message: llm.ChatMessage) -> None:
+        """The caller confirmed the hazard: tell them to go, then end the call once it has played.
+        No model reply on this turn."""
+        due = call.hazard_due or now() + timedelta(
+            minutes=CONFIG["callback_target_minutes"]["urgent"]
+        )
+        call.closing = True
+        handle = await self.speak_over(
+            EMERGENCY_CLOSE.format(target=speak_due(due, now())), new_message
+        )
+        task = asyncio.create_task(hang_up_after(call, handle))
+        _background.add(task)
+        task.add_done_callback(_background.discard)
         raise StopResponse()
+
+    async def call_off_emergency(self, call: Call, turn_ctx: llm.ChatContext) -> None:
+        """A clear no to the safety script: no page, the task closed as a false alarm, and the
+        model told to carry on with the call."""
+        sent = call.held_page is not None and not call.held_page.cancel()
+        call.false_alarm = True
+        if call.hazard_task is not None:
+            await asyncio.to_thread(store.set_task_status, call.db, call.hazard_task, "false_alarm")
+        paged = "on-call had already been paged" if sent else "on-call was not paged"
+        await self.add_note(
+            turn_ctx,
+            "The caller confirmed there is no hazard: no gas smell, smoke or carbon monoxide alarm. "
+            f"The emergency task is closed as a false alarm and {paged}. Carry on with the normal "
+            "call and don't bring up gas, smoke or the safety instructions again.",
+        )
+
+    async def add_note(self, turn_ctx: llm.ChatContext, note: str) -> None:
+        """A system note for this reply and the turns after it. turn_ctx is thrown away after this
+        reply, and the simulator never sees it, so the note is kept in the agent's context too."""
+        turn_ctx.add_message(role="system", content=note)
+        kept = self.chat_ctx.copy()
+        kept.add_message(role="system", content=note)
+        await self.update_chat_ctx(kept)
 
     async def flag_urgent(
         self, call: Call, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
@@ -472,14 +633,9 @@ class SummitAirAgent(Agent):
         and that someone at risk is home, then tell the model it is filed. The model still replies.
         The GPT-4.1 mini simulations filed it late or only promised it (keep_promise)."""
         text = new_message.text_content or ""
-        messages = [i for i in turn_ctx.items if i.type == "message"]
-        last_agent = next(
-            (m.text_content or "" for m in reversed(messages) if m.role == "assistant"), ""
-        )
-        call.system_down = call.system_down or bool(SYSTEM_DOWN.search(text))
-        call.at_risk = call.at_risk or at_risk_in(text, last_agent)
         if not (call.system_down and call.at_risk) or call.urgent_task is not None:
             return
+        messages = [i for i in turn_ctx.items if i.type == "message"]
         said = [m.text_content for m in messages if m.role == "user" and m.text_content] + [text]
         ref, due, page = await file_task(
             call, "urgent", "no heat or cooling with someone at risk", " / ".join(said)
@@ -490,16 +646,12 @@ class SummitAirAgent(Agent):
             else "the page to the on-call phone could not be confirmed, so the task waits in the "
             "dispatch queue"
         )
-        note = (
+        await self.add_note(
+            turn_ctx,
             f"Urgent task {ref} is already filed from what the caller said, and {paged}. The "
             f"callback target is {speak_due(due, now())}. Tell the caller that target in this "
-            "reply, and never promise an arrival time. Don't file an urgent task again."
+            "reply, and never promise an arrival time. Don't file an urgent task again.",
         )
-        turn_ctx.add_message(role="system", content=note)
-        # turn_ctx is thrown away after this reply, so keep the note for the turns after it.
-        kept = self.chat_ctx.copy()
-        kept.add_message(role="system", content=note)
-        await self.update_chat_ctx(kept)
 
     @function_tool
     async def check_address(
@@ -715,6 +867,8 @@ class SummitAirAgent(Agent):
                 f"target is {speak_due(call.urgent_due, now())}. Tell the caller the target, and "
                 "never promise an arrival time."
             )
+        if kind == "emergency" and call.hazard_task is not None and call.false_alarm:
+            await reopen_emergency(call, f"{reason}\n{summary}")
         if kind == "emergency" and call.hazard_task is not None:
             target = (
                 f" The callback target is {speak_due(call.hazard_due, now())}."
@@ -835,17 +989,53 @@ async def keep_promise(call: Call, text: str) -> bool:
     return True
 
 
+def note_urgency(call: Call, turn_ctx: llm.ChatContext, text: str) -> None:
+    """Update the two urgency flags from a caller turn. Every turn counts, the one that fired the
+    safety script included, so a false alarm doesn't lose "the heat's out"."""
+    messages = [i for i in turn_ctx.items if i.type == "message"]
+    last_agent = next(
+        (m.text_content or "" for m in reversed(messages) if m.role == "assistant"), ""
+    )
+    call.system_down = call.system_down or bool(SYSTEM_DOWN.search(text))
+    call.at_risk = call.at_risk or at_risk_in(text, last_agent)
+
+
+async def hang_up_after(call: Call, handle) -> None:
+    """End the call once `handle` has played out."""
+    await handle.wait_for_playout()
+    if call.hang_up is not None:
+        await call.hang_up()
+
+
+async def reopen_emergency(call: Call, text: str) -> None:
+    """A hazard after a false alarm: the task is open again and the page goes out now."""
+    call.false_alarm = False
+    if call.hazard_task is not None:
+        await asyncio.to_thread(store.set_task_status, call.db, call.hazard_task, "open")
+    start_page(f"Summit Air emergency #{call.hazard_task}", f"reopened after a no\n{text}")
+
+
 async def flag_hazard(call: Call, text: str) -> bool:
     """Record an emergency task the first time a caller mentions a hazard. True means speak the script,
     even when the task could not be written: nothing may stand between the caller and the safety
-    script. A failed write still pages on-call, because once the script has played the prompt tells
-    the model the task exists, so the model won't file it either."""
-    if call.warned or call.hazard_task is not None or not HAZARD.search(text):
+    script. A failed write still pages on-call at once, because once the script has played the
+    prompt tells the model the task exists, so the model won't file it either. A written task's page
+    is held for the answer to the script (HeldPage)."""
+    if not hazard_in(text):
+        return False
+    if call.false_alarm:
+        await reopen_emergency(call, text)
+        call.awaiting_answer = True
+        return True
+    if call.warned or call.hazard_task is not None:
         return False
     call.warned = True  # set before the write, so a failed write can't replay the script
+    call.awaiting_answer = True
     reason = "possible gas, carbon monoxide or smoke"
     try:
-        call.hazard_task, call.hazard_due, _ = await file_task(call, "emergency", reason, text)
+        call.hazard_task, call.hazard_due, _ = await file_task(
+            call, "emergency", reason, text, hold=True
+        )
     except Exception:
         logger.exception("the emergency task was not recorded; paging on-call without it")
         start_page(

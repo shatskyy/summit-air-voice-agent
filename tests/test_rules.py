@@ -8,7 +8,6 @@ from livekit.agents import StopResponse, ToolError, llm
 import receptionist
 import store
 from receptionist import (
-    HAZARD,
     TZ,
     Call,
     GuardedEndCall,
@@ -537,13 +536,12 @@ def test_a_real_caller_id_is_kept():
         "there's a sulfur smell in the basement",
         "it smells gassy in here",
         "it smells like something is burning",
-        # Known false positives. The script is worded to be harmless when these fire.
-        "no, I don't smell gas",
+        # A known false positive. The script is worded to be harmless when it fires.
         "the smoke detector battery died",
     ],
 )
 def test_hazard_phrases_trigger_the_safety_script(said):
-    assert HAZARD.search(said)
+    assert receptionist.hazard_in(said)
 
 
 @pytest.mark.parametrize(
@@ -559,7 +557,7 @@ def test_hazard_phrases_trigger_the_safety_script(said):
     ],
 )
 def test_ordinary_calls_do_not_trigger_it(said):
-    assert not HAZARD.search(said)
+    assert not receptionist.hazard_in(said)
 
 
 class HazardLine:
@@ -575,6 +573,12 @@ class HazardLine:
 
     def say(self, text, allow_interruptions=True):
         self.said.append(text)
+        return Played()
+
+
+class Played:
+    async def wait_for_playout(self):
+        pass
 
 
 async def test_the_turn_that_fires_the_backstop_is_kept_for_the_model_and_the_record(
@@ -622,11 +626,14 @@ async def test_the_safety_script_plays_even_when_the_emergency_task_cannot_be_wr
     assert line.said == [receptionist.SAFETY_SCRIPT]
     assert line.userdata.hazard_task is None
 
-    # Said once is enough: the next mention goes to the model, which can still file the task.
-    await SummitAirAgent("").on_user_turn_completed(
-        llm.ChatContext(), llm.ChatMessage(role="user", content=["yes, the gas smell is strong"])
-    )
-    assert line.said == [receptionist.SAFETY_SCRIPT]
+    # Said once is enough: a yes gets the closing line, not the script again.
+    with pytest.raises(StopResponse):
+        await SummitAirAgent("").on_user_turn_completed(
+            llm.ChatContext(),
+            llm.ChatMessage(role="user", content=["yes, the gas smell is strong"]),
+        )
+    assert line.said[0] == receptionist.SAFETY_SCRIPT and len(line.said) == 2
+    assert line.said[1].startswith("Okay. Get everyone outside now")
 
 
 async def test_on_call_is_paged_even_when_the_emergency_task_cannot_be_written(db, monkeypatch):
@@ -1218,3 +1225,214 @@ def test_the_booking_confirmation_uses_the_callers_first_name():
     assert (
         "[first name]" in receptionist.PROMPT.split("Only after book_appointment succeeds")[1][:80]
     )
+
+
+# Gas: negation, a held page, a closed emergency (A4)
+
+
+@pytest.mark.parametrize(
+    ("said", "fires"),
+    [
+        ("I don't smell gas", False),
+        ("no smoke", False),
+        ("My furnace won't turn on. And no, I don't smell gas or anything.", False),
+        ("I don't really smell gas", False),
+        ("it doesn't smell like gas", False),
+        ("there's no gas leak", False),
+        ("I don't know, I smell gas", True),
+        ("not sure but I smell gas", True),
+        ("I don't smell gas but the CO alarm is going off", True),
+        ("I smell gas", True),
+        ("I don't know if I smell gas", True),
+    ],
+)
+def test_a_negated_hazard_does_not_fire(said, fires):
+    assert receptionist.hazard_in(said) is fires
+
+
+def test_tasks_carry_a_status_and_an_old_database_gains_the_column(tmp_path):
+    path = tmp_path / "old.db"
+    with store.connect(path) as conn:
+        conn.execute(
+            "create table tasks (ref integer primary key autoincrement, call_id text not null, "
+            "kind text not null, reason text not null, summary text not null, name text not null "
+            "default '', phone text not null default '', address text not null default '', "
+            "due_at text not null, created_at text not null default (datetime('now')))"
+        )
+        conn.execute(
+            "insert into tasks (call_id, kind, reason, summary, due_at) "
+            "values ('old', 'callback', 'r', 's', 'x')"
+        )
+    store.init(path, WINDOWS, capacity=1, today=MONDAY_9AM.date(), days_ahead=1)
+    store.init(path, WINDOWS, capacity=1, today=MONDAY_9AM.date(), days_ahead=1)  # idempotent
+    with store.connect(path) as conn:
+        assert [r[0] for r in conn.execute("select status from tasks")] == ["open"]
+    ref = store.add_task(path, call_id="c", kind="emergency", reason="r", summary="s", name="",
+                         phone="", address="", due_at="x")  # fmt: skip
+    store.set_task_status(path, ref, "false_alarm")
+    with store.connect(path) as conn:
+        assert conn.execute("select status from tasks where ref = ?", (ref,)).fetchone()[0] == (
+            "false_alarm"
+        )
+
+
+class Playout:
+    def __init__(self):
+        self.done = receptionist.asyncio.Event()
+
+    async def wait_for_playout(self):
+        await self.done.wait()
+
+
+class EmergencyLine(HazardLine):
+    """HazardLine whose speech can be played out on cue, for the hang-up after the closing line."""
+
+    def __init__(self, call):
+        super().__init__(call)
+        self.handles = []
+
+    def say(self, text, allow_interruptions=True):
+        super().say(text, allow_interruptions)
+        self.handles.append(Playout())
+        return self.handles[-1]
+
+
+def gas_call(db, monkeypatch, hold=0.2):
+    pages, hung_up = [], []
+
+    async def fake_page(title, message):
+        pages.append(title)
+        return True
+
+    async def hang_up():
+        hung_up.append(True)
+
+    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(receptionist, "PAGE_HOLD_SECONDS", hold)
+    call = Call(call_id="call-a", db=db, caller_number="+19145550100", hang_up=hang_up)
+    line = EmergencyLine(call)
+    monkeypatch.setattr(SummitAirAgent, "session", property(lambda self: line))
+    return SummitAirAgent(""), line, pages, hung_up
+
+
+async def turn(agent, said, ctx=None):
+    await agent.on_user_turn_completed(
+        ctx or llm.ChatContext(), llm.ChatMessage(role="user", content=[said])
+    )
+
+
+async def test_the_script_plays_at_once_but_the_page_waits_for_the_answer(db, monkeypatch):
+    agent, line, pages, _ = gas_call(db, monkeypatch, hold=5)
+    with pytest.raises(StopResponse):
+        await turn(agent, "I think gas is leaking from my stove.")
+    assert line.said == [receptionist.SAFETY_SCRIPT]
+    assert line.userdata.hazard_task == 2001  # the task is written straight away
+    await receptionist.asyncio.sleep(0.05)
+    assert pages == []
+
+
+async def test_a_clear_no_cancels_the_page_and_marks_a_false_alarm(db, monkeypatch):
+    """dusty_smell: the first heat of the year smells of burning dust."""
+    agent, _, pages, hung_up = gas_call(db, monkeypatch)
+    with pytest.raises(StopResponse):
+        await turn(agent, "There's a dusty burning smell from the vents.")
+    turn_ctx = llm.ChatContext()
+    await turn(agent, "No, just dusty.", turn_ctx)  # no StopResponse: the model replies
+    await receptionist.asyncio.sleep(0.3)  # past the hold
+    assert pages == [] and hung_up == []
+    with store.connect(db) as conn:
+        assert conn.execute("select status from tasks").fetchone()[0] == "false_alarm"
+    note = [i.text_content for i in turn_ctx.items if i.type == "message" and i.role == "system"]
+    assert len(note) == 1 and "no hazard" in note[0] and "normal call" in note[0]
+
+
+@pytest.mark.parametrize(
+    "said", ["no", "Nope.", "No, it's not.", "No I said I don't smell gas", "No, just dusty."]
+)
+def test_short_negatives_are_clear_nos(said):
+    assert receptionist.clear_no(said)
+
+
+@pytest.mark.parametrize(
+    "said", ["Yes.", "No, but the CO alarm is beeping", "I'm not sure", "What do you mean?",
+             "No no no, I smell it everywhere, it's really strong in the kitchen",
+             "No heat either, and my mother is 80."],
+)  # fmt: skip
+def test_anything_else_is_not_a_clear_no(said):
+    assert not receptionist.clear_no(said)
+
+
+async def test_a_confirmed_emergency_closes_the_call_in_code(db, monkeypatch):
+    agent, line, pages, hung_up = gas_call(db, monkeypatch, hold=5)
+    with pytest.raises(StopResponse):
+        await turn(agent, "I think gas is leaking from my stove.")
+    with pytest.raises(StopResponse):  # no model reply on the confirming turn
+        await turn(agent, "Yes.")
+    await receptionist.asyncio.sleep(0.05)
+    assert pages == ["Summit Air emergency #2001"]  # released at once, not after the hold
+    closing = line.said[-1]
+    assert closing.startswith("Okay. Get everyone outside now and call 911 from there.")
+    assert "call you at this number by" in closing and closing.endswith("Please hang up and go.")
+    assert hung_up == []  # not before the line has played
+    line.handles[-1].done.set()
+    await receptionist.asyncio.sleep(0.05)
+    assert hung_up == [True]
+    with store.connect(db) as conn:
+        assert conn.execute("select count(*) from tasks").fetchone()[0] == 1
+
+
+async def test_an_unclear_answer_sends_the_page_and_lets_the_model_reply(db, monkeypatch):
+    agent, _, pages, hung_up = gas_call(db, monkeypatch, hold=5)
+    with pytest.raises(StopResponse):
+        await turn(agent, "I smell gas.")
+    await turn(agent, "What do you mean?")
+    await receptionist.asyncio.sleep(0.05)
+    assert pages == ["Summit Air emergency #2001"] and hung_up == []
+
+
+async def test_the_page_goes_out_when_nobody_answers(db, monkeypatch):
+    agent, _, pages, _ = gas_call(db, monkeypatch, hold=0.1)
+    with pytest.raises(StopResponse):
+        await turn(agent, "I smell gas.")
+    await receptionist.asyncio.sleep(0.3)
+    assert pages == ["Summit Air emergency #2001"]
+
+
+async def test_the_page_goes_out_when_the_caller_hangs_up(db, monkeypatch):
+    agent, line, pages, _ = gas_call(db, monkeypatch, hold=5)
+    with pytest.raises(StopResponse):
+        await turn(agent, "I smell gas.")
+    await receptionist.release_held_page(line.userdata)
+    assert pages == ["Summit Air emergency #2001"]
+
+
+async def test_a_hazard_after_a_false_alarm_reopens_and_pages(db, monkeypatch):
+    agent, line, pages, _ = gas_call(db, monkeypatch, hold=5)
+    with pytest.raises(StopResponse):
+        await turn(agent, "There's a burning smell.")
+    await turn(agent, "No.")
+    with pytest.raises(StopResponse):
+        await turn(agent, "Wait, now the CO alarm is going off.")
+    await receptionist.asyncio.sleep(0.05)
+    assert pages == ["Summit Air emergency #2001"]
+    assert line.said.count(receptionist.SAFETY_SCRIPT) == 2
+    with store.connect(db) as conn:
+        assert [tuple(r) for r in conn.execute("select kind, status from tasks")] == [
+            ("emergency", "open")
+        ]
+
+
+async def test_urgent_detection_resumes_after_a_false_alarm(db, monkeypatch):
+    agent, line, _, _ = gas_call(db, monkeypatch, hold=5)
+    with pytest.raises(StopResponse):
+        await turn(agent, "The heat's out and there's a burning smell.")
+    await turn(agent, "No, just dusty. But my mother is 80 and it's freezing.")
+    # "But" makes it not a clear no, so the page went out and urgent stays off while it stands.
+    assert line.userdata.urgent_task is None
+    agent2, line2, _, _ = gas_call(db, monkeypatch, hold=5)
+    line2.userdata.call_id = "call-b"
+    with pytest.raises(StopResponse):
+        await turn(agent2, "The heat's out and there's a burning smell.")
+    await turn(agent2, "No, just dusty.")
+    await turn(agent2, "My mother is 80 and she lives here.")
+    assert line2.userdata.urgent_task is not None
