@@ -2072,3 +2072,15 @@ async def test_a_blank_zip_is_refused_until_the_caller_has_been_asked_for_one(db
     with pytest.raises(ToolError, match="Ask for the ZIP code first"):
         await SummitAirAgent("").check_address(ctx, "48 Bergen Street", "Brooklyn", "")
     assert ctx.userdata.checked_zip is None
+
+
+@pytest.mark.parametrize(
+    "name", ["Your sister", "my mom", "the tenant", "her husband", "Sister", "caller"]
+)
+def test_a_relation_is_not_a_name(name):
+    assert not receptionist.is_real_name(name)
+
+
+@pytest.mark.parametrize("name", ["Ana", "David Shatsky", "Maria Lopez", "D. Shatsky", "Mrs. Chen"])
+def test_a_real_name_still_is_one(name):
+    assert receptionist.is_real_name(name)

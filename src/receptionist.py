@@ -344,9 +344,23 @@ PLACEHOLDERS = {
 }
 
 
+# "Your sister", "the tenant", "my mom": who the visit is for, not a name. GPT-4.1 mini booked a
+# sister's apartment under "Your sister" without asking anyone's name (relative_address).
+RELATION = re.compile(
+    r"^(?:your|my|his|her|their|the|a|an)\b|\b(?:sister|brother|mother|father|mom|dad|wife"
+    r"|husband|son|daughter|aunt|uncle|grandmother|grandfather|tenant|landlord|owner|neighbor"
+    r"|roommate|caller|customer|resident)$",
+    re.IGNORECASE,
+)
+
+
 def is_real_name(name: str) -> bool:
     cleaned = name.strip().lower()
-    return cleaned not in PLACEHOLDERS and any(c.isalpha() for c in cleaned)
+    return (
+        cleaned not in PLACEHOLDERS
+        and any(c.isalpha() for c in cleaned)
+        and not RELATION.search(cleaned)
+    )
 
 
 # A business_name made only of these words describes the business instead of naming it: "dental
