@@ -921,3 +921,190 @@ def test_the_single_worker_never_refuses_a_call_for_cpu_load():
     import agent
 
     assert math.isinf(agent.server._load_threshold)
+
+
+# Urgent detected in code (A1)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "My heat went out last night",
+        "we have no heat",
+        "the heat's out",
+        "my furnace won't turn on",
+        "the boiler isn't working",
+        "it's freezing in here",
+        "it's so cold in here",
+        "the AC's out",
+        "no AC and it's 95 out",
+        "the air conditioner stopped working",
+        "my AC isn't cooling at all",
+        "it's way too hot in the apartment",
+        "it's sweltering",
+    ],
+)
+def test_a_failed_system_is_recognized(said):
+    assert receptionist.SYSTEM_DOWN.search(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    ["my AC is leaking water", "I'm due for a tune-up", "the thermostat is blank but it's warm"],
+)
+def test_a_working_system_is_not_called_down(said):
+    assert not receptionist.SYSTEM_DOWN.search(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "my mother is 80 and she lives with me",
+        "my dad's staying with us, he's 86",
+        "my grandma is here",
+        "there's an elderly man upstairs",
+        "she's a senior",
+        "he's 72 years old",
+        "an 86-year-old lives here",
+        "I have a 3-month-old",
+        "there's a newborn in the house",
+        "my baby is here",
+        "my husband is on oxygen",
+        "my son has asthma",
+        "she has COPD",
+        "my wife is pregnant",
+        "he's on dialysis",
+        "she has a heart condition",
+        "he's bedridden",
+        "she has a medical condition",
+    ],
+)
+def test_someone_at_risk_is_recognized(said):
+    assert receptionist.at_risk_in(said, last_agent="")
+
+
+@pytest.mark.parametrize(
+    ("said", "last_agent"),
+    [
+        ("No, it's just me.", "Is anyone there who'd be at risk in the cold, like someone older?"),
+        ("Nobody, I'm fine.", "Is anyone there who'd be at risk in the cold?"),
+        ("No one elderly or anything.", "Anyone at risk there?"),
+        ("Yes.", "What's the address there?"),  # a yes to something else
+        ("I'm 35 years old.", ""),
+        ("It's a 10-year-old furnace.", ""),
+    ],
+)
+def test_no_one_at_risk_is_not_flagged(said, last_agent):
+    assert not receptionist.at_risk_in(said, last_agent)
+
+
+@pytest.mark.parametrize("said", ["Yes.", "Yeah, she is.", "yep", "He is.", "She is, yes."])
+def test_a_plain_yes_to_the_risk_question_counts(said):
+    asked = "Is anyone there who'd be at risk in the cold, like someone older, a baby, or someone with a health problem?"
+    assert receptionist.at_risk_in(said, last_agent=asked)
+
+
+class UrgentLine(HazardLine):
+    """HazardLine plus the history the hook reads for the agent's last question."""
+
+
+def urgent_agent(line, monkeypatch, pages):
+    async def fake_page(title, message):
+        pages.append((title, message))
+        return True
+
+    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(SummitAirAgent, "session", property(lambda self: line))
+    return SummitAirAgent("")
+
+
+async def test_no_heat_with_someone_at_risk_files_one_urgent_task_in_code(db, monkeypatch):
+    pages = []
+    line = UrgentLine(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    agent = urgent_agent(line, monkeypatch, pages)
+    said = "My heat went out and my mother is 80, she lives with me."
+    turn_ctx = llm.ChatContext()
+
+    await agent.on_user_turn_completed(turn_ctx, llm.ChatMessage(role="user", content=[said]))
+
+    call = line.userdata
+    assert call.urgent_task == 2001 and call.paged
+    assert [t for t, _ in pages] == ["Summit Air urgent #2001"]
+    assert said in pages[0][1]
+    note = [i for i in turn_ctx.items if i.type == "message" and i.role == "system"]
+    assert len(note) == 1
+    assert "2001" in note[0].text_content and "was paged" in note[0].text_content
+    assert "don't file" in note[0].text_content.lower()
+    # Kept for later turns and the eval path, where turn_ctx is thrown away.
+    assert any(i.role == "system" and "2001" in (i.text_content or "")
+               for i in agent.chat_ctx.items if i.type == "message")  # fmt: skip
+    # A later turn with the same facts files nothing new.
+    await agent.on_user_turn_completed(
+        llm.ChatContext(), llm.ChatMessage(role="user", content=["She's really cold, she's 80."])
+    )
+    with store.connect(db) as conn:
+        assert conn.execute("select count(*) from tasks").fetchone()[0] == 1
+
+
+async def test_risk_said_on_a_later_turn_still_files_urgent(db, monkeypatch):
+    """risk_during_readback: "nobody" first, then "my dad's staying with us, he's 86" mid-readback."""
+    pages = []
+    line = UrgentLine(Call(call_id="call-a", db=db))
+    agent = urgent_agent(line, monkeypatch, pages)
+    for said in ["My furnace stopped working.", "No, it's just me."]:
+        await agent.on_user_turn_completed(
+            llm.ChatContext(), llm.ChatMessage(role="user", content=[said])
+        )
+    assert line.userdata.urgent_task is None
+    await agent.on_user_turn_completed(
+        llm.ChatContext(),
+        llm.ChatMessage(role="user", content=["Oh, actually my dad's staying with us, he's 86."]),
+    )
+    assert line.userdata.urgent_task == 2001
+
+
+async def test_a_yes_to_the_risk_question_files_urgent(db, monkeypatch):
+    pages = []
+    line = UrgentLine(Call(call_id="call-a", db=db))
+    agent = urgent_agent(line, monkeypatch, pages)
+    await agent.on_user_turn_completed(
+        llm.ChatContext(), llm.ChatMessage(role="user", content=["The heat's out."])
+    )
+    agent_ctx = agent.chat_ctx.copy()
+    agent_ctx.add_message(
+        role="assistant", content="Oh no. Is anyone there who'd be at risk in the cold?"
+    )
+    await agent.update_chat_ctx(agent_ctx)
+    await agent.on_user_turn_completed(
+        agent.chat_ctx.copy(), llm.ChatMessage(role="user", content=["Yes."])
+    )
+    assert line.userdata.urgent_task == 2001
+
+
+async def test_nothing_urgent_is_filed_after_the_safety_script(db, monkeypatch):
+    pages = []
+    line = UrgentLine(Call(call_id="call-a", db=db))
+    agent = urgent_agent(line, monkeypatch, pages)
+    with pytest.raises(StopResponse):
+        await agent.on_user_turn_completed(
+            llm.ChatContext(), llm.ChatMessage(role="user", content=["I smell gas"])
+        )
+    await agent.on_user_turn_completed(
+        llm.ChatContext(),
+        llm.ChatMessage(role="user", content=["No heat either, and my mother is 80."]),
+    )
+    assert line.userdata.urgent_task is None
+
+
+async def test_an_urgent_call_books_with_priority_even_if_the_model_says_otherwise(db):
+    call = Call(call_id="call-a", db=db, caller_number="+19145550100")
+    ctx = FakeContext(call)
+    await file_task(call, "urgent", "no heat, 80-year-old", "mother at home")
+    agent = SummitAirAgent("")
+    await agent.check_address(ctx, "14 Maple Street", "Brooklyn", "11225")
+    await agent.check_availability(ctx, "2026-09-29", "morning")
+    await agent.book_appointment(
+        ctx, "2026-09-29-0800", "residential", "Maria Lopez", "", "14 Maple Street, Brooklyn",
+        "11225", "no heat", priority=False,
+    )  # fmt: skip
+    assert store.booking_for(db, "call-a")["priority"] == 1

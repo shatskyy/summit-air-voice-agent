@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 0.156535,
+  "total": 0.239459,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -21,6 +21,16 @@
       "estimate": 0.1159,
       "cost": 0.148255,
       "results": "evals/results/2026-09-27-1935-7b5525e.json"
+    },
+    {
+      "at": "2026-09-27T20:08:07-04:00",
+      "commit": "28375f2",
+      "kind": "eval",
+      "label": "A1 urgent in code",
+      "conversations": 18,
+      "estimate": 0.0939,
+      "cost": 0.082924,
+      "results": "evals/results/2026-09-27-2007-28375f2-dirty.json"
     }
   ]
 }

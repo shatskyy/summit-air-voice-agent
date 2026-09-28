@@ -75,6 +75,51 @@ SAFETY_SCRIPT = (
 )
 
 
+# Urgent is decided in code, not left to the model: no heat or cooling, with someone at risk in the
+# home. Keyword lists, like HAZARD, so they over-trigger rather than miss; a false urgent costs one
+# early callback, a missed one leaves an 80-year-old in the cold. Up to three words may stand between
+# the system and what went wrong ("the AC's completely out").
+_BETWEEN = r"(?:\W+\w+){0,3}?\W+"
+SYSTEM_DOWN = re.compile(
+    r"\bno (?:heat|heating|ac|a/?c|air|air conditioning|cooling)\b"
+    r"|\b(?:heat|heating|furnace|boiler|heater|heat pump|ac|a/c|air conditioner|air conditioning"
+    r"|cooling)" + _BETWEEN + r"(?:out|not working|isn'?t working|stopped|won'?t|broke|broken"
+    r"|died|dead|not cooling|isn'?t cooling|not heating|isn'?t heating)\b"
+    r"|\bfreezing\b|\bcold in (?:here|the (?:house|apartment|home))\b|\btoo hot\b|\bsweltering\b",
+    re.IGNORECASE,
+)
+AT_RISK = re.compile(
+    r"\b(?:mother|mom|mum|father|dad|parents?|grandmother|grandma|grandfather|grandpa"
+    r"|grandparents?|granny|elderly|seniors?)\b"
+    r"|\b(?:6[5-9]|[7-9]\d|10\d|110)\W*years?\W*old\b"
+    r"|\b(?:babies|baby|infant|newborn)\b|\b\w+\W+months?\W+old\b"
+    r"|\b(?:oxygen|asthma|copd|heart condition|pregnant|dialysis|bedridden|disabled"
+    r"|medical condition)\b",
+    re.IGNORECASE,
+)
+# A denial earlier in the same clause: "no one elderly", "nobody's at risk".
+RISK_DENIED = re.compile(
+    r"\b(?:no|not|nobody|no one|none|isn'?t|aren'?t)\b" + r"(?:\W+\w+){0,3}\W*$", re.IGNORECASE
+)
+NOBODY = re.compile(r"\b(?:nobody|no one|just me|i'?m fine)\b", re.IGNORECASE)
+PLAIN_YES = re.compile(r"^\W*(?:yes|yeah|yep|yup|she is|he is|they are)\b", re.IGNORECASE)
+RISK_QUESTION = re.compile(
+    r"at risk|someone older|elderly|a baby|health problem|medical", re.IGNORECASE
+)
+
+
+def at_risk_in(text: str, last_agent: str) -> bool:
+    """Whether this caller turn says someone vulnerable is in the home: a named risk not denied in
+    its own clause, or a plain yes right after the agent asked who is at risk."""
+    for match in AT_RISK.finditer(text):
+        clause = re.split(r"[,.;!?]|\bbut\b", text[: match.start()])[-1]
+        if not RISK_DENIED.search(clause):
+            return True
+    return bool(
+        RISK_QUESTION.search(last_agent) and PLAIN_YES.match(text) and not NOBODY.search(text)
+    )
+
+
 @dataclass
 class Call:
     """Per-call state shared by the tools. The booking tool's arguments carry the rest."""
@@ -90,6 +135,8 @@ class Call:
     urgent_task: int | None = None
     urgent_due: datetime | None = None
     warned: bool = False  # the safety script has been given, whether or not its task was written
+    system_down: bool = False  # the caller said the heat or cooling has failed (A1)
+    at_risk: bool = False  # the caller said someone vulnerable is in the home (A1)
 
 
 def now() -> datetime:
@@ -372,6 +419,8 @@ class SummitAirAgent(Agent):
         """Speak the safety script before the model replies whenever a hazard is mentioned."""
         call: Call = self.session.userdata
         if not await flag_hazard(call, new_message.text_content or ""):
+            if not call.warned:
+                await self.flag_urgent(call, turn_ctx, new_message)
             return
         try:
             self.session.interrupt(force=True)  # safety outranks anything already queued
@@ -385,6 +434,42 @@ class SummitAirAgent(Agent):
         await self.update_chat_ctx(chat_ctx)
         self.session.history.insert(new_message)
         raise StopResponse()
+
+    async def flag_urgent(
+        self, call: Call, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
+    ) -> None:
+        """File the urgent task in code the turn the caller has said both that the system is down
+        and that someone at risk is home, then tell the model it is filed. The model still replies.
+        The GPT-4.1 mini simulations filed it late or only promised it (keep_promise)."""
+        text = new_message.text_content or ""
+        messages = [i for i in turn_ctx.items if i.type == "message"]
+        last_agent = next(
+            (m.text_content or "" for m in reversed(messages) if m.role == "assistant"), ""
+        )
+        call.system_down = call.system_down or bool(SYSTEM_DOWN.search(text))
+        call.at_risk = call.at_risk or at_risk_in(text, last_agent)
+        if not (call.system_down and call.at_risk) or call.urgent_task is not None:
+            return
+        said = [m.text_content for m in messages if m.role == "user" and m.text_content] + [text]
+        ref, due, page = await file_task(
+            call, "urgent", "no heat or cooling with someone at risk", " / ".join(said)
+        )
+        paged = (
+            "the on-call technician was paged"
+            if page is not None and await confirmed(page)
+            else "the page to the on-call phone could not be confirmed, so the task waits in the "
+            "dispatch queue"
+        )
+        note = (
+            f"Urgent task {ref} is already filed from what the caller said, and {paged}. The "
+            f"callback target is {speak_due(due, now())}. Tell the caller that target in this "
+            "reply, and never promise an arrival time. Don't file an urgent task again."
+        )
+        turn_ctx.add_message(role="system", content=note)
+        # turn_ctx is thrown away after this reply, so keep the note for the turns after it.
+        kept = self.chat_ctx.copy()
+        kept.add_message(role="system", content=note)
+        await self.update_chat_ctx(kept)
 
     @function_tool
     async def check_address(
@@ -525,7 +610,7 @@ class SummitAirAgent(Agent):
             call_id=call.call_id,
             slot_id=slot_id,
             customer_type=customer_type,
-            priority=int(priority),
+            priority=int(priority or call.urgent_task is not None),
             name=name,
             phone=phone,
             address=address,
