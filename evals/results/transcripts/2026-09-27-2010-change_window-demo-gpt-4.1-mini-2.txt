@@ -1,0 +1,35 @@
+# change_window / demo / openai/gpt-4.1-mini / run 2
+FAIL: the caller never asked to move (read the transcript)
+style: {'bundled': 0, 'reasked_type': 0, 'lists': 0, 'words': 14.2}
+cost: $0.0066
+
+AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?
+CALLER: Hi, my furnace is making a loud banging noise when it starts.
+AGENT : Got it. Is this happening at your home?
+CALLER: Yes, it is.
+AGENT : Thanks. Is there anyone there who could be at risk from no heat, like someone older, a baby, or someone with a health problem?
+CALLER: No, nobody at risk.
+AGENT : Good to know. What's your name?
+CALLER: David Shatsky.
+AGENT : Thanks, David. Is the number you're calling from, +1 914 555 0100, the best to reach you?
+CALLER: Yes, that's fine.
+AGENT : What is the address where the furnace is?
+CALLER: 48 Bergen Street, Brooklyn, 11201.
+  tool  check_address({"street": "48 Bergen Street", "town": "Brooklyn", "zip_code": "11201"})
+  ->    In the service area. Read it back once as 48 Bergen Street, Brooklyn, ZIP 11201, and wait for a yes.
+AGENT : Is this 48 Bergen Street in Brooklyn, ZIP 11201?
+CALLER: Yes, that's correct.
+  tool  check_availability({"earliest_date": "2026-09-29", "part_of_day": "any"})
+  ->    Open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200)
+AGENT : We have Wednesday, September 30, between 8 AM and noon, or between noon and 4 PM. Which works better?
+CALLER: The afternoon window between noon and 4 PM works better.
+  tool  book_appointment({"slot_id": "2026-09-30-1200", "customer_type": "residential", "name": "David Shatsky", "callback_number": "+19145550100", "address": "48 Bergen Street, Brooklyn", "zip_code": "11201", "issue": "furnace making a loud banging noise when it starts", "priority": false, "note": null, "business_name": null, "site_contact": null})
+  ->    Booked. Reference 1001: Wednesday, September 30, between noon and 4 PM at 48 Bergen Street, Brooklyn. Tell the caller the day, window, address and reference number.
+AGENT : You're booked for Wednesday, September 30, between noon and 4 PM at 48 Bergen Street in Brooklyn. Your reference number is 1001. Is there anything else I can do for you?
+CALLER: No, thank you.
+  tool  end_call({})
+  ->    
+AGENT : Thanks for calling Summit Air. Goodbye.
+
+bookings: [{'ref': 1001, 'call_id': 'eval-change_window-demo-2', 'slot_id': '2026-09-30-1200', 'customer_type': 'residential', 'priority': 0, 'name': 'David Shatsky', 'phone': '+19145550100', 'address': '48 Bergen Street, Brooklyn', 'zip': '11201', 'issue': 'furnace making a loud banging noise when it starts', 'note': '', 'created_at': '2026-09-28 00:10:32'}]
+tasks: []

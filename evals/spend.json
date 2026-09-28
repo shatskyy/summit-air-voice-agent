@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 0.239459,
+  "total": 0.316822,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -31,6 +31,26 @@
       "estimate": 0.0939,
       "cost": 0.082924,
       "results": "evals/results/2026-09-27-2007-28375f2-dirty.json"
+    },
+    {
+      "at": "2026-09-27T20:10:46-04:00",
+      "commit": "3ae4b77",
+      "kind": "eval",
+      "label": "A2 one visit per call",
+      "conversations": 8,
+      "estimate": 0.0399,
+      "cost": 0.05913,
+      "results": "evals/results/2026-09-27-2010-3ae4b77-dirty.json"
+    },
+    {
+      "at": "2026-09-27T20:11:19-04:00",
+      "commit": "3ae4b77",
+      "kind": "eval",
+      "label": "A2 change_window, brief fixed",
+      "conversations": 2,
+      "estimate": 0.0107,
+      "cost": 0.018233,
+      "results": "evals/results/2026-09-27-2011-3ae4b77-dirty.json"
     }
   ]
 }

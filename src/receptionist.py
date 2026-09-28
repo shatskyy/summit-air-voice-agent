@@ -257,6 +257,13 @@ def given(detail: str) -> str:
     return "" if detail.strip().lower() in PLACEHOLDERS else detail
 
 
+def street_key(address: str) -> list[str]:
+    """The house number and the first word of the street, which is what makes two addresses
+    different: "14 Maple St. Apt 2" and "14 Maple Street, Brooklyn" are the same place."""
+    street = address.split(",")[0].lower()
+    return re.findall(r"\d+(?:-\d+)?[a-z]*|[a-z]+", street)[:2]
+
+
 def in_coverage(zip_code: str) -> bool:
     return (
         len(zip_code) == 5
@@ -548,6 +555,7 @@ class SummitAirAgent(Agent):
         site_contact: str = "",
     ) -> str:
         """Book a visit in a window you offered and the caller accepted, after reading back the address.
+        A call gets one visit: calling this again moves or updates that same booking.
 
         Args:
             slot_id: The slot_id from check_availability for the window the caller accepted.
@@ -603,6 +611,12 @@ class SummitAirAgent(Agent):
                 "This address hasn't been checked on this call. Call check_address, read the "
                 "address back and hear a yes, then book."
             )
+        held = await asyncio.to_thread(store.booking_for, call.db, call.call_id)
+        if held and (held["zip"] != zip_code or street_key(held["address"]) != street_key(address)):
+            raise ToolError(
+                f"This call already booked #{held['ref']} at {held['address']}. For a second "
+                "address, file a callback task."
+            )
         context.disallow_interruptions()
         booking = await asyncio.to_thread(
             store.book,
@@ -625,9 +639,21 @@ class SummitAirAgent(Agent):
                 f"That window just filled up.{kept} Call check_availability again and offer "
                 "another."
             )
+        ref, window = booking["ref"], speak_window(booking)
+        if booking["change"] == "moved":
+            return (
+                f"Moved from {speak_window(booking['previous'])} to {window}, reference {ref}, at "
+                f"{address}. Tell the caller the new day and window, and that the reference is the "
+                "same."
+            )
+        if booking["change"] == "updated":
+            return (
+                f"Updated. Reference {ref}: still {window} at {address}, now for: {issue}. Tell "
+                "the caller what changed; the day, window and reference are the same."
+            )
         return (
-            f"Booked. Reference {booking['ref']}: {speak_window(booking)} at {address}. Tell the "
-            "caller the day, window, address and reference number."
+            f"Booked. Reference {ref}: {window} at {address}. Tell the caller the day, window, "
+            "address and reference number."
         )
 
     @function_tool

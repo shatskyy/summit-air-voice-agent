@@ -1,0 +1,192 @@
+{
+  "meta": {
+    "started": "2026-09-27T20:11:01-04:00",
+    "stamp": "2026-09-27-2011",
+    "commit": "3ae4b77-dirty",
+    "models": [
+      "openai/gpt-4.1-mini"
+    ],
+    "runs": 2,
+    "scenarios": [
+      "change_window"
+    ],
+    "compare": "",
+    "estimate": 0.0107
+  },
+  "results": [
+    {
+      "scenario": "change_window",
+      "title": "A2. Change the window after booking",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 18.6
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 48994,
+          "cached": 44416,
+          "output": 530,
+          "requests": 15,
+          "cost": 0.007121
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 4192,
+          "cached": 0,
+          "output": 103,
+          "requests": 9,
+          "cost": 0.001842
+        }
+      },
+      "cost": 0.008963,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hi, my furnace is making a loud banging noise when it starts.",
+        "AGENT : Got it. Is there anyone there who'd be at risk if the heating fails, like someone older, a baby, or someone with a health problem?",
+        "CALLER: No, it's just me at home, nobody at risk.",
+        "AGENT : Thanks. May I have your name, please?",
+        "CALLER: Yes, it's David Shatsky.",
+        "AGENT : Thanks, David. Is this the best number to reach you: +19145550100?",
+        "CALLER: Yes, that number is fine.",
+        "AGENT : What's the address where the technician would come?",
+        "CALLER: The address is 48 Bergen Street, Brooklyn, 11201.",
+        "  tool  check_address({\"street\": \"48 Bergen Street\", \"town\": \"Brooklyn\", \"zip_code\": \"11201\"})",
+        "  ->    In the service area. Read it back once as 48 Bergen Street, Brooklyn, ZIP 11201, and wait for a yes.",
+        "AGENT : Just to confirm, the address is 48 Bergen Street in Brooklyn, ZIP 11201. Is that right?",
+        "CALLER: Yes, that's correct.",
+        "  tool  check_availability({\"earliest_date\": \"2026-09-29\", \"part_of_day\": null})",
+        "  ->    Open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200)",
+        "AGENT : I can offer two windows for a technician visit: Wednesday, September 30, between 8 AM and noon, or Wednesday, September 30, between noon and 4 PM. Which works better for you?",
+        "CALLER: I\u2019ll take the morning window, between 8 AM and noon, on Wednesday, September 30.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"David Shatsky\", \"callback_number\": \"+19145550100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"furnace making a loud banging noise when it starts\", \"priority\": false, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001: Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. Tell the caller the day, window, address and reference number.",
+        "AGENT : You're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. Your reference number is 1001. Is there anything else I can help with?",
+        "CALLER: Can we make that the afternoon instead?",
+        "  tool  check_availability({\"earliest_date\": \"2026-09-30\", \"part_of_day\": \"afternoon\"})",
+        "  ->    Open windows: Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200); Thursday, October 1, between noon and 4 PM (slot_id 2026-10-01-1200)",
+        "AGENT : I see an afternoon window on Wednesday, September 30, between noon and 4 PM. Should I switch your appointment to that?",
+        "CALLER: Yes, please switch it to the afternoon window on Wednesday, September 30.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-1200\", \"customer_type\": \"residential\", \"name\": \"David Shatsky\", \"callback_number\": \"+19145550100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"furnace making a loud banging noise when it starts\", \"priority\": false, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Moved from Wednesday, September 30, between 8 AM and noon to Wednesday, September 30, between noon and 4 PM, reference 1001, at 48 Bergen Street, Brooklyn. Tell the caller the new day and window, and that the reference is the same.",
+        "AGENT : Your appointment is now moved to Wednesday, September 30, between noon and 4 PM at 48 Bergen Street, Brooklyn. The reference number is still 1001. Anything else I can do for you?",
+        "CALLER: No, that's all. Thank you very much. Goodbye.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye."
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-change_window-demo-1",
+          "slot_id": "2026-09-30-1200",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "David Shatsky",
+          "phone": "+19145550100",
+          "address": "48 Bergen Street, Brooklyn",
+          "zip": "11201",
+          "issue": "furnace making a loud banging noise when it starts",
+          "note": "",
+          "created_at": "2026-09-28 00:11:12"
+        }
+      ],
+      "tasks": []
+    },
+    {
+      "scenario": "change_window",
+      "title": "A2. Change the window after booking",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 2,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 2,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 19.0
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 45220,
+          "cached": 37120,
+          "output": 504,
+          "requests": 14,
+          "cost": 0.007758
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 3529,
+          "cached": 0,
+          "output": 63,
+          "requests": 8,
+          "cost": 0.001512
+        }
+      },
+      "cost": 0.00927,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hi, my furnace is making a loud banging noise when it starts.",
+        "AGENT : Got it. Is this for your home in Manhattan, Brooklyn, or Queens? Also, is anyone there who might be at risk if the furnace stops working, like an elderly person or a baby?",
+        "CALLER: It's for my home in Brooklyn, and no one's at risk.",
+        "AGENT : Okay. May I have your name, please?",
+        "CALLER: David Shatsky.",
+        "AGENT : Thanks, David. Is this phone number you're calling from the best number to reach you?",
+        "CALLER: Yes, it is.",
+        "AGENT : What is the address where the furnace is?\nWhat is the address where the furnace is located?",
+        "CALLER: 48 Bergen Street, Brooklyn, 11201.",
+        "  tool  check_address({\"street\": \"48 Bergen Street\", \"town\": \"Brooklyn\", \"zip_code\": \"11201\"})",
+        "  ->    In the service area. Read it back once as 48 Bergen Street, Brooklyn, ZIP 11201, and wait for a yes.",
+        "AGENT : That's 48 Bergen Street, Brooklyn, ZIP 11201, right?",
+        "CALLER: Yes, that's correct.",
+        "  tool  check_availability({\"earliest_date\": \"2026-09-29\", \"part_of_day\": \"any\"})",
+        "  ->    Open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200)",
+        "AGENT : We have a couple of windows on Wednesday, September 30: 8 AM to noon or noon to 4 PM. Which one works better for you?",
+        "CALLER: I'll take the morning one, 8 AM to noon.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"David Shatsky\", \"callback_number\": \"+19145550100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"furnace making a loud banging noise when it starts\", \"priority\": false, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001: Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. Tell the caller the day, window, address and reference number.",
+        "AGENT : You're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. Your reference number is 1001. Is there anything else I can help you with?",
+        "CALLER: Can we make that the afternoon instead?",
+        "  tool  check_availability({\"earliest_date\": \"2026-09-30\", \"part_of_day\": \"afternoon\"})",
+        "  ->    Open windows: Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200); Thursday, October 1, between noon and 4 PM (slot_id 2026-10-01-1200)",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-1200\", \"customer_type\": \"residential\", \"name\": \"David Shatsky\", \"callback_number\": \"+19145550100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"furnace making a loud banging noise when it starts\", \"priority\": false, \"note\": \"Rescheduled from morning\", \"business_name\": null, \"site_contact\": null})",
+        "  ->    Moved from Wednesday, September 30, between 8 AM and noon to Wednesday, September 30, between noon and 4 PM, reference 1001, at 48 Bergen Street, Brooklyn. Tell the caller the new day and window, and that the reference is the same.",
+        "AGENT : I've moved your visit to Wednesday, September 30, between noon and 4 PM at 48 Bergen Street, Brooklyn. Your reference number is still 1001. Anything else I can help with?",
+        "CALLER: No, thank you.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye."
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-change_window-demo-2",
+          "slot_id": "2026-09-30-1200",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "David Shatsky",
+          "phone": "+19145550100",
+          "address": "48 Bergen Street, Brooklyn",
+          "zip": "11201",
+          "issue": "furnace making a loud banging noise when it starts",
+          "note": "Rescheduled from morning",
+          "created_at": "2026-09-28 00:11:14"
+        }
+      ],
+      "tasks": []
+    }
+  ]
+}

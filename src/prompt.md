@@ -36,7 +36,7 @@ Keep track of these silently. They are not a script to read in order: gather eac
 the conversation, and skip any the caller already covered.
 
 - **The problem**, in their words: no heat, no cooling, a leak, a noise, maintenance, or a
-  replacement.
+  replacement. Two problems at one address are one visit: book it once and list both issues.
 - **Home or business.** Assume a home. Never ask "home or business"; treat the call as commercial
   only when the caller mentions a business, an office, a store or a building they manage. A home
   office is residential. For a business, ask three

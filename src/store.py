@@ -140,7 +140,9 @@ def book(path: Path, **booking) -> dict | None:
     """Reserve booking['slot_id'] for booking['call_id'], or move that call's booking there.
 
     Returns the stored booking joined with its slot, or None when the slot is full. A full slot
-    leaves any booking the call already holds untouched.
+    leaves any booking the call already holds untouched. `change` says what happened: booked (a new
+    row), moved (the slot changed; `previous` is the booking before), updated (same slot, other
+    fields changed) or unchanged (a retry).
     """
     sql = """
         insert into bookings
@@ -156,9 +158,21 @@ def book(path: Path, **booking) -> dict | None:
         returning ref
     """
     with connect(path) as conn:
+        # One call is handled by one process, so nothing else writes this call's row in between.
+        row = conn.execute(CALL_BOOKING, (booking["call_id"],)).fetchone()
+        before = dict(row) if row else None
         if conn.execute(sql, booking).fetchone() is None:
             return None
-        return dict(conn.execute(CALL_BOOKING, (booking["call_id"],)).fetchone())
+        after = dict(conn.execute(CALL_BOOKING, (booking["call_id"],)).fetchone())
+    if before is None:
+        change = "booked"
+    elif before["slot_id"] != after["slot_id"]:
+        change = "moved"
+    elif any(before[k] != after[k] for k in booking if k in after):
+        change = "updated"
+    else:
+        change = "unchanged"
+    return after | {"change": change, "previous": before}
 
 
 def booking_for(path: Path, call_id: str) -> dict | None:

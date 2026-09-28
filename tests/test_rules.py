@@ -1108,3 +1108,76 @@ async def test_an_urgent_call_books_with_priority_even_if_the_model_says_otherwi
         "11225", "no heat", priority=False,
     )  # fmt: skip
     assert store.booking_for(db, "call-a")["priority"] == 1
+
+
+# One visit per call (A2)
+
+
+def test_the_store_says_whether_it_booked_moved_or_updated(db):
+    first = store.book(db, **booking("call-a", "2026-09-29-0800"))
+    assert first["change"] == "booked"
+    same = store.book(db, **booking("call-a", "2026-09-29-0800"))
+    assert same["change"] == "unchanged" and same["ref"] == first["ref"]
+    updated = store.book(db, **booking("call-a", "2026-09-29-0800", issue="no heat and a leak"))
+    assert updated["change"] == "updated" and updated["ref"] == first["ref"]
+    moved = store.book(db, **booking("call-a", "2026-09-29-1200"))
+    assert moved["change"] == "moved" and moved["ref"] == first["ref"]
+    assert moved["previous"]["slot_id"] == "2026-09-29-0800"
+
+
+async def checked_call(db):
+    agent = SummitAirAgent("")
+    ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    await agent.check_address(ctx, "14 Maple Street", "Brooklyn", "11225")
+    await agent.check_availability(ctx, "2026-09-29", "any")
+    return agent, ctx
+
+
+BOOK_ARGS = ("residential", "Maria Lopez", "", "14 Maple Street, Brooklyn", "11225", "no heat")
+
+
+async def test_a_new_window_on_the_same_call_is_reported_as_moved(db):
+    agent, ctx = await checked_call(db)
+    first = await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    assert first.startswith("Booked")
+    moved = await agent.book_appointment(ctx, "2026-09-29-1200", *BOOK_ARGS)
+    assert moved.startswith("Moved from Tuesday, September 29, between 8 AM and noon to Tuesday")
+    assert "1001" in moved
+    with store.connect(db) as conn:
+        assert conn.execute("select count(*) from bookings").fetchone()[0] == 1
+
+
+async def test_a_second_issue_at_the_same_slot_is_reported_as_updated(db):
+    agent, ctx = await checked_call(db)
+    await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    args = BOOK_ARGS[:-1] + ("no heat, and the AC is leaking",)
+    updated = await agent.book_appointment(ctx, "2026-09-29-0800", *args)
+    assert updated.startswith("Updated") and "1001" in updated
+
+
+@pytest.mark.parametrize(
+    ("street", "zip_code"),
+    [("52 Oak Avenue, Brooklyn", "11225"), ("14 Maple Street, Queens", "11375")],
+)
+async def test_a_second_address_on_one_call_is_refused(db, street, zip_code):
+    agent, ctx = await checked_call(db)
+    await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    ctx.userdata.checked_zip = zip_code
+    with pytest.raises(ToolError, match="already booked #1001 at 14 Maple Street, Brooklyn"):
+        await agent.book_appointment(
+            ctx, "2026-09-29-1200", "residential", "Maria Lopez", "", street, zip_code, "no heat"
+        )
+
+
+async def test_the_same_street_written_differently_is_the_same_address(db):
+    agent, ctx = await checked_call(db)
+    await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    moved = await agent.book_appointment(
+        ctx, "2026-09-29-1200", "residential", "Maria Lopez", "", "14 Maple St. Apt 2, Brooklyn",
+        "11225", "no heat",
+    )  # fmt: skip
+    assert moved.startswith("Moved")
+
+
+def test_the_prompt_books_two_problems_as_one_visit():
+    assert "one visit" in receptionist.PROMPT

@@ -215,6 +215,33 @@ def check_urgent(c):
 check_elderly_no_heat = check_urgent
 
 
+def check_two_issues(c):
+    if len(c.bookings) != 1:
+        return [f"{len(c.bookings)} bookings, expected 1"]
+    issue = c.bookings[0]["issue"] + " " + c.bookings[0]["note"]
+    f = []
+    if not re.search(r"\b(ac|a/c|air|cool)", issue, re.IGNORECASE):
+        f.append(f"the AC leak is not in the booking: {issue!r}")
+    if not re.search(r"furnace|tune|maintenance|heat", issue, re.IGNORECASE):
+        f.append(f"the furnace tune-up is not in the booking: {issue!r}")
+    return f
+
+
+def check_change_window(c):
+    if len(c.bookings) != 1:
+        return [f"{len(c.bookings)} bookings, expected 1"]
+    f = []
+    if not c.bookings[0]["slot_id"].endswith("-1200"):
+        f.append(f"booked {c.bookings[0]['slot_id']}, expected an afternoon window")
+    asked = next((i for i, x in enumerate(c.transcript) if "afternoon instead" in x), None)
+    if asked is None:
+        return f + ["the caller never asked to move (read the transcript)"]
+    after = [x for x in c.transcript[asked:] if x.startswith("AGENT")]
+    if not any(re.search(r"moved|noon (and|to) 4|afternoon", x, re.IGNORECASE) for x in after):
+        f.append("never said the move or the new window aloud")
+    return f
+
+
 SCENARIOS = [
     Scenario(
         "blocked_id",
@@ -370,6 +397,29 @@ SCENARIOS = [
         "asked, and if offered a choice take the first window. If told on-call will call back, "
         "accept that.",
         clocks=("demo", "night"),
+    ),
+    Scenario(
+        "two_issues",
+        "A2. Two problems, one visit",
+        "adversarial",
+        "My AC is leaking, and while you're here I need my furnace tune-up.",
+        check_two_issues,
+        brief=f"It's your house, nobody at risk. Your name is David Shatsky, your address is {HOME}. "
+        "The number you're calling from is fine. Take the first window offered. You want both "
+        "things done on the same visit.",
+    ),
+    Scenario(
+        "change_window",
+        "A2. Change the window after booking",
+        "core",
+        "Hi, my furnace is making a loud banging noise when it starts.",
+        check_change_window,
+        brief=f"It's your house, nobody at risk. Your name is David Shatsky, your address is {HOME}. "
+        "The number you're calling from is fine. When windows are offered, take the morning one, "
+        "even if an afternoon is offered too. Right after the agent confirms the booking and "
+        'gives a reference number, say exactly: "Can we make that the afternoon instead?" '
+        "Accept the afternoon window on the same day if there is one, otherwise the first "
+        "afternoon offered.",
     ),
     Scenario(
         "stray_word",
