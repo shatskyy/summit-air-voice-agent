@@ -195,6 +195,13 @@ class Call:
     false_alarm: bool = False  # the caller answered the script with a clear no
     closing: bool = False  # the emergency closing line is playing; the call ends after it
     errors: list[str] = field(default_factory=list)  # unrecoverable provider errors (A5)
+    # For the call record (record.py):
+    started_at: datetime = field(default_factory=lambda: now())
+    urgent_by_code: bool = False  # flag_urgent filed the urgent task, not the model
+    promise_kept: bool = False  # keep_promise filed a task the agent had promised
+    fallback_used: bool = False  # the fallback model answered at least once
+    moved: bool = False  # the call's booking was moved to another window
+    reply_latencies: list[float] = field(default_factory=list)  # seconds, end of speech to reply
     hang_up: Callable[[], Awaitable[object]] | None = None  # ends the call; None in simulations
 
 
@@ -431,11 +438,33 @@ async def file_task(
     if kind == "urgent":
         call.urgent_task, call.urgent_due = ref, due  # one urgent task per call, like emergencies
     title = f"Summit Air {kind} #{ref}"
-    message = f"{reason}\n{summary}\n{phone or call.caller_number or ''} {address}"
+    message = push_text(call, reason, name, address, ref)
     if hold:
         call.held_page = HeldPage(title, message, PAGE_HOLD_SECONDS)
         return ref, due, call.held_page.task
     return ref, due, start_page(title, message)
+
+
+# ntfy topics are readable by anyone who knows the name, so a push carries no caller's words, number
+# or street: a first name, the ZIP, what happened and where to look. The rest stays in the database.
+ZIP_IN = re.compile(r"\b\d{5}\b")
+
+
+def first_name(name: str) -> str:
+    name = given(name or "").strip()
+    return name.split()[0] if is_real_name(name) else ""
+
+
+def zip_of(call: Call, address: str = "") -> str:
+    found = ZIP_IN.findall(address or "")
+    return found[-1] if found else call.checked_zip or ""
+
+
+def push_text(call: Call, reason: str, name: str = "", address: str = "", ref=None) -> str:
+    """A page or dispatch push: the reason, a first name and ZIP when known, and the lookup."""
+    who = " ".join(p for p in (first_name(name), zip_of(call, address)) if p)
+    lookup = f"Details: scripts/calls.py {ref or call.call_id}"
+    return "\n".join([reason] + ([who] if who else []) + [lookup])
 
 
 class HeldPage:
@@ -502,9 +531,17 @@ async def confirmed(page: asyncio.Task[bool]) -> bool:
 async def page_on_call(title: str, message: str) -> bool:
     """Push to the on-call phone through ntfy. True means ntfy accepted it. A failed page is logged,
     never raised into the call."""
-    topic = os.getenv("NTFY_TOPIC")
+    return await push("NTFY_TOPIC", title, message, priority="urgent", tags="rotating_light")
+
+
+async def push(
+    variable: str, title: str, message: str, priority: str = "default", tags: str = ""
+) -> bool:
+    """Post to the ntfy topic named by the environment variable `variable`. True means ntfy
+    accepted it; a failure is logged, never raised."""
+    topic = os.getenv(variable)
     if not topic:
-        logger.warning("NTFY_TOPIC is not set, so the on-call page was skipped: %s", title)
+        logger.warning("%s is not set, so the push was skipped: %s", variable, title)
         return False
     try:
         # ntfy refuses a page with an error status (429 when rate-limited), not an exception.
@@ -512,11 +549,11 @@ async def page_on_call(title: str, message: str) -> bool:
             await http.post(
                 f"{NTFY_URL}/{topic}",
                 data=message.encode(),
-                headers={"Title": title, "Priority": "urgent", "Tags": "rotating_light"},
+                headers={"Title": title, "Priority": priority, "Tags": tags},
                 timeout=aiohttp.ClientTimeout(total=5),
             )
     except Exception:
-        logger.exception("on-call page failed: %s", title)
+        logger.exception("push to %s failed: %s", variable, title)
         return False
     return True
 
@@ -663,6 +700,7 @@ class SummitAirAgent(Agent):
         ref, due, page = await file_task(
             call, "urgent", "no heat or cooling with someone at risk", " / ".join(said)
         )
+        call.urgent_by_code = True
         paged = (
             "the on-call technician was paged"
             if page is not None and await confirmed(page)
@@ -840,6 +878,7 @@ class SummitAirAgent(Agent):
                 "another."
             )
         window = speak_window(booking)
+        call.moved = call.moved or booking["change"] == "moved"
         ref = f'{booking["ref"]} (say "{speak_digits(booking["ref"])}")'
         if booking["change"] == "moved":
             return (
@@ -892,7 +931,7 @@ class SummitAirAgent(Agent):
                 "never promise an arrival time."
             )
         if kind == "emergency" and call.hazard_task is not None and call.false_alarm:
-            await reopen_emergency(call, f"{reason}\n{summary}")
+            await reopen_emergency(call)
         if kind == "emergency" and call.hazard_task is not None:
             target = (
                 f" The callback target is {speak_due(call.hazard_due, now())}."
@@ -1094,11 +1133,15 @@ async def keep_promise(call: Call, text: str) -> bool:
     if call.paged or call.warned or not PAGE_PROMISE.search(text):
         return False
     logger.warning("the agent promised an on-call callback without filing it; filing it now")
+    call.promise_kept = True
     try:
         await file_task(call, "urgent", "on-call callback the agent promised", text)
     except Exception:
         logger.exception("the promised urgent task was not recorded; paging on-call without it")
-        start_page("Summit Air urgent, not recorded", f"{text}\n{call.caller_number or ''}")
+        start_page(
+            "Summit Air urgent, not recorded",
+            push_text(call, "on-call callback the agent promised; the caller's number is in calls"),
+        )
     return True
 
 
@@ -1120,12 +1163,15 @@ async def hang_up_after(call: Call, handle) -> None:
         await call.hang_up()
 
 
-async def reopen_emergency(call: Call, text: str) -> None:
+async def reopen_emergency(call: Call) -> None:
     """A hazard after a false alarm: the task is open again and the page goes out now."""
     call.false_alarm = False
     if call.hazard_task is not None:
         await asyncio.to_thread(store.set_task_status, call.db, call.hazard_task, "open")
-    start_page(f"Summit Air emergency #{call.hazard_task}", f"reopened after a no\n{text}")
+    start_page(
+        f"Summit Air emergency #{call.hazard_task}",
+        push_text(call, "reopened: a hazard after the caller said no", ref=call.hazard_task),
+    )
 
 
 async def flag_hazard(call: Call, text: str) -> bool:
@@ -1137,7 +1183,7 @@ async def flag_hazard(call: Call, text: str) -> bool:
     if not hazard_in(text):
         return False
     if call.false_alarm:
-        await reopen_emergency(call, text)
+        await reopen_emergency(call)
         call.awaiting_answer = True
         return True
     if call.warned or call.hazard_task is not None:
@@ -1152,6 +1198,7 @@ async def flag_hazard(call: Call, text: str) -> bool:
     except Exception:
         logger.exception("the emergency task was not recorded; paging on-call without it")
         start_page(
-            "Summit Air emergency, not recorded", f"{reason}\n{text}\n{call.caller_number or ''}"
+            "Summit Air emergency, not recorded",
+            push_text(call, f"{reason}; the caller's number is in calls"),
         )
     return True

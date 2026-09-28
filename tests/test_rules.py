@@ -659,8 +659,9 @@ async def test_on_call_is_paged_even_when_the_emergency_task_cannot_be_written(d
     await receptionist.asyncio.sleep(0)
 
     assert len(pages) == 1
-    assert "I smell gas in the kitchen" in pages[0]
-    assert "+19145550100" in pages[0]
+    # No caller's words or number in a push (O2): the call id finds them in the database.
+    assert "I smell gas" not in pages[0] and "9145550100" not in pages[0]
+    assert "call-a" in pages[0]
 
 
 async def test_an_emergency_the_model_filed_is_the_calls_one_emergency_task(db, monkeypatch):
@@ -870,7 +871,7 @@ async def test_a_page_that_ntfy_refuses_is_logged_as_failed(ntfy, caplog):
     refused page used to pass as sent."""
     ntfy["status"] = 500
     assert await receptionist.page_on_call("Summit Air urgent #2001", "no heat") is False
-    assert "on-call page failed" in caplog.text
+    assert "push to NTFY_TOPIC failed" in caplog.text
     ntfy["status"] = 200
     assert await receptionist.page_on_call("Summit Air urgent #2002", "no heat") is True
 
@@ -1039,7 +1040,7 @@ async def test_no_heat_with_someone_at_risk_files_one_urgent_task_in_code(db, mo
     call = line.userdata
     assert call.urgent_task == 2001 and call.paged
     assert [t for t, _ in pages] == ["Summit Air urgent #2001"]
-    assert said in pages[0][1]
+    assert said not in pages[0][1] and "scripts/calls.py 2001" in pages[0][1]
     note = [i for i in turn_ctx.items if i.type == "message" and i.role == "system"]
     assert len(note) == 1
     assert "2001" in note[0].text_content and "was paged" in note[0].text_content

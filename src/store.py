@@ -1,9 +1,9 @@
 """The booking store: one SQLite file on the host's disk.
 
-Slots, bookings, dispatch tasks, call records and health-check heartbeats live here, and this is the only file with SQL in
-it. Each write is a single statement, so SQLite's own locking provides capacity, idempotency and
-in-call correction without application-level locks, even though every call runs in its own process.
-Callers run these functions through asyncio.to_thread.
+Slots, bookings, dispatch tasks, call records, call summaries and health-check heartbeats live
+here, and this is the only file with SQL in it. Each write is a single statement, so SQLite's own
+locking provides capacity, idempotency and in-call correction without application-level locks, even
+though every call runs in its own process. Callers run these functions through asyncio.to_thread.
 """
 
 import sqlite3
@@ -57,6 +57,26 @@ create table if not exists calls (
     caller_number text,
     started_at text not null default (datetime('now')),
     report_json text
+);
+
+-- One row per finished call, written by code when it ends (record.py): no model call.
+create table if not exists call_summaries (
+    call_id text primary key,
+    started_at text not null,
+    ended_at text not null,
+    duration_s integer not null,
+    caller_number text,
+    name text not null default '',
+    address text not null default '',
+    issue text not null default '',
+    outcome text not null,               -- see record.OUTCOMES
+    urgency text not null,               -- emergency, urgent or routine
+    booking_ref integer,
+    window text not null default '',
+    task_refs text not null default '',  -- comma-separated
+    flags text not null default '{}',    -- JSON: backstops fired, fallback model, errors
+    median_reply_s real,
+    transcript text not null default ''
 );
 
 -- One row per watchdog health check (scripts/watchdog.py): the worker took a job and could write.
@@ -214,6 +234,22 @@ def save_call(
     """
     with connect(path) as conn:
         conn.execute(sql, (call_id, caller_number, report_json))
+
+
+def tasks_for(path: Path, call_id: str) -> list[dict]:
+    with connect(path) as conn:
+        rows = conn.execute("select * from tasks where call_id = ? order by ref", (call_id,))
+        return [dict(r) for r in rows]
+
+
+def save_summary(path: Path, **summary) -> None:
+    columns = ", ".join(summary)
+    values = ", ".join(f":{k}" for k in summary)
+    with connect(path) as conn:
+        conn.execute(
+            f"insert or replace into call_summaries ({columns}) values ({values})",
+            summary,
+        )
 
 
 def add_heartbeat(path: Path, room: str) -> None:

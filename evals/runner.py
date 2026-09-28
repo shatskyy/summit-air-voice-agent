@@ -27,6 +27,7 @@ from receptionist import (
     keep_promise,
     release_held_page,
 )
+from record import finish_call
 
 CALLER_MODEL = "openai/gpt-4.1-mini"
 HANG_UP = "<hang up>"
@@ -201,6 +202,7 @@ async def play(scenario: Scenario, clock_name: str, model: str, run: int) -> dic
         held = call.held_page
         await release_held_page(call)  # the caller has hung up, as on a call
         await asyncio.sleep(0.05)  # let a hang-up queued after playout run
+        summary = await finish_call(call, session.history.items)  # as when a call ends
         transcript = history_lines(session)
         if kept_promise:
             transcript.append("  [backstop] filed the urgent task the agent promised")
@@ -208,6 +210,7 @@ async def play(scenario: Scenario, clock_name: str, model: str, run: int) -> dic
             transcript.append(f"  [page] {'cancelled' if held.cancelled else 'went out'}")
         if hung_up:
             transcript.append("  [hung up by code]")
+        transcript.append(f"  [outcome] {summary['outcome']}")
 
     convo = Conversation(transcript, rows(db, "bookings"), rows(db, "tasks"))
     failures = scenario.check(convo) + ([f"crashed: {error}"] if error else [])

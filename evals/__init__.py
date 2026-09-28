@@ -20,6 +20,6 @@ load_dotenv(ROOT / ".env.local")
 
 # A simulated emergency must never page a real phone. Every topic the code can page is unset here,
 # before any module that reads one is imported.
-PAGE_TOPICS = ("NTFY_TOPIC", "WATCHDOG_NTFY_TOPIC")
+PAGE_TOPICS = ("NTFY_TOPIC", "WATCHDOG_NTFY_TOPIC", "DISPATCH_NTFY_TOPIC")
 for _topic in PAGE_TOPICS:
     os.environ.pop(_topic, None)

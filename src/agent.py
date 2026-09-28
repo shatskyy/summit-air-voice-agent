@@ -48,6 +48,7 @@ from receptionist import (
     render_instructions,
     wants_dictation,
 )
+from record import finish_call
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env.local")
 
@@ -144,13 +145,15 @@ def caller_number(participant: rtc.RemoteParticipant) -> str | None:
     return number
 
 
-def log_turn_latency(event: ConversationItemAddedEvent) -> None:
+def log_turn_latency(call: Call, event: ConversationItemAddedEvent) -> None:
     item = event.item
     metrics = getattr(item, "metrics", None)
     if not metrics:
         return
     fields = {k: round(v, 3) for k, v in metrics.items() if isinstance(v, float)}
     logger.info("turn latency role=%s %s", getattr(item, "role", "?"), fields)
+    if getattr(item, "role", None) == "assistant" and "e2e_latency" in fields:
+        call.reply_latencies.append(fields["e2e_latency"])
 
 
 def is_healthcheck(metadata: str | None) -> bool:
@@ -162,15 +165,21 @@ def is_healthcheck(metadata: str | None) -> bool:
 
 
 async def save_call_record(ctx: JobContext) -> None:
-    """Keep the transcript, tool calls and timings next to the bookings they produced."""
+    """Keep the transcript, tool calls and timings next to the bookings they produced, then write
+    the call's summary and push it to dispatch (record.py)."""
     if is_healthcheck(ctx.job.metadata):
         return
     try:
         report = ctx.make_session_report()
+        session = ctx.primary_session
     except RuntimeError:
         return
     record = json.dumps(report.to_dict(), default=str)
     await asyncio.to_thread(store.save_call, DEFAULT_DB, ctx.room.name, None, record)
+    try:
+        await finish_call(session.userdata, session.history.items)
+    except Exception:
+        logger.exception("the call summary was not written")
 
 
 # One warm process answers the next call immediately. dev mode keeps none, which delayed the
@@ -205,11 +214,19 @@ async def entrypoint(ctx: JobContext) -> None:
     await asyncio.to_thread(store.save_call, call.db, call.call_id, call.caller_number)
 
     listening, speaking = speech()
+    model = language_model()
+
+    def note_fallback(event) -> None:
+        if not event.available:
+            call.fallback_used = True
+            logger.warning("%s is unavailable; the fallback model answers", event.llm.model)
+
+    model.on("llm_availability_changed", note_fallback)
     session = AgentSession[Call](
         userdata=call,
         stt=listening,
         tts=speaking,
-        llm=language_model(),
+        llm=model,
         turn_handling=TurnHandlingOptions(
             turn_detection=turn_detector(),
             # Deepgram's final transcript can land after a 0.5 s wait, splitting one sentence into
@@ -223,7 +240,7 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     # A provider that fails for good ends the call in code: a line, a callback task, the hang-up.
     session.on("error", FailureLadder(session, call).on_error)
-    session.on("conversation_item_added", log_turn_latency)
+    session.on("conversation_item_added", lambda event: log_turn_latency(call, event))
 
     def check_promise(event: ConversationItemAddedEvent) -> None:
         item = event.item

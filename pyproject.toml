@@ -37,4 +37,4 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint.isort]
-known-first-party = ["agent", "evals", "models", "receptionist", "store"]
+known-first-party = ["agent", "evals", "models", "receptionist", "record", "store"]
