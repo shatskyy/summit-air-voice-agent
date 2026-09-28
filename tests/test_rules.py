@@ -1718,3 +1718,25 @@ def test_the_prompt_names_the_services_and_opens_neutrally():
     assert '"What can we help you with?"' in text
     assert "understand the problem" not in text
     assert "new install" in text
+
+
+# Latency (A7)
+
+
+async def test_a_checked_address_comes_back_with_the_next_two_windows_already_offered(
+    db, monkeypatch
+):
+    monkeypatch.setattr(receptionist, "now", lambda: MONDAY_9AM)
+    call = Call(call_id="call-a", db=db, caller_number="+19145550100")
+    ctx = FakeContext(call)
+    agent = SummitAirAgent("")
+    result = await agent.check_address(ctx, "48 Bergen Street", "Brooklyn", "11201")
+    assert "Don't offer times in the read-back" in result
+    assert "Monday, September 28, between noon and 4 PM (slot_id 2026-09-28-1200)" in result
+    assert list(call.offered) == ["2026-09-28-1200", "2026-09-29-0800"]
+    # Bookable straight away, with no check_availability call.
+    booked = await agent.book_appointment(
+        ctx, "2026-09-28-1200", "residential", "Maria Lopez", "", "48 Bergen Street, Brooklyn",
+        "11201", "furnace won't start",
+    )  # fmt: skip
+    assert booked.startswith("Booked.")

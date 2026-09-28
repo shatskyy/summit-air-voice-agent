@@ -795,10 +795,23 @@ class SummitAirAgent(Agent):
                 f"covers {counties_spoken()} in New York City, and ask whether the address is in "
                 "one of them. If it isn't, offer a callback and ask if there is anything else."
             )
-        context.userdata.checked_zip = zip_code
-        return (
+        call = context.userdata
+        call.checked_zip = zip_code
+        checked = (
             f"In the service area. Read it back once as {street}, {town}, ZIP {zip_code}, and wait "
             "for a yes."
+        )
+        # The next open windows come back with the address, so the turn after the caller's yes can
+        # offer them without a second model round trip through check_availability (A7).
+        slots = await asyncio.to_thread(store.open_slots, call.db, now().date(), "any", now())
+        if not slots:
+            return checked
+        for slot in slots:
+            call.offered[slot["id"]] = speak_window(slot)
+        windows = "; ".join(f"{speak_window(s)} (slot_id {s['id']})" for s in slots)
+        return (
+            f"{checked} Don't offer times in the read-back. After the yes, unless the caller wants "
+            f"a particular day or part of the day, offer these next open windows: {windows}."
         )
 
     @function_tool

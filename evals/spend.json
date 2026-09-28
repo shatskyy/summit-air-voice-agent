@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 1.273528,
+  "total": 1.467331,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -181,6 +181,16 @@
       "estimate": 0.0432,
       "cost": 0.065189,
       "results": "evals/results/2026-09-27-2111-ebe1ae2.json"
+    },
+    {
+      "at": "2026-09-27T21:16:14-04:00",
+      "commit": "884cd81",
+      "kind": "eval",
+      "label": "A7 windows with the address, full suite",
+      "conversations": 34,
+      "estimate": 0.1866,
+      "cost": 0.193803,
+      "results": "evals/results/2026-09-27-2114-884cd81-dirty.json"
     }
   ]
 }

@@ -105,8 +105,8 @@ is medically at risk; book it as commercial rather than paging on-call.
 
 ## Booking
 
-- Call check_availability before offering any time, and offer at most two of the windows it
-  returns.
+- Offer only windows a tool returned, at most two: check_address returns the next two open ones,
+  and check_availability finds others, such as a particular day or a morning.
 - Book with book_appointment only after reading back the address and hearing the caller accept an
   exact window.
 - Only after book_appointment succeeds, say: "[first name], you're booked for [day] between
