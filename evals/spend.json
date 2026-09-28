@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 0.845049,
+  "total": 0.959254,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -131,6 +131,26 @@
       "estimate": 0.0056,
       "cost": 0.000354,
       "results": "evals/results/2026-09-27-2059-accb343-dirty.json"
+    },
+    {
+      "at": "2026-09-27T21:04:31-04:00",
+      "commit": "739b8e2",
+      "kind": "eval",
+      "label": "A6 first pass",
+      "conversations": 9,
+      "estimate": 0.0504,
+      "cost": 0.032312,
+      "results": "evals/results/2026-09-27-2104-739b8e2-dirty.json"
+    },
+    {
+      "at": "2026-09-27T21:06:43-04:00",
+      "commit": "739b8e2",
+      "kind": "eval",
+      "label": "A6 x2 after check fixes and price line",
+      "conversations": 22,
+      "estimate": 0.1206,
+      "cost": 0.081893,
+      "results": "evals/results/2026-09-27-2105-739b8e2-dirty.json"
     }
   ]
 }

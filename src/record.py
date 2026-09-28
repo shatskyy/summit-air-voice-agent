@@ -19,6 +19,7 @@ import receptionist
 import store
 from receptionist import (
     Call,
+    caller_said_goodbye,
     closing_confirmed,
     file_task,
     first_name,
@@ -60,11 +61,16 @@ def caller_turns(items) -> list[str]:
     ]
 
 
+def ended_on_purpose(items) -> bool:
+    """The caller answered the closing question, or said goodbye (GuardedEndCall's two exits)."""
+    return closing_confirmed(items) or caller_said_goodbye(items)
+
+
 def abandoned(call: Call, items, booking: dict | None, tasks: list[dict]) -> bool:
-    """The closing question was never answered, the caller mentioned heating or cooling, nothing
-    was booked or filed, and there is a number to call back."""
+    """The caller didn't end the call on purpose, mentioned heating or cooling, nothing was booked
+    or filed, and there is a number to call back."""
     return (
-        not closing_confirmed(items)
+        not ended_on_purpose(items)
         and booking is None
         and not tasks
         and bool(call.caller_number)
@@ -117,7 +123,7 @@ def summarize(call: Call, items, booking: dict | None, tasks: list[dict]) -> dic
         if placed
         else "",
         "issue": booking["issue"] if booking else tasks[0]["reason"] if tasks else "",
-        "outcome": outcome(booking, tasks, call, closing_confirmed(items)),
+        "outcome": outcome(booking, tasks, call, ended_on_purpose(items)),
         "urgency": "emergency"
         if "emergency" in open_kinds
         else "urgent"

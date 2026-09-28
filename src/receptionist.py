@@ -201,6 +201,8 @@ class Call:
     promise_kept: bool = False  # keep_promise filed a task the agent had promised
     fallback_used: bool = False  # the fallback model answered at least once
     moved: bool = False  # the call's booking was moved to another window
+    caller_turns: int = 0  # caller turns heard so far
+    spanish: bool = False  # the fixed Spanish line has been said (A6)
     reply_latencies: list[float] = field(default_factory=list)  # seconds, end of speech to reply
     hang_up: Callable[[], Awaitable[object]] | None = None  # ends the call; None in simulations
 
@@ -215,10 +217,14 @@ def office_open(at: datetime) -> bool:
     return day in office["days"] and office["start"] <= at.strftime("%H:%M") < office["end"]
 
 
+def spoken_list(words: list[str], joiner: str = "and") -> str:
+    """["a", "b", "c"] as "a, b and c"."""
+    return ", ".join(words[:-1]) + f" {joiner} " + words[-1] if len(words) > 1 else "".join(words)
+
+
 def counties_spoken() -> str:
     """The service area as a caller hears it: "Manhattan, Brooklyn and Queens"."""
-    counties = CONFIG["coverage"]["counties"]
-    return ", ".join(counties[:-1]) + " and " + counties[-1]
+    return spoken_list(CONFIG["coverage"]["counties"])
 
 
 def render_instructions(at: datetime, caller_number: str | None) -> str:
@@ -241,6 +247,8 @@ def render_instructions(at: datetime, caller_number: str | None) -> str:
             else "ask for the best number to reach them. Caller ID is withheld, so there is no "
             "calling number to confirm. Repeat the number back once."
         ),
+        services_offered=spoken_list(CONFIG["services"]["offered"]),
+        services_not_offered=spoken_list(CONFIG["services"]["not_offered"], "or"),
         diagnostic_fee=CONFIG["pricing"]["diagnostic_fee"],
         after_hours_fee=CONFIG["pricing"]["after_hours_fee"],
         urgent_minutes=CONFIG["callback_target_minutes"]["urgent"],
@@ -575,13 +583,29 @@ def closing_confirmed(items) -> bool:
     return False
 
 
+# An explicit goodbye in the caller's last turn ends a call without the closing question: a wrong
+# number shouldn't be asked whether there is anything else. "Stop." is not one.
+GOODBYE_SAID = re.compile(
+    r"\b(?:bye|goodbye|good-bye|wrong number|never ?mind|adi[oó]s)\b", re.IGNORECASE
+)
+
+
+def caller_said_goodbye(items) -> bool:
+    """Whether the caller's latest turn says goodbye, wrong number or never mind."""
+    for item in reversed(items):
+        if getattr(item, "type", None) == "message" and item.role == "user":
+            return bool(GOODBYE_SAID.search(item.text_content or ""))
+    return False
+
+
 class GuardedEndCall(EndCallTool):
-    """end_call that refuses until the caller has been asked whether there is anything else and has
-    answered. On a test call speech-to-text heard "Stop." over the greeting, and the model hung up
-    on it (room dEwa8tRdFwLW)."""
+    """end_call that refuses until the caller has answered whether there is anything else, or has
+    just said goodbye. On a test call speech-to-text heard "Stop." over the greeting, and the model
+    hung up on it (room dEwa8tRdFwLW)."""
 
     async def _end_call(self, ctx: RunContext):
-        if not closing_confirmed(ctx.session.history.items):
+        items = ctx.session.history.items
+        if not (closing_confirmed(items) or caller_said_goodbye(items)):
             raise ToolError(
                 "Don't end the call yet. If you're not sure what the caller wants, ask what they "
                 "need. Before ending, ask whether there is anything else and hear their answer."
@@ -630,6 +654,9 @@ class SummitAirAgent(Agent):
         if await flag_hazard(call, text):
             await self.speak_over(SAFETY_SCRIPT, new_message)
             raise StopResponse()
+        call.caller_turns += 1
+        if call.caller_turns <= 2 and not call.spanish and SPANISH.search(text):
+            await self.answer_in_spanish(call, new_message)  # raises StopResponse
         if not call.warned or call.false_alarm:  # never while an emergency stands
             await self.flag_urgent(call, turn_ctx, new_message)
 
@@ -661,6 +688,34 @@ class SummitAirAgent(Agent):
         task = asyncio.create_task(hang_up_after(call, handle))
         _background.add(task)
         task.add_done_callback(_background.discard)
+        raise StopResponse()
+
+    async def answer_in_spanish(self, call: Call, new_message: llm.ChatMessage) -> None:
+        """A caller who opens in Spanish hears a fixed Spanish line and gets a callback filed by
+        code. The model on its own promised a Spanish speaker who doesn't exist."""
+        call.spanish = True
+        said = new_message.text_content or ""
+        if call.caller_number:
+            ref, due, _ = await file_task(call, "callback", "Spanish speaker, call back", said)
+            line = SPANISH_LINE.format(when=spanish_due(due, now()))
+            filed = (
+                f"filed callback task {ref}, and told them in Spanish that someone will call them "
+                f"back at this number {spanish_due(due, now())}. Don't create another callback task."
+            )
+        else:
+            line = SPANISH_LINE_NO_NUMBER
+            filed = (
+                "asked in Spanish for their number, since caller ID is withheld. When they give it, "
+                "repeat it back and create a callback task with it."
+            )
+        await self.speak_over(line, new_message)
+        await self.add_note(
+            llm.ChatContext(),
+            "The caller spoke Spanish. Code said, in Spanish, that we only serve in English right "
+            f"now, {filed} Never promise a Spanish speaker or say someone who speaks Spanish will "
+            "call. If they carry on in English, help them normally. If they carry on in Spanish, "
+            "answer in one short Spanish sentence, and when they say goodbye, call end_call.",
+        )
         raise StopResponse()
 
     async def call_off_emergency(self, call: Call, turn_ctx: llm.ChatContext) -> None:
@@ -802,7 +857,8 @@ class SummitAirAgent(Agent):
             callback_number: The confirmed number to reach them.
             address: Street address with any unit, and the town.
             zip_code: The five-digit ZIP code.
-            issue: The problem in the caller's words, or maintenance, or replacement estimate.
+            issue: The problem in the caller's words, or maintenance, or a replacement or
+                install estimate.
             priority: True for an urgent call where someone vulnerable is without heat or cooling.
             note: What dispatch needs: a site contact and access for commercial, a membership the
                 caller mentioned, or an earlier visit that was missed.
@@ -960,6 +1016,42 @@ class SummitAirAgent(Agent):
             f"Task {ref} created. {who}. The callback target is {speak_due(due, now())}. "
             "Tell the caller the target, and never promise an arrival time."
         )
+
+
+# Spanish on either of the caller's first two turns (A6). Only English is served, so code answers
+# in Spanish rather than letting the model improvise a promise.
+SPANISH = re.compile(
+    r"\b(?:hola|habla|español|espanol|necesito|aire acondicionado|calefacci[oó]n|no funciona"
+    r"|por favor)\b",
+    re.IGNORECASE,
+)
+SPANISH_LINE = (
+    "Lo siento, por ahora solo atendemos en inglés. Le llamaremos a este número {when}. Si "
+    "prefiere, podemos seguir en inglés."
+)
+SPANISH_LINE_NO_NUMBER = (
+    "Lo siento, por ahora solo atendemos en inglés. ¿Me da su número de teléfono para que le "
+    "llamemos? Si prefiere, podemos seguir en inglés."
+)
+DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+
+
+def spanish_due(due: datetime, at: datetime) -> str:
+    """A callback target in Spanish: "antes de las 2:35 de la tarde", "mañana antes de las 10 de
+    la mañana", "el lunes antes de las 10 de la mañana"."""
+    hour, minute = due.hour, due.minute
+    if (hour, minute) == (12, 0):
+        clock = "del mediodía"
+    else:
+        h = hour % 12 or 12
+        part = "de la mañana" if hour < 12 else "de la tarde" if hour < 19 else "de la noche"
+        clock = f"{'de la' if h == 1 else 'de las'} {h}{f':{minute:02d}' if minute else ''} {part}"
+    days = (due.date() - at.date()).days
+    if days == 0:
+        return f"antes {clock}"
+    if days == 1:
+        return f"mañana antes {clock}"
+    return f"el {DIAS[due.weekday()]} antes {clock}"
 
 
 class SilenceWatch:

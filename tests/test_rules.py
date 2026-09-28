@@ -1614,3 +1614,107 @@ def test_each_model_gets_two_and_a_half_seconds_and_the_pair_is_not_retried(monk
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     assert agent.language_model()._attempt_timeout == 2.5
     assert agent.LLM_CONN.max_retry == 0
+
+
+# Off-script calls (A6)
+
+
+@pytest.mark.parametrize(
+    ("last", "ends"),
+    [
+        ("Oh sorry, wrong number.", True),
+        ("Okay, bye.", True),
+        ("Never mind, thanks.", True),
+        ("Gracias, adiós.", True),
+        ("Stop.", False),
+        ("Is this Joe's Pizza?", False),
+    ],
+)
+def test_an_explicit_goodbye_ends_the_call_without_the_closing_question(last, ends):
+    assert receptionist.caller_said_goodbye([GREETED, said("user", last)]) is ends
+
+
+async def test_end_call_goes_through_on_a_wrong_number(monkeypatch):
+    from types import SimpleNamespace
+
+    from livekit.agents.beta.tools import EndCallTool
+
+    ended = []
+
+    async def base_end_call(self, ctx):
+        ended.append(True)
+
+    monkeypatch.setattr(EndCallTool, "_end_call", base_end_call)
+    items = [GREETED, said("user", "Is this Joe's Pizza?"), said("assistant", "No, Summit Air.")]
+    items.append(said("user", "Oh, wrong number, sorry."))
+    ctx = SimpleNamespace(session=SimpleNamespace(history=SimpleNamespace(items=items)))
+    guard = next(t for t in SummitAirAgent("").tools if isinstance(t, GuardedEndCall))
+    await guard._end_call(ctx)
+    assert ended == [True]
+
+
+def spanish_agent(db, monkeypatch, number="+19145550100"):
+    line = HazardLine(Call(call_id="call-a", db=db, caller_number=number))
+    monkeypatch.setattr(SummitAirAgent, "session", property(lambda self: line))
+    return SummitAirAgent(""), line
+
+
+async def test_spanish_gets_the_fixed_line_and_a_callback_filed_in_code(db, monkeypatch):
+    agent, line = spanish_agent(db, monkeypatch)
+    with pytest.raises(StopResponse):
+        await turn(agent, "Hola, ¿habla español?")
+    assert len(line.said) == 1
+    assert line.said[0].startswith("Lo siento, por ahora solo atendemos en inglés. Le llamaremos")
+    assert line.said[0].endswith("Si prefiere, podemos seguir en inglés.")
+    with store.connect(db) as conn:
+        tasks = conn.execute("select kind, summary from tasks").fetchall()
+    assert [t["kind"] for t in tasks] == ["callback"] and "habla" in tasks[0]["summary"]
+    notes = [i.text_content for i in agent.chat_ctx.items if i.type == "message" and i.role == "system"]  # fmt: skip
+    assert len(notes) == 1 and "Never promise a Spanish speaker" in notes[0]
+    assert "Don't create another callback task" in notes[0]
+    # Once only.
+    await turn(agent, "Me llamo David, por favor.")
+    assert len(line.said) == 1
+
+
+async def test_spanish_after_the_second_turn_is_left_to_the_model(db, monkeypatch):
+    agent, line = spanish_agent(db, monkeypatch)
+    await turn(agent, "Hi, my AC is leaking.")
+    await turn(agent, "It's at my house.")
+    await turn(agent, "My wife says hola.")
+    assert line.said == []
+
+
+async def test_spanish_with_a_withheld_number_asks_for_one_and_files_nothing_yet(db, monkeypatch):
+    agent, line = spanish_agent(db, monkeypatch, number=None)
+    with pytest.raises(StopResponse):
+        await turn(agent, "Hola, mi calefacción no funciona.")
+    assert line.said == [receptionist.SPANISH_LINE_NO_NUMBER]
+    with store.connect(db) as conn:
+        assert conn.execute("select count(*) from tasks").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize(
+    ("due", "spoken"),
+    [
+        (datetime(2026, 9, 29, 14, 35, tzinfo=TZ), "antes de las 2:35 de la tarde"),
+        (datetime(2026, 9, 29, 12, 0, tzinfo=TZ), "antes del mediodía"),
+        (datetime(2026, 9, 29, 13, 0, tzinfo=TZ), "antes de la 1 de la tarde"),
+        (datetime(2026, 9, 30, 10, 0, tzinfo=TZ), "mañana antes de las 10 de la mañana"),
+        (datetime(2026, 10, 5, 10, 0, tzinfo=TZ), "el lunes antes de las 10 de la mañana"),
+    ],
+)
+def test_the_spanish_callback_target(due, spoken):
+    assert receptionist.spanish_due(due, datetime(2026, 9, 29, 12, 35, tzinfo=TZ)) == spoken
+
+
+def test_the_prompt_names_the_services_and_opens_neutrally():
+    text = render_instructions(MONDAY_9AM, "+19145550100")
+    assert (
+        "works on heating, cooling, heat pumps, boilers, ductless mini splits and maintenance"
+        in text
+    )
+    assert "doesn't do plumbing, water heaters or appliances" in text
+    assert '"What can we help you with?"' in text
+    assert "understand the problem" not in text
+    assert "new install" in text

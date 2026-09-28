@@ -194,6 +194,7 @@ async def test_a_caller_who_hangs_up_after_naming_the_problem_gets_a_callback(db
         (None, "My AC stopped working.", False),  # nobody to call back
         ("+19145550100", "Is this Joe's Pizza?", False),  # not heating or cooling
         ("+19145550100", "My AC stopped working.", True),  # they said they needed nothing else
+        ("+19145550100", "How much is a new AC? Okay, that's all, bye.", False),  # a goodbye
     ],
 )
 async def test_no_abandoned_callback_without_a_number_a_problem_or_an_open_call(

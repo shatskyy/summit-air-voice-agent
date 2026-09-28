@@ -25,6 +25,11 @@ hours:
   capacity_per_window: 3   # demo capacity, not derived from the 40-technician headcount
   days_ahead: 21
 
+# What the agent books, and what it turns away in one sentence. Rendered into the prompt.
+services:
+  offered: [heating, cooling, heat pumps, boilers, ductless mini splits, maintenance]
+  not_offered: [plumbing, water heaters, appliances]
+
 pricing:
   diagnostic_fee: 89       # typical residential diagnostic fee; repairs are priced on site
   after_hours_fee: 159
