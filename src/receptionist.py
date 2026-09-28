@@ -1550,7 +1550,11 @@ PAGE_PROMISE = re.compile(
 # 0.56 bar), so 9 of 21 turns on the 16:09 call waited the full 2 s. Most turns get a short cap;
 # dictating an address or a number gets a long one, because callers pause between the parts.
 MAX_DELAY = 1.1
-DICTATION_MAX_DELAY = 2.5
+# 2.5 s until 2026-09-28. On the 10:01 call "Forty eight Bergen Street, Brooklyn. I don't know the
+# ZIP." was finished and still waited the full 2.5 s, the longest pause of three calls. 2.0 s
+# still covers a pause between a street and its town; a longer one splits the address into two
+# turns, which the prompt's "in pieces" rule and the street check handle.
+DICTATION_MAX_DELAY = 2.0
 # Tool calls run one at a time (models.py), so a turn that files a task, checks the address and
 # books takes three steps where it took one. Past this many, LiveKit makes the model answer with
 # its tools switched off, which is where it could say "booked" with nothing written. The default

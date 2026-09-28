@@ -63,7 +63,7 @@ before anything is booked. It also guarantees ordering: the model cannot say "yo
 the booking tool has returned.
 
 **Cost.** Speech-to-speech models currently feel more natural at turn-taking. This build compensates
-with a semantic turn detector that waits when a sentence sounds unfinished: up to 1.1 s, or 2.5 s
+with a semantic turn detector that waits when a sentence sounds unfinished: up to 1.1 s, or 2.0 s
 after the agent asks for an address or a number.
 
 **Revision, 2026-09-24: the hosted turn detector, not the local one.** Replies on call 5 took about

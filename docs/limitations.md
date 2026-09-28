@@ -32,7 +32,7 @@ in [scenarios.md](scenarios.md); simulated-call results are in [the eval report]
   number, the street or the caller's words. `scripts/calls.py` has the rest. `DISPATCH_NTFY_TOPIC` falls back to `NTFY_TOPIC`, so without it dispatch summaries
   and on-call pages share one topic.
 - **Latency.** Replies ran 0.9 to 2.6 s end to end on the 2026-09-27 phone calls. When the turn
-  detector thinks the caller is mid-sentence it waits up to 1.1 s, and up to 2.5 s after the agent
+  detector thinks the caller is mid-sentence it waits up to 1.1 s, and up to 2.0 s after the agent
   asks for an address or a number. Since 2026-09-28 the model makes one tool call at a time, so a
   turn that needs two tools (file a task, then check the address) takes one more model round trip;
   not yet measured on a phone call.
