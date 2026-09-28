@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "started": "2026-09-27T20:59:54-04:00",
+    "stamp": "2026-09-27-2059",
+    "commit": "accb343-dirty",
+    "models": [
+      "openai/gpt-4.1-mini"
+    ],
+    "runs": 1,
+    "scenarios": [
+      "abandoned"
+    ],
+    "compare": "",
+    "estimate": 0.0056
+  },
+  "results": [
+    {
+      "scenario": "abandoned",
+      "title": "O3. Hangs up right after naming the problem",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 21.0
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 2893,
+          "cached": 2816,
+          "output": 26,
+          "requests": 1,
+          "cost": 0.000354
+        }
+      },
+      "cost": 0.000354,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hi, my AC stopped working.",
+        "AGENT : Is anyone there who might be at risk in the heat, like a baby, someone older, or someone with health problems?",
+        "  [outcome] abandoned"
+      ],
+      "bookings": [],
+      "tasks": [
+        {
+          "ref": 2001,
+          "call_id": "eval-abandoned-demo-1",
+          "kind": "callback",
+          "reason": "Hung up before booking: Hi, my AC stopped working.",
+          "summary": "Agent: Thanks for calling Summit Air. This is the automated assistant. How can I help?\nCaller: Hi, my AC stopped working.\nAgent: Is anyone there who might be at risk in the heat, like a baby, someone older, or someone with health problems?",
+          "name": "",
+          "phone": "+19145550100",
+          "address": "",
+          "due_at": "2026-09-29T14:35-04:00",
+          "status": "open",
+          "created_at": "2026-09-28 00:59:56"
+        }
+      ]
+    }
+  ]
+}

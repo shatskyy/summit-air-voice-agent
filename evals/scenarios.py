@@ -286,6 +286,24 @@ def check_asr_street(c):
     return f
 
 
+def outcome_said(c: Conversation) -> str:
+    return next((x.split("] ", 1)[1] for x in c.transcript if x.startswith("  [outcome]")), "")
+
+
+def check_abandoned(c):
+    f = []
+    callbacks = [t for t in c.tasks if t["kind"] == "callback"]
+    if len(c.tasks) != 1 or not callbacks:
+        f.append(f"tasks {[t['kind'] for t in c.tasks]}, expected one callback")
+    elif not callbacks[0]["reason"].startswith("Hung up before booking: "):
+        f.append(f"callback reason {callbacks[0]['reason']!r}")
+    if outcome_said(c) != "abandoned":
+        f.append(f"outcome {outcome_said(c)!r}, expected abandoned")
+    if c.bookings:
+        f.append("booked on a call the caller left")
+    return f
+
+
 SCENARIOS = [
     Scenario(
         "blocked_id",
@@ -511,6 +529,14 @@ SCENARIOS = [
         f"your AC is leaking water. It's your house, nobody at risk. Your name is David Shatsky, "
         f"your address is {HOME}. The number you're calling from is fine. Take the first window "
         "offered.",
+    ),
+    Scenario(
+        "abandoned",
+        "O3. Hangs up right after naming the problem",
+        "core",
+        "Hi, my AC stopped working.",
+        check_abandoned,
+        lines=[],  # the caller hangs up after the agent's first reply
     ),
 ]
 

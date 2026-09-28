@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 0.844695,
+  "total": 0.845049,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -121,6 +121,16 @@
       "estimate": 0.0558,
       "cost": 0.063093,
       "results": "evals/results/2026-09-27-2027-a6f234e-dirty.json"
+    },
+    {
+      "at": "2026-09-27T20:59:56-04:00",
+      "commit": "accb343",
+      "kind": "eval",
+      "label": "O3 abandoned",
+      "conversations": 1,
+      "estimate": 0.0056,
+      "cost": 0.000354,
+      "results": "evals/results/2026-09-27-2059-accb343-dirty.json"
     }
   ]
 }

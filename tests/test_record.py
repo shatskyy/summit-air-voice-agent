@@ -167,3 +167,47 @@ def test_the_page_names_no_caller_words_number_or_street():
     call = Call(call_id="call-a", caller_number="+19145550100", checked_zip="11201")
     text = receptionist.push_text(call, "no heat, mother 80", "Maria Lopez", "48 Bergen St", 2001)
     assert text == "no heat, mother 80\nMaria 11201\nDetails: scripts/calls.py 2001"
+
+
+# Abandoned calls (O3)
+
+
+async def test_a_caller_who_hangs_up_after_naming_the_problem_gets_a_callback(db, pushes):
+    call = Call(call_id="call-a", caller_number="+19145550100", db=db)
+    items = history(
+        ("assistant", receptionist.GREETING),
+        ("user", "Hi. My AC stopped working. It's really hot."),
+        ("assistant", "Got it. What's your name?"),
+    )
+    summary = await record.finish_call(call, items)
+    assert summary["outcome"] == "abandoned"
+    [task] = store.tasks_for(db, "call-a")
+    assert task["kind"] == "callback"
+    assert task["reason"] == "Hung up before booking: My AC stopped working."
+    assert "My AC stopped working" in task["summary"]
+    assert pushes[0][1] == "Summit Air call: abandoned"
+
+
+@pytest.mark.parametrize(
+    ("number", "said", "closing_answered"),
+    [
+        (None, "My AC stopped working.", False),  # nobody to call back
+        ("+19145550100", "Is this Joe's Pizza?", False),  # not heating or cooling
+        ("+19145550100", "My AC stopped working.", True),  # they said they needed nothing else
+    ],
+)
+async def test_no_abandoned_callback_without_a_number_a_problem_or_an_open_call(
+    db, pushes, number, said, closing_answered
+):
+    call = Call(call_id="call-a", caller_number=number, db=db)
+    items = history(("user", said), closing_answered=closing_answered)
+    summary = await record.finish_call(call, items)
+    assert store.tasks_for(db, "call-a") == []
+    assert summary["outcome"] in ("hung_up_early", "info_only")
+
+
+async def test_a_call_that_already_has_a_task_is_not_abandoned(db, pushes):
+    call = Call(call_id="call-a", caller_number="+19145550100", db=db)
+    await file_task(call, "callback", "wants a person", "")
+    await record.finish_call(call, history(("user", "My furnace is out, get me a person.")))
+    assert len(store.tasks_for(db, "call-a")) == 1
