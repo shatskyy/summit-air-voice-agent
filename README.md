@@ -17,8 +17,9 @@ technician is dispatched.
 ## How I built it
 
 Twilio carries the call into LiveKit, which handles the audio session and turn-taking. Deepgram
-Nova-3 transcribes the caller, GPT-4.1 mini runs the conversation, and Deepgram Aura-2 speaks the
-response. GPT-4.1 and an OpenAI voice provide model and speech fallbacks.
+Nova-3 transcribes the caller, GPT-4.1 mini runs the conversation, and Gemini 3.1 Flash TTS
+(Kore) speaks the response. GPT-4.1 backs up the conversation model; Deepgram Aura-2 and an OpenAI
+voice back up speech. [Voice setup and rollback](docs/gemini-voice.md) are documented separately.
 
 The model gathers information in whatever order the caller gives it and uses tools to check the
 address, find availability, book, or create a dispatch task. The tools validate bookings and write
@@ -60,7 +61,8 @@ from earlier model tests, rather than treating the simulation score as proof tha
 
 ## Run locally
 
-You'll need Python 3.11–3.14, uv, a LiveKit Cloud project, OpenAI and Deepgram keys. Phone calls also
+You'll need Python 3.11–3.14, uv, a LiveKit Cloud project, OpenAI and Deepgram keys, plus a Google
+API key and `TTS_PROVIDER=gemini` for the deployed voice. Phone calls also
 need a Twilio number routed through an Elastic SIP trunk into LiveKit.
 
 ```sh

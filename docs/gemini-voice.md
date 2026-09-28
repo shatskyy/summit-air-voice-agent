@@ -1,5 +1,9 @@
 # Gemini voice
 
+Activated on the demo host September 28, 2026, after a direct synthesis test returned first audio
+in 0.807 seconds (3.72 seconds of generated speech). This is one API measurement, not end-to-end
+phone latency. A phone check of the new voice is still required.
+
 The speech provider is selected with `TTS_PROVIDER`. The default stays `deepgram` so installing
 this change does not silently switch a running deployment. Set these in `.env.local`:
 
