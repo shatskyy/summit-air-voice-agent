@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 0.959254,
+  "total": 1.273528,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -151,6 +151,36 @@
       "estimate": 0.1206,
       "cost": 0.081893,
       "results": "evals/results/2026-09-27-2105-739b8e2-dirty.json"
+    },
+    {
+      "at": "2026-09-27T21:09:40-04:00",
+      "commit": "83d5cdb",
+      "kind": "eval",
+      "label": "Stage 3 full suite (after)",
+      "conversations": 34,
+      "estimate": 0.1792,
+      "cost": 0.179341,
+      "results": "evals/results/2026-09-27-2107-83d5cdb.json"
+    },
+    {
+      "at": "2026-09-27T21:11:27-04:00",
+      "commit": "83d5cdb",
+      "kind": "eval",
+      "label": "recheck address_change, change_window at stage3",
+      "conversations": 8,
+      "estimate": 0.0422,
+      "cost": 0.069744,
+      "results": "evals/results/2026-09-27-2110-83d5cdb.json"
+    },
+    {
+      "at": "2026-09-27T21:12:26-04:00",
+      "commit": "ebe1ae2",
+      "kind": "eval",
+      "label": "recheck address_change, change_window at Stage 2 ebe1ae2 (worktree)",
+      "conversations": 8,
+      "estimate": 0.0432,
+      "cost": 0.065189,
+      "results": "evals/results/2026-09-27-2111-ebe1ae2.json"
     }
   ]
 }
