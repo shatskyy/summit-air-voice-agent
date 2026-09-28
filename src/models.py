@@ -19,4 +19,7 @@ def make_llm(model: str):
         raise ValueError(f"{model!r} is not an OpenAI model; no model runs on LiveKit Inference")
     if not os.getenv("OPENAI_API_KEY"):
         raise RuntimeError(f"OPENAI_API_KEY is not set, so {model} can't run")
-    return openai.LLM(model=name)
+    # One tool call per model turn. Every parallel pair the phone calls produced did harm: a
+    # callback filed beside an address check (call KTWmzz), end_call beside a task (call 2), and
+    # two bookings at once in simulation (change_window). A second tool costs one more round trip.
+    return openai.LLM(model=name, parallel_tool_calls=False)

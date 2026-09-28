@@ -205,6 +205,12 @@ class Call:
     spanish: bool = False  # the fixed Spanish line has been said (A6)
     reply_latencies: list[float] = field(default_factory=list)  # seconds, end of speech to reply
     hang_up: Callable[[], Awaitable[object]] | None = None  # ends the call; None in simulations
+    # One booking write per caller turn. LiveKit runs a turn's tool calls concurrently, and on one
+    # simulated call the model sent two book_appointment calls at once, the new window then the old:
+    # both returned "Moved" and the store ended where the caller wasn't told (change_window, 1 of 6).
+    turn: int = 0  # caller turns completed so far
+    booked_turn: int = -1  # the turn whose booking write went through
+    book_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 def now() -> datetime:
@@ -639,6 +645,7 @@ class SummitAirAgent(Agent):
         """Speak the safety script before the model replies whenever a hazard is mentioned, act on
         the answer to it, and file urgent work the model could miss."""
         call: Call = self.session.userdata
+        call.turn += 1
         text = new_message.text_content or ""
         if call.awaiting_answer:
             call.awaiting_answer = False
@@ -918,34 +925,44 @@ class SummitAirAgent(Agent):
                 "This address hasn't been checked on this call. Call check_address, read the "
                 "address back and hear a yes, then book."
             )
-        held = await asyncio.to_thread(store.booking_for, call.db, call.call_id)
-        if held and (held["zip"] != zip_code or street_key(held["address"]) != street_key(address)):
-            raise ToolError(
-                f"This call already booked #{held['ref']} at {held['address']}. For a second "
-                "address, file a callback task."
-            )
-        context.disallow_interruptions()
-        booking = await asyncio.to_thread(
-            store.book,
-            call.db,
-            call_id=call.call_id,
-            slot_id=slot_id,
-            customer_type=customer_type,
-            priority=int(priority or call.urgent_task is not None),
-            name=name,
-            phone=phone,
-            address=address,
-            zip=zip_code,
-            issue=issue,
-            note=note,
-        )
-        if booking is None:
+        async with call.book_lock:  # a turn's tool calls run concurrently; one write per turn
             held = await asyncio.to_thread(store.booking_for, call.db, call.call_id)
-            kept = f" Their booking for {speak_window(held)} still stands." if held else ""
-            raise ToolError(
-                f"That window just filled up.{kept} Call check_availability again and offer "
-                "another."
+            if held and call.booked_turn == call.turn:
+                raise ToolError(
+                    f"This turn already booked #{held['ref']} for {speak_window(held)}, and that "
+                    "is what stands. Tell the caller that; don't book again unless they ask for "
+                    "another change."
+                )
+            if held and (
+                held["zip"] != zip_code or street_key(held["address"]) != street_key(address)
+            ):
+                raise ToolError(
+                    f"This call already booked #{held['ref']} at {held['address']}. For a second "
+                    "address, file a callback task."
+                )
+            context.disallow_interruptions()
+            booking = await asyncio.to_thread(
+                store.book,
+                call.db,
+                call_id=call.call_id,
+                slot_id=slot_id,
+                customer_type=customer_type,
+                priority=int(priority or call.urgent_task is not None),
+                name=name,
+                phone=phone,
+                address=address,
+                zip=zip_code,
+                issue=issue,
+                note=note,
             )
+            if booking is None:
+                held = await asyncio.to_thread(store.booking_for, call.db, call.call_id)
+                kept = f" Their booking for {speak_window(held)} still stands." if held else ""
+                raise ToolError(
+                    f"That window just filled up.{kept} Call check_availability again and offer "
+                    "another."
+                )
+            call.booked_turn = call.turn
         window = speak_window(booking)
         call.moved = call.moved or booking["change"] == "moved"
         ref = f'{booking["ref"]} (say "{speak_digits(booking["ref"])}")'

@@ -330,6 +330,7 @@ async def test_moving_to_a_full_window_says_the_first_booking_still_stands(db):
     with pytest.raises(
         ToolError, match="Tuesday, September 29, between 8 AM and noon still stands"
     ):
+        ctx.userdata.turn += 1  # the caller's next turn
         await agent.book_appointment(ctx, "2026-09-29-1200", *args)
 
 
@@ -1150,6 +1151,7 @@ async def test_a_new_window_on_the_same_call_is_reported_as_moved(db):
     agent, ctx = await checked_call(db)
     first = await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
     assert first.startswith("Booked")
+    ctx.userdata.turn += 1  # the caller's next turn
     moved = await agent.book_appointment(ctx, "2026-09-29-1200", *BOOK_ARGS)
     assert moved.startswith("Moved from Tuesday, September 29, between 8 AM and noon to Tuesday")
     assert "1001" in moved
@@ -1161,6 +1163,7 @@ async def test_a_second_issue_at_the_same_slot_is_reported_as_updated(db):
     agent, ctx = await checked_call(db)
     await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
     args = BOOK_ARGS[:-1] + ("no heat, and the AC is leaking",)
+    ctx.userdata.turn += 1  # the caller's next turn
     updated = await agent.book_appointment(ctx, "2026-09-29-0800", *args)
     assert updated.startswith("Updated") and "1001" in updated
 
@@ -1173,6 +1176,7 @@ async def test_a_second_address_on_one_call_is_refused(db, street, zip_code):
     agent, ctx = await checked_call(db)
     await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
     ctx.userdata.checked_zip = zip_code
+    ctx.userdata.turn += 1  # the caller's next turn
     with pytest.raises(ToolError, match="already booked #1001 at 14 Maple Street, Brooklyn"):
         await agent.book_appointment(
             ctx, "2026-09-29-1200", "residential", "Maria Lopez", "", street, zip_code, "no heat"
@@ -1182,6 +1186,7 @@ async def test_a_second_address_on_one_call_is_refused(db, street, zip_code):
 async def test_the_same_street_written_differently_is_the_same_address(db):
     agent, ctx = await checked_call(db)
     await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    ctx.userdata.turn += 1  # the caller's next turn
     moved = await agent.book_appointment(
         ctx, "2026-09-29-1200", "residential", "Maria Lopez", "", "14 Maple St. Apt 2, Brooklyn",
         "11225", "no heat",
@@ -1467,6 +1472,7 @@ async def test_the_booking_result_spells_the_reference(db):
     agent, ctx = await checked_call(db)
     booked = await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
     assert "1001" in booked and '"one oh oh one"' in booked
+    ctx.userdata.turn += 1  # the caller's next turn
     moved = await agent.book_appointment(ctx, "2026-09-29-1200", *BOOK_ARGS)
     assert '"one oh oh one"' in moved
 
@@ -1740,3 +1746,65 @@ async def test_a_checked_address_comes_back_with_the_next_two_windows_already_of
         "11201", "furnace won't start",
     )  # fmt: skip
     assert booked.startswith("Booked.")
+
+
+# One booking write per caller turn (overnight pass)
+
+
+async def test_two_bookings_in_one_turn_leave_the_store_on_what_the_caller_heard(db):
+    """change_window, 1 of 6 runs at Stage 3: the model sent two book_appointment calls in one
+    turn, the new window then the old one. LiveKit runs a turn's tool calls concurrently, both came
+    back "Moved", and the store ended on the old window while the caller heard the new one. Only the
+    first write of a turn may go through; the second is refused and told what stands."""
+    import asyncio
+
+    agent, ctx = await checked_call(db)
+    call = ctx.userdata
+    call.turn = 1
+    await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    call.turn = 2  # the caller asks for the afternoon; the model answers with two calls at once
+    results = await asyncio.gather(
+        agent.book_appointment(ctx, "2026-09-29-1200", *BOOK_ARGS),
+        agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS),
+        return_exceptions=True,
+    )
+    assert results[0].startswith("Moved from Tuesday, September 29, between 8 AM and noon")
+    assert isinstance(results[1], ToolError)
+    assert "already" in str(results[1]) and "noon and 4 PM" in str(results[1])
+    assert store.booking_for(db, "call-a")["slot_id"] == "2026-09-29-1200"
+
+
+async def test_a_refused_booking_does_not_use_up_the_turn(db):
+    """A booking the guards refuse (a window never offered) is not a write, so the model's corrected
+    call in the same turn still goes through."""
+    agent, ctx = await checked_call(db)
+    ctx.userdata.turn = 1
+    with pytest.raises(ToolError, match="not offered"):
+        await agent.book_appointment(ctx, "2026-10-01-0800", *BOOK_ARGS)
+    assert (await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)).startswith("Booked")
+
+
+async def test_the_next_caller_turn_can_book_again(db):
+    agent, ctx = await checked_call(db)
+    ctx.userdata.turn = 1
+    await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    ctx.userdata.turn = 2
+    assert (await agent.book_appointment(ctx, "2026-09-29-1200", *BOOK_ARGS)).startswith("Moved")
+
+
+async def test_each_caller_turn_is_counted(db, monkeypatch):
+    line = UrgentLine(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    agent = urgent_agent(line, monkeypatch, [])
+    for n in (1, 2):
+        await turn(agent, "my furnace is making a noise")
+        assert line.userdata.turn == n
+
+
+def test_the_model_may_not_send_two_tool_calls_at_once(monkeypatch):
+    """The other half of the guarantee: OpenAI is told not to emit parallel tool calls, so a turn
+    can't carry two bookings, or a callback filed beside an address check (call KTWmzz), or end_call
+    beside a task (call 2)."""
+    from models import make_llm
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert make_llm("openai/gpt-4.1-mini")._opts.parallel_tool_calls is False
