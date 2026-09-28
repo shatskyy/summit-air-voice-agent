@@ -51,10 +51,10 @@ does not get to decide whether a hazard or an at-risk caller gets help.
 
 | Code guarantees | The model decides |
 |---|---|
-| A booking is confirmed only after the write returns a reference; one visit per call (a retry or a new window moves it, a second address is refused) | What the caller needs, what to ask next, and every sentence except the fixed lines |
-| No booking without a window offered on this call, a checked in-area ZIP, a street name and the caller's name | Softer urgency the keyword rules can't see, such as "it's dangerous for her" |
+| A booking is confirmed only after the write returns a reference, and a sentence that confirms a booking, or names a reference, while nothing is booked is cut before it reaches the voice; one visit per call (a retry or a new window moves it, a corrected number or street updates it, a second address is refused); one booking write per caller turn, and the model is asked for one tool call at a time | What the caller needs, what to ask next, and every sentence except the fixed lines |
+| No booking without a window offered on this call, the checked address (a street name, and a ZIP the caller actually said, or none for a borough address once they were asked), the caller's name (not "your sister"), and the callback number having come up | Softer urgency the keyword rules can't see, such as "it's dangerous for her" or "no, she just had a stroke" |
 | Gas, carbon monoxide or smoke: the task, the safety script and the closing line, with "I don't smell gas" read as a no and the page held until a clear no or 15 s | When a caller wants a booking moved, and to which window |
-| No heat or cooling plus someone at risk: an urgent task filed on that turn, before any booking, and the booking marked priority | Most off-script calls: a refused address, plumbing, "where's my tech?", a prompt injection |
+| No heat or cooling plus someone at risk ("my mother is 80", "I'm 82 and I live alone", "my son has asthma"): an urgent task filed on that turn, before any booking, and the booking marked priority; and no urgent task straight over "no, it's just me" | Most off-script calls: a refused address, plumbing, "where's my tech?", a prompt injection |
 | A Spanish opening gets a fixed Spanish line and a callback task, never a promised Spanish speaker | |
 | A model or speech failure gets a fixed line, a callback task with the transcript, and a hang-up | |
 | A call that hangs up after naming a problem, with no booking or task, gets a callback task | |
@@ -119,9 +119,10 @@ Baseline: `2026-09-27-1935-7b5525e-rescored.json`, 11 scenarios before the Phase
   against the real prompt, tools and store, on two fixed clocks (Tuesday 12:35 PM with the office
   open, Monday 9 PM with it closed). Checks read the database and the transcript. There is no model
   judge. Every run is priced and written to a spend ledger, [`evals/spend.json`](evals/spend.json).
-- **`uv run pytest`**: 286 offline tests, no credentials, no cost: the store, the booking guards,
+- **`uv run pytest`**: 385 offline tests, no credentials, no cost: the store, the booking guards,
   the hazard, urgent and Spanish rules with the phrases that must not trigger them, the held page,
-  the failure ladder, the call record, and prompt rendering.
+  the failure ladder, the call record, prompt rendering, and the overnight guards (one booking
+  write per turn, a ZIP the caller never said, a relation as a name, a plain no as a denial).
 - **`uv run pytest -m llm --fallback`**: 5 older tests with a model judge, run once at the end on
   both models, the only check of GPT-4.1 as the fallback. 6 of 10 passed (GPT-4.1 mini 2 of 5,
   GPT-4.1 4 of 5), and the failures are reported, not fixed, because behavior was frozen. Two are
@@ -136,8 +137,10 @@ Baseline: `2026-09-27-1935-7b5525e-rescored.json`, 11 scenarios before the Phase
 script with its closing line and hang-up, the gas negation and the street-name check were proven
 on phone calls. These have been proven only in simulation and offline tests, never on a phone call:
 the abandoned-call callback, the wrong-number exit, the refused address, the Spanish line, the
-dispatch push, the new-install estimate, the failure ladder, and the windows offered with the
-address.
+dispatch push, the new-install estimate, the failure ladder, the windows offered with the
+address, and everything from the overnight pass of 2026-09-28 (one tool call per turn, the
+booking-per-turn lock, the ZIP the caller never said, the borough without a ZIP, the number step,
+the denial guard, the interruptible confirmation).
 
 ## Skipped, and why
 
@@ -163,19 +166,35 @@ address.
 - **One OpenAI key.** Both models and the backup voice run on it, so an outage or an empty balance
   takes out all three. The failure ladder then ends the call with a callback.
 - **Keyword detectors.** Hazard, urgent and Spanish detection are word lists. The gas negation is
-  lexical ("it's not like there's no gas smell" reads as a no), and a chirping smoke detector matches.
-- **Two bookings in one turn.** If the model sends two `book_appointment` calls in one turn, the store
-  can end on a different window than the caller heard (change_window, 1 of 6 simulated runs).
+  lexical ("it's not like there's no gas smell" reads as a no), a chirping smoke detector matches,
+  and a bare age counts only after a pronoun or a relation ("I'm 82", "my wife is 79"), never as
+  a word ("eighty-two").
+- **The ZIP check is a heuristic.** A ZIP the caller said is found as a run of digits in what they
+  said, with number words read the way ZIPs are spoken ("eleven two twenty-one"); a ZIP hidden
+  inside a phone number would pass, and "one double oh two five" would be refused and asked
+  again. The towns that book without a ZIP are a list in the configuration.
+- **A turn said over an uninterruptible line is lost.** LiveKit drops a caller turn that completes
+  while the agent can't be interrupted, so anything said over the safety script, the emergency
+  closing line or the Spanish line never reaches the model or the hazard hook. The booking
+  confirmation is interruptible for that reason; a barge-in during the few milliseconds of the
+  store write can leave a booking the model never confirmed, which a retry finds as "unchanged".
 - **Wording.** On a home replacement call the agent once asked "Who should the technician ask for?"
-  as if it were a business (call `kaAJD7TK4HWb`).
+  as if it were a business (call `kaAJD7TK4HWb`); the prompt now forbids it, and the eval counts
+  such bundles rather than failing on them.
 - **Recognition.** Street names are misheard ("Bergen" as "Burger"), and nothing checks a street
-  against a street list or a ZIP against a town.
+  against a street list or a ZIP against a town. A ZIP the caller never said is refused, but a
+  misheard one they did say is not.
 - **Pushes carry no caller details**: the outcome, a first name, the ZIP and a lookup, never the
   number, the street or the caller's words. `scripts/calls.py` has the rest. `DISPATCH_NTFY_TOPIC` falls back to `NTFY_TOPIC`, so without it dispatch summaries
   and on-call pages share one topic.
 - **Latency.** Replies ran 0.9 to 2.6 s end to end on the 2026-09-27 phone calls. When the turn
   detector thinks the caller is mid-sentence it waits up to 1.1 s, and up to 2.5 s after the agent
-  asks for an address or a number.
+  asks for an address or a number. Since 2026-09-28 the model makes one tool call at a time, so a
+  turn that needs two tools (file a task, then check the address) takes one more model round trip;
+  not yet measured on a phone call.
+- **Short acknowledgments cut the agent off.** On the phone calls "Alright." and "Okay." over an
+  agent question interrupted it mid-sentence (calls `riWFX67`, `NpW9kct`). Only a phone call can
+  show whether the adaptive interruption model handles a given caller's backchannels.
 - **Nobody is actually on call.** Pages reach one test phone, and callback targets are targets.
 
 ## What I'd do next with Summit Air

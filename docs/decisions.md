@@ -118,8 +118,9 @@ ZIP and phone capture without confirming ahead of the write.
 **Status:** Accepted. Mechanism simplified 2026-09-23.
 
 **Decision.** The agent may confirm a booking only after the booking tool returns a stored reference.
-The tool accepts only a window that was offered on this call, a ZIP code inside the service area,
-and a real name. Interruptions are disabled for the duration of the write.
+The tool accepts only a window that was offered on this call, a ZIP code inside the service area
+that the caller actually said (or none, for an address in a covered borough, once the caller has
+been asked for one), and a real name, which is not a relation like "your sister".
 
 **Why.** An answering service fails most expensively when it tells a caller something that did not
 happen. On call 1, before any booking tool existed, the agent said "Let me get a technician
@@ -135,6 +136,13 @@ existing booking untouched.
 up before retrying. That machinery was cut when the store became a local file (ADR-008). A local
 write has no network hop, so it cannot succeed on the far side of a timeout. It comes back
 committed or it raises an error. The lookup returns if the store goes remote again.
+
+**Revision, 2026-09-28.** The write used to switch interruptions off for the confirmation. LiveKit
+drops a caller turn that completes while the agent can't be interrupted, without adding it to the
+context or running `on_user_turn_completed`, which is the hazard backstop: "hold on, I smell gas"
+said over the confirmation would have been lost. The confirmation is interruptible again; a caller
+who talks over it can ask for the reference and the model restates it. The write itself needs no
+protection, since it has already returned before anything is spoken.
 
 ## ADR-004: Emergencies are detected in code
 
@@ -249,7 +257,9 @@ isolation two concurrent inserts can both pass the count.
 **Decision.** Every caller turn updates two flags on the call: `system_down` (no heat, heat out, a
 furnace or boiler not working, freezing, no AC, too hot) and `at_risk` (a parent or grandparent,
 "elderly" or "senior", an age from 65 up, a baby or infant, oxygen, asthma, COPD, a heart condition, pregnancy, dialysis, and a
-plain yes to the agent's at-risk question; "nobody" or "just me" doesn't count). When both are set,
+plain yes to the agent's at-risk question, and from 2026-09-28 a bare age right after a pronoun or
+a relation, "I'm 82", "she's 84", "my wife is 79", never after "is" alone, since "address is 72
+Bergen Street" is not a person; "nobody" or "just me" doesn't count). When both are set,
 code files the urgent task on that turn, pages on-call, and tells the model the task number and the
 callback target to say. Any later booking is forced to priority. A keyword check on what the agent
 says (`keep_promise`) stays as the last layer: if the agent tells a caller on-call is coming and no
@@ -262,6 +272,14 @@ also catches a risk named late, during the address readback.
 
 **Cost.** A word list. It misses phrasing it doesn't know ("she's frail") and the model is still the
 backstop for those. A false urgent is cheap next to a missed one.
+
+**Revision, 2026-09-28: the other direction.** On a simulated cold night with nobody at risk, the
+model filed an urgent task the turn after the caller said "No, it's just me", and told them on-call
+would call. `create_dispatch_task` now refuses an urgent task when the caller's latest turn is a
+plain denial of risk, made of nothing but denial words ("no, it's just me, I'm fine"), and the
+flags are clear. "No, she just had a stroke" and "no, but my son is sick" are not denials, so the
+model keeps its say over what the lists can't see; a fresh-context review caught a first cut that
+took any short "No, ..." as one. `cold_no_risk_night` 3 of 3 after the change, 0 of 1 before.
 
 **Evidence.** Simulated `elderly_no_heat`, `infant_no_heat`, `ac_oxygen` and `risk_during_readback`,
 on both clocks, 16 of 16 in the final run. On the phone, Gate 2 call 1: "My heat went out and my
@@ -281,10 +299,16 @@ visit with both issues listed.
 **Why.** A retry or a changed mind should move a visit, not create a second one, and a technician
 should arrive knowing about both the leak and the tune-up.
 
-**Cost.** A caller with two properties gets a callback for the second. And a gap found in
-simulation, not fixed: if the model sends two `book_appointment` calls in one turn, the second write
-wins, so the store can end on a different window than the caller heard (`change_window`, 1 of 6
-simulated runs). The fix is to refuse a second booking call in the same turn.
+**Cost.** A caller with two properties gets a callback for the second.
+
+**Revision, 2026-09-28.** Two things found in simulation. First, the model once sent two
+`book_appointment` calls in one turn, the new window then the old, and both went through, so the
+store ended on the old window while the caller heard the new one (`change_window`, 1 of 6 runs at
+Stage 3). Fixed by ADR-014. Second, "a different street or ZIP" also refused a correction: "it's
+forty, not fourteen" after the booking was treated as a second address and sent to a callback while
+the technician kept the wrong number. A change in the same ZIP that keeps the house number or the
+street is now a correction of this visit (`same_visit`); a different number on a different street
+is still a second address.
 
 ## ADR-011: The failure ladder, and the shared key
 
@@ -356,3 +380,93 @@ watchdog runs on the same machine, so it can't page if the Mac itself is gone.
 
 **Evidence.** Drills in [scenarios.md](scenarios.md#operations): a killed worker restarted and
 registered in 4 s; the watchdog reported down with the worker stopped and up once it was back.
+
+## ADR-014: One tool call per turn
+
+**Status:** Accepted 2026-09-28
+
+**Decision.** Every request that carries tools asks OpenAI for one tool call at a time
+(`parallel_tool_calls=False`, set per request in `models.py` because OpenAI rejects it on a request
+without tools). On top of that, `book_appointment` lets one write through per caller turn, under a
+per-call lock, and tells the model what stands if it tries again. The turn is counted in
+`on_user_turn_completed`, so the simulator and the phone count the same way. `max_tool_steps` goes
+from LiveKit's default 3 to 5, since a turn that files a task, checks the address, finds windows
+and books is now four steps, and past the limit LiveKit has the model answer with its tools off.
+
+**Why.** Every parallel pair the calls produced did harm: on call `KTWmzz` a callback was filed
+beside an address check when the caller said "bye" mid-address; on call 2 `end_call` ran beside the
+task so the goodbye ran into the greeting; and in simulation two bookings landed at once with the
+store on the window the caller wasn't told. Confirming only what persisted (ADR-003) assumes the
+model saw one result before it spoke.
+
+**Cost.** A second tool costs one more model round trip, about a second, on the few turns that
+need two. The lock refuses a second booking after the model has already seen the first result,
+which is the case where the store and the speech could not disagree; it is defence in depth.
+
+**Evidence.** The double write reproduced offline with `asyncio.gather` the way LiveKit runs a
+turn's tools, failing before the fix. `change_window` 3 of 3 after it, and every booking-path
+scenario (`two_issues`, `address_change`, `commercial`, `elderly_no_heat` on both clocks,
+`no_show`) unchanged.
+
+## ADR-015: A ZIP the caller never said
+
+**Status:** Accepted 2026-09-28
+
+**Decision.** `check_address` refuses a ZIP that appears nowhere in the caller's turns, with number
+words read as digits ("one one two oh one", "eleven two oh one", "ten six zero one"). If the caller
+doesn't know the ZIP, and only after the agent has asked for it, an address whose town is a
+borough, the city, or a Queens post-office name (`coverage.towns` in the configuration) books with
+the ZIP left blank; anywhere else without a ZIP is outside the area. The booking ZIP must be the
+checked one, so an invented ZIP can't enter at booking time either.
+
+**Why.** On the Gate 1 call the caller said "I forgot" and the model checked and booked 11201 on
+its own, then read it back as if the caller had said it. The number happened to be right. The
+alternative, refusing to book without a ZIP, sends a Brooklyn caller who doesn't know their ZIP to a
+callback, which is the form-reading-robot outcome the rubric grades against.
+
+**Cost.** The number-word reading is a heuristic: pairs and hundreds combine ("eleven two
+twenty-one" is 11221), but "one double oh two five" is refused and asked again, and a ZIP hidden
+inside a phone number passes. A false refusal costs one more question; a false pass is the old
+behavior. The towns list is configuration: the boroughs, the Queens post-office names inside the
+ZIP prefixes (not Floral Park or Bellerose, which straddle the Nassau line), and the neighborhoods
+a caller gives as the town, with a trailing ", NY" dropped. The booked house number and street
+must be the checked ones, so a blank ZIP can't carry a town the check never saw.
+
+**Same date, the number step.** `book_appointment` also refuses until the callback number has
+come up on the call, asked by the agent or volunteered by the caller, after the model booked a
+sister's apartment on the caller's own number without asking which number reaches someone there
+(`relative_address`, 2 of 3 at the Stage 4 commit and at the overnight commits alike).
+
+**Evidence.** `no_zip` 3 of 3 (booked at 48 Bergen Street, Brooklyn, ZIP blank, no ZIP spoken by the
+agent), `split_address` after the ask-first rule, and `address_change`, `asr_street`, `blocked_id`,
+`commercial`, `routine_furnace` unchanged with the check in place.
+
+## ADR-016: A confirmation with no booking behind it is cut before the voice
+
+**Status:** Accepted 2026-09-28
+
+**Decision.** The model's reply streams through `SummitAirAgent.llm_node` one sentence at a time.
+A sentence that confirms a booking (booked, scheduled, all set, a reference number) while the
+call holds no booking is dropped, with the rest of that reply, and the model is told the sentence
+was never spoken and to book with the tool. Questions, conditions and negations ("which window
+would you like booked?", "it's not booked yet") are not confirmations. Tool calls pass straight
+through. The call record counts the cuts.
+
+**Why.** On a simulated cold-night call the model asked "Which works?" and, in the same reply,
+said "David, you're booked for Wednesday... Your reference number is one two three four", with no
+tool call and nothing in the store. It then asked "anything else?", so the end-call guard let the
+call end. Confirming only what persisted (ADR-003) had a tool-side half, the write before the
+reference; this is the speech-side half. The prompt already forbade it and the model did it
+anyway, once in about 450 simulated conversations, which on a phone line is once a week.
+
+**Cost.** A regex over the agent's own words, so an honest sentence that matches it on a call
+with no booking would be cut too; the tests hold the honest lines that must pass (read-backs,
+callback targets, the windows offer). Holding text to a sentence end adds no latency, since the
+voice already waits for one. A caller who talks over the reply gets an interrupted, not a
+fabricated, sentence.
+
+**Evidence.** Six offline tests with a faked model stream, the four-scenario sim through the real
+stream, and the final eval, where every conversation goes through the filter.
+
+**Would reverse it.** A model that never does this, or a structured-output confirmation step that
+can only be produced from a tool result.

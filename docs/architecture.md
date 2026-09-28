@@ -23,7 +23,7 @@ What the system does today. Where it differs from the first design, the reason i
 | Layer | Owns | Does not own |
 |---|---|---|
 | Conversation (model) | Understanding the caller, asking for what is missing, judging softer urgency, phrasing | Availability, capacity, whether a booking exists |
-| Turn rules (code) | Gas, carbon monoxide and smoke (the script, the held page, the closing line); no heat or cooling with someone at risk (the urgent task); a Spanish opening (the Spanish line and a callback) | Urgency phrased in words the lists don't hold |
+| Turn rules (code) | Gas, carbon monoxide and smoke (the script, the held page, the closing line); no heat or cooling with someone at risk (the urgent task); a Spanish opening (the Spanish line and a callback); the model's own reply, sentence by sentence, with a booking confirmation dropped when nothing is booked ([ADR-016](decisions.md#adr-016-a-confirmation-with-no-booking-behind-it-is-cut-before-the-voice)) | Urgency phrased in words the lists don't hold |
 | Tools (code) | Checking the address, offering windows, validating and writing bookings, filing dispatch tasks, paging, ending the call | What the caller heard |
 | End of call (code) | The call summary, a callback for a call abandoned mid-problem, the dispatch push | Whether a person reads it |
 | Store (SQLite) | The authoritative record of slots, bookings, tasks, calls, call summaries and heartbeats | Whether a person acted on a task |
@@ -33,22 +33,26 @@ What the system does today. Where it differs from the first design, the reason i
 There is no separate state machine. The booking tool's required arguments are the list of what must
 be known (type, name, number, address, ZIP, issue), so a missing field is something the model has to
 ask for before the call can book. Code keeps only what the model must not be trusted with: the
-windows actually offered on this call, the ZIP code that passed the coverage check, whether an
-emergency or urgent task already exists and its target, the `system_down` and `at_risk` flags, a
-held emergency page, and the silence timer. The caller's number comes from caller ID and
-is confirmed rather than dictated.
+windows actually offered on this call, the ZIP code that passed the coverage check (blank when a
+borough address was checked without one), whether an emergency or urgent task already exists and
+its target, the `system_down` and `at_risk` flags, a held emergency page, the caller-turn counter
+and the turn whose booking write went through, and the silence timer. The caller's number comes
+from caller ID and is confirmed rather than dictated. Two tools also read the call so far: whether
+the caller actually said the ZIP, was asked for it, or has just said nobody is at risk.
 
 ## Tools
 
 | Tool | Returns |
 |---|---|
-| `check_address` | Whether the ZIP is in the service area, and the street, town and ZIP to read back, with the next two open windows so they can be offered once the caller confirms. Run before any window is offered; an out-of-area ZIP ends scheduling, and a street with no name ("487 Lane") is sent back |
+| `check_address` | Whether the ZIP is in the service area, and the street, town and ZIP to read back, with the next two open windows so they can be offered once the caller confirms. Run before any window is offered; an out-of-area ZIP ends scheduling, a street with no name ("487 Lane") is sent back, a ZIP the caller never said is sent back, and a blank ZIP is accepted for a covered borough only once the caller has been asked for one |
 | `check_availability` | Up to two open windows from a requested date or part of day, recorded as offered on this call |
-| `book_appointment` | "Booked", "Moved from X to Y" or "Updated", with the reference spelled for speech, or a refusal with the next step: window not offered, ZIP outside the area, address never checked, no name yet, a second address on one call, or the window just filled. Forced to priority when an urgent task exists |
-| `create_dispatch_task` | A task number and a callback target time. Emergency and urgent tasks also page the on-call phone; one of each per call |
+| `book_appointment` | "Booked", "Moved from X to Y" or "Updated", with the reference spelled for speech, or a refusal with the next step: window not offered, ZIP outside the area, address never checked, no name yet (a relation like "your sister" is not one), a second address on one call (a corrected number or street in the same ZIP is not one), the window just filled, or a second write in the same caller turn. Forced to priority when an urgent task exists |
+| `create_dispatch_task` | A task number and a callback target time. Emergency and urgent tasks also page the on-call phone; one of each per call, and an urgent task is refused straight after the caller said nobody is at risk |
 | `end_call` | Refused until the caller has answered "anything else?" or said goodbye; then a fixed goodbye and the hang-up |
 
-Every refusal comes back as text the model can act on and say out loud.
+Every refusal comes back as text the model can act on and say out loud. The model is asked for one
+tool call per turn ([ADR-014](decisions.md#adr-014-one-tool-call-per-turn)), so a turn that needs
+two tools takes two model rounds, up to five.
 
 ## Tracing a call
 

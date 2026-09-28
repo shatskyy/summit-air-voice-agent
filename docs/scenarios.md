@@ -127,6 +127,26 @@ offered with the address. Stage 3 was on the line from 21:38 to the end of Stage
 worker was running under `caffeinate -s` on power. `caffeinate` holds off idle sleep, not a closed
 lid, so for the review window the laptop stays open and plugged in.
 
+### Overnight pass (2026-09-27 22:15 to 2026-09-28, branch `overnight`)
+
+No phone calls: the line was dark from 22:03 until submission. Everything here is simulation and
+offline tests, so the morning calls listed in [`evals/overnight-progress.md`](../evals/overnight-progress.md)
+are what prove it on a phone. The pass mined the 28 stored phone calls above and the worker log,
+turned the failures into scenarios, and fixed what the scenarios and two fresh-context reviews
+found. Twelve scenarios were added (`misheard_opening`, `no_zip`, `split_address`,
+`rambling_elderly`, `angry_kid_asthma`, `fillers_self_correction`, `answers_different_question`,
+`phone_in_pieces`, `buried_cue_no_smoke`, `defrost_steam`, `cold_no_risk_night`,
+`mom_other_address`), each with its pass criterion written before it ran.
+
+| Run | Commit | What | Result |
+|---|---|---|---|
+| Discovery, 1 run each | `9e92cee` (Stage 4 behavior) | The twelve new scenarios plus new_install and member with a stricter check | 13/17: the model filed urgent the turn after "no, it's just me"; no booking without a ZIP; "48 Bergen" booked without "Street"; one bad check |
+| Fix 1 | `a8e8380` | change_window x3, and the booking-path scenarios | 3/3, then 6/7 (no_show night, the baseline-variance scenario, omitted its note) |
+| Fix 2 | `5ef7a37` | The four discovery failures x3, and every scenario the ZIP check touches | cold_no_risk_night 3/3, misheard_opening 3/3, no_zip 3/3, split_address 0/3 (the model skipped the ZIP once it had the borough); 7/8 on the rest, relative_address missing the sister's number |
+| Fix 2b | `c106fd6` | split_address and relative_address x3, then a 16-scenario style subset after the prompt pass | 3/3 and 2/3; 16/16, with home-or-business re-asks 0.27 to 0 a conversation, bundled questions 0.34 to 0.19, words a turn 16.2 to 14.6 |
+| Comparison | `e27c29b` (Stage 4, worktree) | relative_address x3 | 2/3 with the same miss, so the miss is baseline variance |
+| Fix 3 | `345bd20` | The scenarios the review's fixes touch | see the final eval |
+
 ## Text tests (`uv run pytest -m llm`)
 
 Run on 2026-09-23 against the new prompt, with no filler line. Each test ran against both candidates.
