@@ -15,7 +15,6 @@ from receptionist import (
     Call,
     GuardedEndCall,
     SummitAirAgent,
-    closing_confirmed,
     file_task,
     flag_hazard,
     in_coverage,
@@ -785,64 +784,36 @@ def said(role, text):
 GREETED = said("assistant", receptionist.GREETING)
 
 
-@pytest.mark.parametrize(
-    ("history", "ends"),
-    [
-        ([GREETED, said("user", "Stop.")], False),  # the stray word on the dEwa8tRdFwLW call
-        ([GREETED, said("user", "No heat."), said("assistant", "Is there anything else?")], False),
-        (
-            [
-                GREETED,
-                said("assistant", "Is there anything else I can help with?"),
-                said("user", "No."),
-            ],
-            True,
-        ),
-        (
-            [
-                said("assistant", "Is there anything else?"),
-                said("user", "No. All good. Thank you."),
-            ],
-            True,
-        ),  # the Awb8xx294NFr call, asked twice
-        ([said("assistant", "Anything else?"), said("user", "That's it, thanks.")], True),
-        ([said("assistant", "Anything else?"), said("user", "Nope, I'm all set.")], True),
-        # the KSJ5YTzz9uHA call: refused, asked twice, and the caller hung up on the second ask
-        (
-            [
-                said("assistant", "Anything else I can help with?"),
-                said("user", "It's all good. K."),
-            ],
-            True,
-        ),
-        ([said("assistant", "Anything else?"), said("user", "Okay, thank you so much.")], True),
-        (
-            [
-                said("assistant", "Anything else?"),
-                said("user", "No, actually, can you also check the AC?"),
-            ],
-            False,
-        ),
-        ([said("assistant", "Anything else?"), said("user", "Yeah, one more thing.")], False),
-        ([said("assistant", "Anything else?"), said("user", "It's not good.")], False),
-        ([said("assistant", "Anything else?"), said("user", "Okay.")], False),  # no marker
-    ],
-)
-def test_the_call_ends_only_after_anything_else_is_answered(history, ends):
-    assert closing_confirmed(history) is ends
-
-
-async def test_end_call_refuses_before_the_closing_question():
+async def test_end_call_refuses_on_the_callers_first_turn():
+    """The "Stop." heard over the greeting (dEwa8tRdFwLW) is the one hang-up code still refuses."""
     from types import SimpleNamespace
 
-    ctx = SimpleNamespace(
-        session=SimpleNamespace(history=SimpleNamespace(items=[GREETED, said("user", "Stop.")]))
-    )
-
-    agent = SummitAirAgent("")
-    guard = next(t for t in agent.tools if isinstance(t, GuardedEndCall))
+    call = Call(call_id="call-a", caller_turns=1)
+    ctx = SimpleNamespace(session=SimpleNamespace(userdata=call))
+    guard = next(t for t in SummitAirAgent("").tools if isinstance(t, GuardedEndCall))
     with pytest.raises(ToolError, match="Don't end the call yet"):
         await guard._end_call(ctx)
+    assert not call.ended_by_agent
+
+
+async def test_after_the_first_turn_the_model_decides_when_the_call_ends(monkeypatch):
+    """ADR-022: "It's all good. K." (KSJ5YTzz9uHA) and "No. All good. Thank you." (Awb8xx294NFr)
+    were refused by a word list; the model had them right."""
+    from types import SimpleNamespace
+
+    from livekit.agents.beta.tools import EndCallTool
+
+    ended = []
+
+    async def base_end_call(self, ctx):
+        ended.append(True)
+
+    monkeypatch.setattr(EndCallTool, "_end_call", base_end_call)
+    call = Call(call_id="call-a", caller_turns=4)
+    ctx = SimpleNamespace(session=SimpleNamespace(userdata=call))
+    guard = next(t for t in SummitAirAgent("").tools if isinstance(t, GuardedEndCall))
+    await guard._end_call(ctx)
+    assert ended == [True] and call.ended_by_agent
 
 
 # The prompt
@@ -1318,15 +1289,6 @@ async def test_a_refused_booking_says_nothing(db):
     assert ctx.said == [] and not ctx.userdata.confirmation_spoken
 
 
-def test_the_spoken_confirmation_lets_the_caller_close_the_call():
-    booking = {"ref": 1001, "change": "booked", "day": "2026-09-29", "start": "08:00",
-               "end": "12:00"}  # fmt: skip
-    line = receptionist.confirmation_line(booking, "David Shatsky", "92 2nd Avenue, Manhattan")
-    assert line.startswith("David, you're booked")
-    items = [said("assistant", line), said("user", "No, that's all.")]
-    assert receptionist.closing_confirmed(items)
-
-
 def test_the_model_reply_is_cancelled_only_after_a_spoken_confirmation():
     class Executed:
         cancelled = False
@@ -1783,21 +1745,6 @@ def test_each_model_gets_two_and_a_half_seconds_and_the_pair_is_not_retried(monk
 # Off-script calls (A6)
 
 
-@pytest.mark.parametrize(
-    ("last", "ends"),
-    [
-        ("Oh sorry, wrong number.", True),
-        ("Okay, bye.", True),
-        ("Never mind, thanks.", True),
-        ("Gracias, adiós.", True),
-        ("Stop.", False),
-        ("Is this Joe's Pizza?", False),
-    ],
-)
-def test_an_explicit_goodbye_ends_the_call_without_the_closing_question(last, ends):
-    assert receptionist.caller_said_goodbye([GREETED, said("user", last)]) is ends
-
-
 async def test_end_call_goes_through_on_a_wrong_number(monkeypatch):
     from types import SimpleNamespace
 
@@ -1809,9 +1756,7 @@ async def test_end_call_goes_through_on_a_wrong_number(monkeypatch):
         ended.append(True)
 
     monkeypatch.setattr(EndCallTool, "_end_call", base_end_call)
-    items = [GREETED, said("user", "Is this Joe's Pizza?"), said("assistant", "No, Summit Air.")]
-    items.append(said("user", "Oh, wrong number, sorry."))
-    ctx = SimpleNamespace(session=SimpleNamespace(history=SimpleNamespace(items=items)))
+    ctx = SimpleNamespace(session=SimpleNamespace(userdata=Call(call_id="call-a", caller_turns=2)))
     guard = next(t for t in SummitAirAgent("").tools if isinstance(t, GuardedEndCall))
     await guard._end_call(ctx)
     assert ended == [True]
@@ -1887,28 +1832,22 @@ def test_the_prompt_names_the_services_and_opens_neutrally():
 # Latency (A7)
 
 
-async def test_a_checked_address_finds_the_next_two_windows_but_keeps_them_for_the_yes(
-    db, monkeypatch
-):
+async def test_a_checked_address_offers_no_times_until_check_availability(db, monkeypatch):
     """2026-09-28 10:01: with the windows in check_address's result, the model said "is that
-    right?" and offered them in the same reply. They are found with the address (A7, no second
-    round trip) but reach the model only in the note on the caller's yes."""
+    right?" and offered them in the same reply. Code that then released them on a yes took the
+    wrong yes (3:51 PM call). Now the model calls check_availability after the yes (ADR-022)."""
     monkeypatch.setattr(receptionist, "now", lambda: MONDAY_9AM)
     call = Call(call_id="call-a", db=db, caller_number="+19145550100")
     ctx = FakeContext(call)
     agent = SummitAirAgent("")
     result = await agent.check_address(ctx, "48 Bergen Street", "Brooklyn", "11201")
-    assert "no times" in result and "slot_id" not in result and "Monday" not in result
-    assert "Monday, September 28, between noon and 4 PM (slot_id 2026-09-28-1200)" in (
-        call.pending_windows
-    )
-    assert list(call.offered) == ["2026-09-28-1200", "2026-09-29-0800"]
-    # Bookable straight away, with no check_availability call.
-    booked = await agent.book_appointment(
-        ctx, "2026-09-28-1200", "residential", "Maria Lopez", "", "48 Bergen Street, Brooklyn",
-        "11201", "furnace won't start",
-    )  # fmt: skip
-    assert booked.startswith("Booked.")
+    assert "no times" in result and "check_availability" in result and "slot_id" not in result
+    assert not call.offered
+    with pytest.raises(ToolError, match="not offered"):
+        await agent.book_appointment(
+            ctx, "2026-09-28-1200", "residential", "Maria Lopez", "", "48 Bergen Street, Brooklyn",
+            "11201", "furnace won't start",
+        )  # fmt: skip
 
 
 # One booking write per caller turn (overnight pass)
@@ -2240,15 +2179,6 @@ def test_the_prompt_says_how_to_handle_a_missing_zip_and_a_split_address():
     assert "in pieces" in receptionist.PROMPT
 
 
-async def test_a_blank_zip_is_refused_until_the_caller_has_been_asked_for_one(db):
-    """split_address, 0 of 3 after the borough path landed: with "Street. In Brooklyn." the model
-    checked the address with the ZIP blank and never asked for it."""
-    ctx = SpokenContext(Call(call_id="call-a", db=db), ["It's 48 Bergen", "Street. In Brooklyn."])
-    with pytest.raises(ToolError, match="Ask for the ZIP code first"):
-        await SummitAirAgent("").check_address(ctx, "48 Bergen Street", "Brooklyn", "")
-    assert ctx.userdata.checked_zip is None
-
-
 @pytest.mark.parametrize(
     "said",
     [
@@ -2334,36 +2264,6 @@ async def test_a_blank_zip_cannot_carry_an_unchecked_address_into_the_booking(db
             ctx, "2026-09-29-0800", "residential", "Maria Lopez", "+19145550100",
             "12 Elm Street, Yonkers", "", "no heat",
         )  # fmt: skip
-
-
-async def test_booking_waits_until_the_number_has_come_up(db):
-    """relative_address, 1 of 3: the model booked a sister's apartment on the caller's own number
-    without asking which number reaches someone there, or confirming any number at all."""
-    ctx = SpokenContext(
-        Call(call_id="call-a", db=db, caller_number="+19145550100"),
-        ["310 Ocean Avenue, Brooklyn, 11226", "Yes, that's right."],
-    )
-    agent = SummitAirAgent("")
-    await agent.check_address(ctx, "310 Ocean Avenue", "Brooklyn", "11226")
-    await agent.check_availability(ctx, "2026-09-29", "any")
-    args = ("residential", "David Shatsky", "", "310 Ocean Avenue, Brooklyn", "11226", "AC leak")
-    with pytest.raises(ToolError, match="callback number hasn't come up"):
-        await agent.book_appointment(ctx, "2026-09-29-0800", *args)
-    ctx.session.history.add_message(role="assistant", content="Which number reaches someone there?")
-    ctx.session.history.add_message(role="user", content="Her number is 718-555-0199.")
-    booked = await agent.book_appointment(
-        ctx, "2026-09-29-0800", *args[:2], "718-555-0199", *args[3:]
-    )
-    assert booked.startswith("Booked")
-
-
-@pytest.mark.parametrize(
-    "said",
-    ["The number I'm calling from is fine.", "Reach me at 718-555-0199.", "Call 7185550199."],
-)
-async def test_a_caller_who_volunteers_the_number_has_settled_it(db, said):
-    ctx = SpokenContext(Call(call_id="call-a", db=db, caller_number="+19145550100"), [said])
-    assert receptionist.number_settled(ctx.session.history.items)
 
 
 # A booking confirmation with no booking behind it (overnight pass)
@@ -2473,15 +2373,6 @@ def test_a_unit_first_address_still_keys_on_the_street():
 
 def test_double_one_is_two_ones():
     assert "".join(receptionist.spoken_numbers("double one two oh one")) == "11201"
-
-
-def test_the_house_number_question_does_not_settle_the_callback_number(db):
-    ctx = SpokenContext(Call(call_id="call-a", db=db), ["AGENT: What's the house number?"])
-    assert not receptionist.number_settled(ctx.session.history.items)
-    ctx = SpokenContext(
-        Call(call_id="call-a", db=db), ["AGENT: Can we call you back at 914-555-0100?", "Yes."]
-    )
-    assert receptionist.number_settled(ctx.session.history.items)
 
 
 async def test_the_booking_fills_in_the_urgent_task_filed_before_the_address(db):
@@ -2684,107 +2575,9 @@ async def test_the_agent_sends_every_model_reply_through_the_guard(monkeypatch):
 # The windows arrive on the caller's yes to the address (2026-09-28 10:01)
 
 
-@pytest.mark.parametrize(
-    ("said", "noted"),
-    [
-        ("Yes.", True),
-        ("Yeah. What's the ZIP code?", True),  # 10:04: the yes and a question in one turn
-        ("That's right.", True),
-        ("Right.", True),
-        ("Mm-hmm.", True),
-        ("No, it's 84 Bergen.", False),
-        ("Actually it's Bergen Place.", False),
-    ],
-)
-def test_the_windows_note_comes_only_on_a_yes(said, noted):
-    call = Call(call_id="call-a", pending_windows="Monday (slot_id 2026-09-28-1200)")
-    note = receptionist.windows_note(call, said, [])
-    assert (note is not None) is noted
-    if noted:
-        assert "Monday (slot_id 2026-09-28-1200)" in note
-        assert call.pending_windows == ""  # given once
-    else:
-        assert call.pending_windows  # kept for the yes after the correction
-
-
-def test_the_windows_note_names_the_number_step_only_while_it_is_open():
-    history = llm.ChatContext()
-    call = Call(call_id="call-a", pending_windows="Monday", checked_street=["14", "maple"])
-    history.add_message(role="assistant", content="That's 14 Maple Street, Brooklyn. Right?")
-    history.add_message(role="user", content="Yes.")
-    assert "best one to reach them" in receptionist.windows_note(call, "Yes.", history.items)
-    history.add_message(role="assistant", content="Is this number the best one to reach you?")
-    history.add_message(role="user", content="Yes.")
-    history.add_message(role="assistant", content="And that's 14 Maple Street, Brooklyn?")
-    history.add_message(role="user", content="Yes.")
-    call.pending_windows = "Monday"
-    assert "best one to reach them" not in receptionist.windows_note(call, "Yes.", history.items)
-
-
-def ksj5_history(*turns):
-    """The 3:51 PM call (KSJ5YTzz9uHA) up to the read-back the caller talked over."""
-    history = llm.ChatContext()
-    history.add_message(
-        role="user", content="150 West 72nd Street. Apartment 3. Manhattan one zero zero two three."
-    )
-    history.add_message(role="assistant", content="That's 150 West 72nd", interrupted=True)
-    for role, text in turns:
-        history.add_message(role=role, content=text)
-    return history.items
-
-
-def ksj5_call():
-    return Call(
-        call_id="call-a",
-        pending_windows="Tuesday, September 29, between 8 AM and noon (slot_id 2026-09-29-0800)",
-        checked_street=receptionist.street_key("150 West 72nd Street Apartment 3"),
-    )
-
-
-def test_a_yes_to_the_number_does_not_confirm_an_address_read_back_cut_off():
-    call = ksj5_call()
-    items = ksj5_history(
-        ("user", "My name is Dan My name is David."),
-        ("assistant", "Just to confirm, your name is David? What's the best number to reach you?"),
-        ("user", "And the number I'm calling from?"),
-        ("assistant", "Is 650-867-7345 the best number to reach you?"),
-        ("user", "Yes."),
-    )
-    assert receptionist.windows_note(call, "Yes.", items) is None
-    assert call.pending_windows  # still waiting for a yes to the address
-
-
-def test_a_read_back_cut_off_is_said_again_before_any_window():
-    call = ksj5_call()
-    items = ksj5_history(("user", "My name is Dan My name is David."))
-    assert receptionist.windows_note(call, "My name is Dan My name is David.", items) is None
-    assert "read the address back again" in receptionist.readback_cut_note(call, items)
-    items = ksj5_history(
-        ("user", "My name is David."),
-        ("assistant", "Thanks, David. That's 150 West 72nd Street, Apartment 3, Manhattan, 10023?"),
-        ("user", "Yes."),
-    )
-    assert receptionist.readback_cut_note(call, items) is None
-    assert "Tuesday, September 29" in receptionist.windows_note(call, "Yes.", items)
-
-
-@pytest.mark.parametrize(
-    ("text", "name"),
-    [
-        ("My name is Dan My name is David.", "David"),
-        ("Hi, this is Maria, my heat is out.", "Maria"),
-        ("This is urgent.", ""),
-        ("My name's Priya.", "Priya"),
-        ("No heat and it's freezing.", ""),
-    ],
-)
-def test_the_callers_own_name_is_heard(text, name):
-    assert receptionist.name_in(text) == name
-
-
-async def test_an_urgent_task_filed_before_details_gets_the_name_and_address(db, monkeypatch):
+async def test_an_urgent_task_filed_before_details_gets_the_address(db, monkeypatch):
     """The 3:51 PM call: the urgent page went out on the second turn, nothing was booked, the model
-    never updated the task, and on-call had no name or address (ADR-021)."""
+    never updated the task, and on-call had no address (ADR-021)."""
     pages = []
 
     async def fake_page(title, message):
@@ -2796,11 +2589,10 @@ async def test_an_urgent_task_filed_before_details_gets_the_name_and_address(db,
     ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+16505550142"))
     await agent.create_dispatch_task(ctx, "urgent", "no heat, 80-year-old at home", "furnace out")
     await agent.check_address(ctx, "150 West 72nd Street Apartment 3", "Manhattan", "10023")
-    await receptionist.name_escalation(ctx.userdata, "My name is Dan My name is David.")
     await asyncio.sleep(0)  # let the background push run
     task = store.tasks_for(db, "call-a")[0]
     assert task["address"] == "150 West 72nd Street Apartment 3, Manhattan 10023"
-    assert task["name"] == "David" and task["phone"] == "+16505550142"
+    assert task["phone"] == "+16505550142"
     assert [t for t, _ in pages] == [
         "Summit Air urgent #2001",
         "Summit Air urgent #2001: address added",
@@ -2814,66 +2606,19 @@ async def test_an_urgent_task_filed_before_details_gets_the_name_and_address(db,
     assert len(pages) == 2  # on-call is told once
 
 
-async def test_details_given_before_the_urgency_go_on_the_task(db, monkeypatch):
-    async def fake_page(title, message):
-        return True
-
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
-    agent = SummitAirAgent("")
-    ctx = FakeContext(Call(call_id="call-a", db=db))
-    await receptionist.name_escalation(ctx.userdata, "Hi, this is Maria.")
-    await agent.check_address(ctx, "14 Maple Street", "Brooklyn", "11225")
-    await agent.create_dispatch_task(ctx, "urgent", "no heat, infant at home", "furnace out")
-    task = store.tasks_for(db, "call-a")[0]
-    assert task["name"] == "Maria" and task["address"] == "14 Maple Street, Brooklyn 11225"
-
-
-def test_a_booked_full_name_replaces_a_first_name_from_the_callers_words(db):
+def test_a_booking_replaces_the_address_code_copied_onto_the_task(db):
     ref = store.add_task(
-        db, call_id="call-a", kind="urgent", reason="no heat", summary="", name="David",
-        phone="", address="", due_at="2026-09-28T16:06-04:00",
+        db, call_id="call-a", kind="urgent", reason="no heat", summary="", name="",
+        phone="", address="150 West 72nd Street, Manhattan 10023", due_at="2026-09-28T16:06-04:00",
     )  # fmt: skip
     store.fill_task_contact(
-        db, "call-a", "David Shatsky", "+16505550142", "150 West 72nd Street", {}, {"name": "David"}
-    )
-    assert store.tasks_for(db, "call-a")[0]["name"] == "David Shatsky"
+        db, "call-a", "David Shatsky", "+16505550142", "150 West 72nd Street, Apt 3", {},
+        {"address": "150 West 72nd Street, Manhattan 10023"},
+    )  # fmt: skip
+    task = store.tasks_for(db, "call-a")[0]
+    assert (task["name"], task["address"]) == ("David Shatsky", "150 West 72nd Street, Apt 3")
     store.update_task_contact(db, ref, "", "", "")  # empty details never blank a field
     assert store.tasks_for(db, "call-a")[0]["name"] == "David Shatsky"
-
-
-def test_the_safety_scripts_yes_is_unchanged_by_the_wider_address_yes():
-    """ADDRESS_YES is its own pattern: "Right." to the gas script still isn't a confirmed hazard."""
-    assert not receptionist.confirms("Right.")
-    assert receptionist.ADDRESS_YES.match("Right.")
-
-
-async def test_the_callers_yes_to_the_address_puts_the_windows_in_front_of_the_model(
-    db, monkeypatch
-):
-    monkeypatch.setattr(receptionist, "now", lambda: MONDAY_9AM)
-    line = UrgentLine(Call(call_id="call-a", db=db, caller_number="+19145550100"))
-    agent = urgent_agent(line, monkeypatch, [])
-    await agent.check_address(FakeContext(line.userdata), "48 Bergen Street", "Brooklyn", "11201")
-    turn_ctx = llm.ChatContext()
-    await turn(agent, "Yes.", turn_ctx)
-    notes = [m.text_content for m in turn_ctx.items if m.type == "message" and m.role == "system"]
-    assert len(notes) == 1 and "slot_id 2026-09-28-1200" in notes[0]
-
-
-async def test_a_missing_name_and_number_are_asked_for_in_one_refusal(db):
-    """10:01: refused for the name, then refused again for the number, two round trips."""
-    ctx = SpokenContext(
-        Call(call_id="call-a", db=db, caller_number="+19145550100"),
-        ["48 Bergen Street, Brooklyn 11201", "AGENT: 48 Bergen Street, Brooklyn? ", "Yes."],
-    )
-    agent = SummitAirAgent("")
-    await agent.check_address(ctx, "48 Bergen Street", "Brooklyn", "11201")
-    with pytest.raises(ToolError) as refused:
-        await agent.book_appointment(
-            ctx, "2026-09-28-1200", "residential", "", "", "48 Bergen Street, Brooklyn", "11201",
-            "no heat",
-        )  # fmt: skip
-    assert "name" in str(refused.value) and "best one to reach them" in str(refused.value)
 
 
 # No heat in the cold is urgent whoever is home (David, 2026-09-28, after the 10:08 call)
@@ -2960,40 +2705,6 @@ def test_the_prompt_asks_for_the_street_before_the_borough():
     assert "Ask for the town or borough before the street" in receptionist.PROMPT
 
 
-@pytest.mark.parametrize(
-    "answer",
-    [
-        "Yes, one more thing.",
-        "No, wait, the address is wrong.",
-        "My furnace is also broken.",
-        "What was the reference?",
-    ],
-)
-def test_an_answer_to_anything_else_is_not_automatically_goodbye(answer):
-    assert not closing_confirmed(
-        [
-            said("assistant", "Is there anything else?"),
-            said("user", answer),
-        ]
-    )
-
-
-def test_an_old_closing_question_does_not_authorize_a_later_hangup():
-    assert not closing_confirmed(
-        [
-            said("assistant", "Anything else?"),
-            said("user", "Yes, change the address."),
-            said("assistant", "What is the new address?"),
-            said("user", "14 Maple Street."),
-        ]
-    )
-
-
-@pytest.mark.parametrize("answer", ["No, thanks.", "That's all.", "Nothing else, thank you."])
-def test_clear_closing_answers_still_allow_hangup(answer):
-    assert closing_confirmed([said("assistant", "Anything else?"), said("user", answer)])
-
-
 async def test_failed_task_write_never_promises_a_callback(db, monkeypatch):
     def fail(*args, **kwargs):
         raise OSError("disk unavailable")
@@ -3069,17 +2780,6 @@ async def test_failed_address_correction_invalidates_previous_check(db):
     await agent.check_address(ctx, "14 Maple Street", "White Plains", "10601")
     with pytest.raises(ToolError, match="hasn't been checked"):
         await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
-    assert not ctx.userdata.pending_windows
-
-
-def test_fixed_goodbye_preserves_closed_outcome():
-    assert closing_confirmed(
-        [
-            said("assistant", "Anything else?"),
-            said("user", "No, thanks."),
-            said("assistant", receptionist.GOODBYE),
-        ]
-    )
 
 
 async def test_interrupted_write_keeps_lock_until_database_finishes(db, monkeypatch):

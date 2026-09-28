@@ -102,6 +102,7 @@ async def test_dispatch_shares_the_on_call_topic_when_it_has_none(db, pushes, mo
 
 
 async def outcome_of(db, call, closing_answered=False):
+    call.ended_by_agent = closing_answered
     return (await record.finish_call(call, history(closing_answered=closing_answered)))["outcome"]
 
 
@@ -203,7 +204,7 @@ async def test_a_caller_who_hangs_up_after_naming_the_problem_gets_a_callback(db
 async def test_no_abandoned_callback_without_a_number_a_problem_or_an_open_call(
     db, pushes, number, said, closing_answered
 ):
-    call = Call(call_id="call-a", caller_number=number, db=db)
+    call = Call(call_id="call-a", caller_number=number, db=db, ended_by_agent=closing_answered)
     items = history(("user", said), closing_answered=closing_answered)
     summary = await record.finish_call(call, items)
     assert store.tasks_for(db, "call-a") == []

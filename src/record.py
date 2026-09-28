@@ -19,8 +19,6 @@ import receptionist
 import store
 from receptionist import (
     Call,
-    caller_said_goodbye,
-    closing_confirmed,
     file_task,
     first_name,
     speak_window,
@@ -61,16 +59,24 @@ def caller_turns(items) -> list[str]:
     ]
 
 
-def ended_on_purpose(items) -> bool:
-    """The caller answered the closing question, or said goodbye (GuardedEndCall's two exits)."""
-    return closing_confirmed(items) or caller_said_goodbye(items)
+# A caller who said goodbye and hung up before the agent could end the call. Bookkeeping only:
+# it decides the outcome word, never what the agent does (ADR-022).
+GOODBYE_SAID = re.compile(
+    r"\b(?:bye|goodbye|good-bye|wrong number|never ?mind|adi[oó]s)\b", re.IGNORECASE
+)
+
+
+def ended_on_purpose(call: Call, items) -> bool:
+    """The agent ended the call with end_call, or the caller's last words were a goodbye."""
+    said = caller_turns(items)
+    return call.ended_by_agent or bool(said and GOODBYE_SAID.search(said[-1]))
 
 
 def abandoned(call: Call, items, booking: dict | None, tasks: list[dict]) -> bool:
-    """The caller didn't end the call on purpose, mentioned heating or cooling, nothing was booked
+    """The call didn't end on purpose, the caller mentioned heating or cooling, nothing was booked
     or filed, and there is a number to call back."""
     return (
-        not ended_on_purpose(items)
+        not ended_on_purpose(call, items)
         and booking is None
         and not tasks
         and bool(call.caller_number)
@@ -123,7 +129,7 @@ def summarize(call: Call, items, booking: dict | None, tasks: list[dict]) -> dic
         if placed
         else "",
         "issue": booking["issue"] if booking else tasks[0]["reason"] if tasks else "",
-        "outcome": outcome(booking, tasks, call, ended_on_purpose(items)),
+        "outcome": outcome(booking, tasks, call, ended_on_purpose(call, items)),
         "urgency": "emergency"
         if "emergency" in open_kinds
         else "urgent"

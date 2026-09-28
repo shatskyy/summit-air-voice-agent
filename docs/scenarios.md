@@ -172,7 +172,8 @@ note didn't fire.
 | 14:28 | `call-..._GKp6z86JAVAG` | `e376741` | New AC estimate, then "my AC just completely broke", "No" to risk, "it needs urgent fixing" | Booking 1013 Friday and urgent task 2018; median 1.72 s | Estimate booked after the failure; on-call paged for a healthy adult; three turns for "Wed, Thu or Fri" (ADR-020, `aff6848`) |
 | 15:51 | `call-..._KSJ5YTzz9uHA` | `aff6848` | "My grandma's 80, and my furnace [stopped] working", a Manhattan apartment, "I need it today" | Urgent task 2019 on the second turn with the target; no booking; replies 1.2 to 3.8 s | Task and page never got the name or address; the "Yes." to the number released the windows though the caller had talked over the read-back, and read-back and windows came in one reply; only Tuesday offered, then nothing after "I need it today"; "It's all good. K." refused as a close, "anything else" asked twice, caller hung up (ADR-021) |
 
-The 15:51 call didn't exercise ADR-020 (no risk denial, no several-day request), so that is still
+The ADR-021 fixes for rows two and three of that call were replaced by ADR-022 the same day, which
+removed the closing and windows checks instead of widening them. The 15:51 call didn't exercise ADR-020 (no risk denial, no several-day request), so that is still
 unheard on a phone.
 
 ## Text tests (`uv run pytest -m llm`)

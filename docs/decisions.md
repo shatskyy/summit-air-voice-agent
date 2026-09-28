@@ -599,7 +599,7 @@ routine; the model can no longer override that with its own judgment.
 
 ## ADR-021: Code puts the caller's details on a paged task, and a yes confirms only a read-back heard to the end
 
-**Status:** Accepted 2026-09-28. Offline tests only; not yet heard on a phone call. Part 4 is a
+**Status:** Accepted 2026-09-28. Parts 2 and 3, and the name taken from speech in part 1, superseded the same day by ADR-022. Offline tests only; not yet heard on a phone call. Part 4 is a
 prompt change and has not been simulated.
 
 **Decision.** Four changes from the 3:51 PM call (`KSJ5YTzz9uHA`), an 80-year-old without heat:
@@ -633,4 +633,48 @@ extra tool turn.
 
 **Would reverse it.** A wrong name or address on a task that the caller never gave, or a real
 request after "anything else" taken as a goodbye.
+
+## ADR-022: Code owns facts and actions; the model owns the conversation
+
+**Status:** Accepted 2026-09-28 (David). Offline tests plus two simulated calls; not yet heard on
+a phone call.
+
+**Decision.** Code reads the caller's words only for safety: the gas and carbon monoxide script
+and the urgent page backstop (ADR-004, ADR-009, ADR-018). Everything else code knows comes from
+the arguments the model passes to its tools, which code checks against the store. Removed:
+
+1. The closing check on `end_call`. It now refuses only on the caller's first turn (the "Stop."
+   over the greeting); after that, when to hang up is the model's call.
+2. The windows found with the address and released on a yes (A7, ADR-021 part 2).
+   `check_address` tells the model to read back only, then call `check_availability` after the
+   yes.
+3. The rule that the callback number had to come up before booking. Booking still needs a real
+   number, from the caller or caller ID.
+4. The rule that the ZIP had to be asked before a borough-only address was checked.
+5. The name taken from the caller's words (ADR-021 part 1). The checked address still goes onto
+   a paged task, since it comes from a tool's arguments.
+
+Kept, because each is a fact, an action or a business rule rather than a conversational choice:
+the safety script, the urgent backstop and the "no" to risk holding for the call (ADR-020), every
+booking check (offered window, checked address, one visit, a ZIP the caller never said), the
+confirmation spoken from the stored row, the checks on "you're booked" and "on-call has it" with
+nothing behind them, and the reply guard.
+
+**Why.** On the 3:51 PM call two of four defects were code overriding a model that was right:
+the closing word list refused "It's all good. K." and the agent asked "anything else" twice, and a
+note released on the wrong yes told the model the address was confirmed when it wasn't. Each
+fix added another word list, which fails on the next phrasing. A model slip on these is
+awkward; a check that misfires on them is wrong.
+
+**Cost.** Failures the removed checks had caught can come back: the model may offer times with
+the read-back, skip the number step, or ask for a ZIP a borough didn't need. The prompt still
+says each. The turn after the address yes takes one more tool round, about a second.
+
+**Evidence.** 466 offline tests. Simulated `elderly_no_heat` and `relative_address` (demo clock,
+$0.0149): both passed, with the read-back alone, `check_availability` after the yes, the number
+asked for a relative's home, and `end_call` on the first "No, that's all". On the urgent call the
+model offered Wednesday without the same-day wording ADR-021 part 4 asks for.
+
+**Would reverse it.** Repeated phone calls where the model bundles times with the read-back, books
+without a number, or hangs up on a caller who still needed something.
 

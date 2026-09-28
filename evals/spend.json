@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 2.976973,
+  "total": 2.991868,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -361,6 +361,16 @@
       "estimate": 0.4698,
       "cost": 0.520236,
       "results": "evals/results/2026-09-27-225902-1e01941.json"
+    },
+    {
+      "at": "2026-09-28T16:28:29-04:00",
+      "commit": "272ecfb",
+      "kind": "eval",
+      "label": "ADR-022 check",
+      "conversations": 2,
+      "estimate": 0.0117,
+      "cost": 0.014895,
+      "results": "evals/results/2026-09-28-162813-272ecfb-dirty.json"
     }
   ]
 }

@@ -254,7 +254,6 @@ class Call:
     booked_turn: int = -1  # the turn whose booking write went through
     book_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     fabricated_confirmations: int = 0  # "you're booked for" said with nothing in the store
-    pending_windows: str = ""  # windows found with the address, for the note on the caller's yes
     repeats_dropped: int = 0  # sentences the reply guard kept from being said twice in one reply
     bookings_held: int = 0  # book_appointment calls held because the caller hadn't answered yet
     # book_appointment said the confirmation itself (ADR-019), so the model's reply to the tool
@@ -268,11 +267,11 @@ class Call:
     # PM call and the Friday estimate was booked anyway). Booking waits for a fresh
     # check_availability so the caller hears the earliest window.
     reoffer_for_repair: bool = False
+    ended_by_agent: bool = False  # the agent ended the call with end_call, on purpose
     # Paged tasks whose address reached on-call in a follow-up push. The urgent task is filed
     # before any details, and on the 3:51 PM call it stayed without an address or name because
     # nothing was booked and the model never updated it (ADR-021).
     address_pushed: set[int] = field(default_factory=set)
-    said_name: str = ""  # the name the caller gave for themselves (name_in)
     checked_address: str = ""  # the last in-area address check_address passed, as written to tasks
 
 
@@ -388,8 +387,7 @@ def speak_window(slot: dict) -> str:
 
 
 def confirmation_line(booking: dict, name: str, address: str) -> str:
-    """What the caller hears once a booking is written, ending in the closing question that
-    closing_confirmed looks for."""
+    """What the caller hears once a booking is written, ending in the closing question."""
     window = speak_window(booking)
     digits = speak_digits(booking["ref"])
     if booking["change"] == "moved":
@@ -626,19 +624,6 @@ def history_of(context) -> list | None:
     return getattr(history, "items", None)
 
 
-def zip_asked(items) -> bool:
-    """Whether the ZIP has come up on this call: the agent asked for it, or the caller raised it
-    ("I don't know the ZIP", "What's the ZIP code?"). On the 2026-09-28 10:01 and 10:04 calls the
-    caller said "I don't know the ZIP" in the address turn and the agent asked for it anyway,
-    because only the agent's turns counted."""
-    return any(
-        getattr(item, "type", None) == "message"
-        and item.role in ("assistant", "user")
-        and re.search(r"\bzip(?:\s*code|code)?\b", item.text_content or "", re.IGNORECASE)
-        for item in items
-    )
-
-
 # What a plain denial of risk is made of, and nothing else: "No, it's just me, I'm fine." A turn
 # with any other word in it ("No, she just had a stroke") is the model's to judge.
 DENIAL_WORDS = {
@@ -672,75 +657,6 @@ def risk_denied_last(items) -> bool:
     return False
 
 
-# A yes to the address read-back. Wider than CONFIRM, which also decides whether the caller confirmed
-# a hazard, so "Right." or "Mm-hmm." here can't change what the safety script does.
-ADDRESS_YES = re.compile(
-    r"^\W*(?:yes|yeah|yep|yup|ya|right|correct|that'?s (?:right|it|correct)|it is|exactly|sure"
-    r"|perfect|uh.?huh|mm.?hmm|mhm|you got it|sounds (?:good|right))\b",
-    re.IGNORECASE,
-)
-
-
-def last_agent_message(items):
-    """The agent's latest message before the caller's current turn, or None."""
-    messages = [i for i in items or [] if getattr(i, "type", None) == "message"]
-    if messages and messages[-1].role == "user":
-        messages.pop()
-    return next((m for m in reversed(messages) if m.role == "assistant"), None)
-
-
-def reads_back(call: Call, text: str) -> bool:
-    """Whether the agent's words contain the checked street: its house number and name words."""
-    said = re.findall(r"\d+(?:-\d+)?[a-z]*|[a-z]+", text.lower())
-    return bool(call.checked_street) and all(w in said for w in call.checked_street)
-
-
-def readback_heard(call: Call, items) -> bool:
-    """Whether the agent's latest message was the address read-back, said to the end. A yes only
-    confirms the address after one. On the 3:51 PM call the caller talked over the read-back
-    with his name, and his "Yes." to the phone number released the windows as if he had
-    confirmed the address. With no agent message to look at (unit tests), any yes counts."""
-    last = last_agent_message(items)
-    if last is None:
-        return True
-    return reads_back(call, last.text_content or "") and not last.interrupted
-
-
-def readback_cut_note(call: Call, items) -> str | None:
-    """The note for the model when the caller talked over the address read-back: say it again, on
-    its own, before anything else is offered. None otherwise."""
-    last = last_agent_message(items)
-    if not call.pending_windows or last is None or not last.interrupted:
-        return None
-    if not reads_back(call, last.text_content or ""):
-        return None
-    return (
-        "The caller talked over your address read-back, so they haven't confirmed the address. "
-        "Answer what they just said, then read the address back again, in full and on its own, "
-        "and wait for a yes. No times yet."
-    )
-
-
-def windows_note(call: Call, text: str, items) -> str | None:
-    """The note for the model once the caller says yes to the address read-back: the windows found
-    with the address, and what booking still needs, so the model asks for it before trying to book
-    instead of after a refusal (two refused bookings on the 2026-09-28 10:01 call, about a second
-    each). None while the caller hasn't said yes to a read-back heard to the end."""
-    if not call.pending_windows or not ADDRESS_YES.match(text):
-        return None
-    if not readback_heard(call, items):
-        return None
-    windows, call.pending_windows = call.pending_windows, ""
-    still = "their name if you don't have it yet"
-    if items is not None and not number_settled(items):
-        still += ", and, in its own turn after they pick, whether this number is the best one to reach them"
-    return (
-        "The caller confirmed the address. Answer anything they just asked, then, unless they "
-        f"want a particular day or part of the day, offer these next open windows: {windows}. "
-        f"Before booking the window they pick, you still need {still}."
-    )
-
-
 def repair_note(call: Call, was_down: bool) -> str | None:
     """The note for the model when the caller says the system has failed after windows were
     offered: the visit is now a repair, so the earliest window comes first. Sets the flag that holds
@@ -756,28 +672,6 @@ def repair_note(call: Call, was_down: bool) -> str | None:
         "first. Then call check_availability from today and offer the earliest open window"
         f"{held}, and book with the issue in their words."
     )
-
-
-def number_settled(items) -> bool:
-    """Whether the callback number has come up on this call: the agent asked about it or the
-    caller spoke to it ("this number is fine"). A booking without that step skipped what Summit
-    Air needs to reach the caller, which the model did on a sister's-apartment simulation."""
-    for item in items or []:
-        if getattr(item, "type", None) != "message":
-            continue
-        text = item.text_content or ""
-        if item.role == "assistant" and re.search(
-            r"(?<!house )(?<!street )(?<!reference )(?<!confirmation )\bnumber\b"
-            r"|reach (?:you|them|someone)|call you (?:back )?at",
-            text,
-            re.IGNORECASE,
-        ):
-            return True
-        if item.role == "user" and re.search(
-            r"\bnumber\b|calling from|reach me|\d{3}\W*\d{3}\W*\d{4}", text, re.IGNORECASE
-        ):
-            return True
-    return False
 
 
 def init_store(db: Path) -> None:
@@ -824,7 +718,7 @@ async def file_task(
         kind=kind,
         reason=reason,
         summary=summary,
-        name=name or call.said_name,
+        name=name,
         phone=phone or call.caller_number or "",
         address=address or call.checked_address,
         due_at=due.isoformat(timespec="minutes"),
@@ -837,7 +731,7 @@ async def file_task(
     if kind == "urgent":
         call.urgent_task, call.urgent_due = ref, due  # one urgent task per call, like emergencies
     title = f"Summit Air {kind} #{ref}"
-    message = push_text(call, reason, name or call.said_name, address or call.checked_address, ref)
+    message = push_text(call, reason, name, address or call.checked_address, ref)
     if hold:
         call.held_page = HeldPage(title, message, PAGE_HOLD_SECONDS)
         return ref, due, call.held_page.task
@@ -859,36 +753,12 @@ def zip_of(call: Call, address: str = "") -> str:
     return found[-1] if found else call.checked_zip or ""
 
 
-# A caller giving their own name: "My name is Dan My name is David." gives Dan, then David. Only the
-# first word is taken, and only capitalized, as speech-to-text writes names; "this is urgent" isn't one.
-NAME_SAID = re.compile(r"\b(?:[Mm]y name(?:'s| is)|[Nn]ame's|[Tt]his is)\s+([A-Z][a-z'-]+)\b")
-NOT_NAMES = {"summit", "urgent", "an", "the", "my", "it", "not", "about", "for", "regarding"}
-
-
-def name_in(text: str) -> str:
-    """The last name the caller gave for themselves in this turn, or ""."""
-    names = [
-        n for n in NAME_SAID.findall(text or "") if n.lower() not in NOT_NAMES and is_real_name(n)
-    ]
-    return names[-1] if names else ""
-
-
 def paged_tasks(call: Call) -> list[tuple[int, str]]:
     """The call's paged tasks, as (ref, kind), leaving out an emergency called off as false."""
     refs = [(call.urgent_task, "urgent")]
     if not call.false_alarm:
         refs.append((call.hazard_task, "emergency"))
     return [(ref, kind) for ref, kind in refs if ref is not None]
-
-
-async def name_escalation(call: Call, text: str) -> None:
-    """Keep the name the caller gives, and write it onto a paged task at once. The model is told to
-    update the task with create_dispatch_task, and on the 3:51 PM call it didn't (ADR-021)."""
-    if not (name := name_in(text)):
-        return
-    call.said_name = name
-    for ref, _ in paged_tasks(call):
-        await asyncio.to_thread(store.update_task_contact, call.db, ref, name, "", "")
 
 
 async def address_escalation(call: Call, address: str) -> None:
@@ -901,7 +771,7 @@ async def address_escalation(call: Call, address: str) -> None:
             call.address_pushed.add(ref)
             start_page(
                 f"Summit Air {kind} #{ref}: address added",
-                push_text(call, "Service address now on the task", call.said_name, address, ref),
+                push_text(call, "Service address now on the task", "", address, ref),
             )
 
 
@@ -1003,92 +873,20 @@ async def push(
     return True
 
 
-CLOSING_QUESTION = re.compile(r"anything else", re.IGNORECASE)
-# What a caller says to mean nothing more. "No. All good. Thank you." missed the shorter list and
-# the agent asked again (call Awb8xx294NFr).
-DONE = r"nothing else|that['’]?s (?:all|it)|all (?:good|set)|(?:I['’]?m|we['’]?re) (?:all )?(?:good|set)"
-
-
-# The words a caller closes with, however they are strung together: "It's all good. K." (call
-# KSJ5YTzz9uHA) was the third answer the phrase list above missed. An answer made only of these,
-# with at least one CLOSE_MARKERS word, is a close. Anything else in it ("but", "actually", "also",
-# "yes", a question) keeps the call open.
-CLOSE_WORDS = {
-    "no", "nope", "nah", "nothing", "else", "its", "it", "is", "thats", "that", "all", "good",
-    "set", "fine", "ok", "okay", "k", "kk", "cool", "great", "perfect", "awesome", "alright",
-    "thanks", "thank", "you", "so", "much", "very", "really", "appreciate", "im", "i", "am", "we",
-    "were", "are", "for", "now", "then", "have", "a", "nice", "day", "bye", "goodbye", "sir",
-    "man", "oh", "uh", "um",
-}  # fmt: skip
-CLOSE_MARKERS = {"no", "nope", "nah", "nothing", "good", "set", "fine", "thanks", "thank", "bye"}
-
-
-def closing_words(answer: str) -> bool:
-    """Whether a caller's answer is only closing words, with at least one marker."""
-    if "?" in answer:
-        return False
-    words = re.findall(r"[a-z]+", answer.lower().replace("'", "").replace("’", ""))
-    return (
-        0 < len(words) <= 12
-        and all(w in CLOSE_WORDS for w in words)
-        and any(w in CLOSE_MARKERS for w in words)
-    )
-
-
-def closing_confirmed(items) -> bool:
-    """Only a clear closing answer to the latest agent question permits hanging up."""
-    messages = [
-        i
-        for i in items
-        if getattr(i, "type", None) == "message" and i.role in ("user", "assistant")
-    ]
-    if messages and messages[-1].role == "assistant" and messages[-1].text_content == GOODBYE:
-        messages.pop()  # finish_call sees the fixed goodbye after the caller's closing answer
-    if not messages or messages[-1].role != "user":
-        return False
-    answer = messages[-1].text_content or ""
-    previous = next((i for i in reversed(messages[:-1]) if i.role == "assistant"), None)
-    return bool(
-        previous
-        and CLOSING_QUESTION.search(previous.text_content or "")
-        and (
-            re.fullmatch(
-                rf"\W*(?:no|nope|nah|{DONE})(?:[\s,.!]+(?:thanks|thank you|{DONE}))*[\s.!]*",
-                answer,
-                re.IGNORECASE,
-            )
-            or closing_words(answer)
-        )
-    )
-
-
-# An explicit goodbye in the caller's last turn ends a call without the closing question: a wrong
-# number shouldn't be asked whether there is anything else. "Stop." is not one.
-GOODBYE_SAID = re.compile(
-    r"\b(?:bye|goodbye|good-bye|wrong number|never ?mind|adi[oó]s)\b", re.IGNORECASE
-)
-
-
-def caller_said_goodbye(items) -> bool:
-    """Whether the caller's latest turn says goodbye, wrong number or never mind."""
-    for item in reversed(items):
-        if getattr(item, "type", None) == "message" and item.role == "user":
-            return bool(GOODBYE_SAID.search(item.text_content or ""))
-    return False
-
-
 class GuardedEndCall(EndCallTool):
-    """end_call that refuses until the caller has answered whether there is anything else, or has
-    just said goodbye. On a test call speech-to-text heard "Stop." over the greeting, and the model
-    hung up on it (room dEwa8tRdFwLW)."""
+    """end_call that refuses on the caller's first turn only. On a test call speech-to-text heard
+    "Stop." over the greeting, and the model hung up on it (room dEwa8tRdFwLW). After that, when to
+    end the call is the model's call (ADR-022): a word-list check of the caller's answer refused two
+    clear goodbyes and made the agent ask "anything else" twice (calls Awb8xx294NFr, KSJ5YTzz9uHA)."""
 
     async def _end_call(self, ctx: RunContext):
-        items = ctx.session.history.items
-        if not (closing_confirmed(items) or caller_said_goodbye(items)):
+        call = ctx.session.userdata
+        if call.caller_turns < 2:
             raise ToolError(
                 "Don't end the call yet. If you're not sure what the caller wants, ask what they "
-                "need. Before ending, ask whether there is anything else and hear their answer."
+                "need."
             )
+        call.ended_by_agent = True
         return await super()._end_call(ctx)
 
 
@@ -1157,9 +955,6 @@ class SummitAirAgent(Agent):
             await self.answer_in_spanish(call, new_message)  # raises StopResponse
         if not call.warned or call.false_alarm:  # never while an emergency stands
             await self.flag_urgent(call, turn_ctx, new_message)
-        if note := windows_note(call, text, items) or readback_cut_note(call, items):
-            await self.add_note(turn_ctx, note)
-        await name_escalation(call, text)
 
     async def speak_over(self, line: str, new_message: llm.ChatMessage):
         """Say a fixed line in place of the model's reply to this turn."""
@@ -1288,7 +1083,6 @@ class SummitAirAgent(Agent):
         call = context.userdata
         call.checked_zip = None
         call.checked_street = []
-        call.pending_windows = ""
         if problem := street_problem(street):
             raise ToolError(problem)
         zip_code = re.sub(r"\D", "", zip_code)
@@ -1296,15 +1090,9 @@ class SummitAirAgent(Agent):
             raise ToolError("Ask which borough the address is in, then check the address again.")
         call = context.userdata
         if not zip_code:
-            # No ZIP. A borough or a Queens town places the address on its own, but only once the
-            # caller has been asked: without this the model skipped the ZIP whenever it had the
-            # borough (split_address, 0 of 3). Anywhere else, the ZIP decides, so ask for it once
-            # and treat "don't know" as outside the area.
-            if (items := history_of(context)) is not None and not zip_asked(items):
-                raise ToolError(
-                    "Ask for the ZIP code first. If they don't know it, check the address again "
-                    "with the ZIP left blank."
-                )
+            # No ZIP. A borough or a Queens town places the address on its own. Anywhere else, the
+            # ZIP decides, so the model asks for it once and "don't know" is outside the area.
+            # Whether to ask for the ZIP first is the model's call (ADR-022).
             if not town_covered(town):
                 return (
                     f"No ZIP, and {town} isn't {counties_spoken()}, so this is outside the "
@@ -1345,21 +1133,12 @@ class SummitAirAgent(Agent):
                 f"In the service area. Read it back once as {street}, {town}, ZIP {zip_code}, and "
                 "wait for a yes."
             )
-        # The next open windows are found now, so the turn after the caller's yes can offer them
-        # without a second model round trip through check_availability (A7). They reach the model
-        # in a note on that yes (windows_note), not in this result: handed over with the read-back,
-        # the model offered them in the same breath ("is that right? We have openings...", the
-        # 2026-09-28 10:01 call).
-        call.pending_windows = ""
-        slots = await asyncio.to_thread(store.open_slots, call.db, now().date(), "any", now())
-        if not slots:
-            return checked
-        for slot in slots:
-            call.offered[slot["id"]] = speak_window(slot)
-        call.pending_windows = "; ".join(f"{speak_window(s)} (slot_id {s['id']})" for s in slots)
+        # Times come from check_availability after the caller's yes, not with this result: handed
+        # over with the read-back, the model offered them in the same breath (the 10:01 call), and
+        # code that released them on "a yes" took the wrong yes (3:51 PM call, ADR-022).
         return (
-            f"{checked} Say only the read-back this turn, no times. Once the caller confirms it, "
-            "the next open windows are given to you; if they correct it, check it again."
+            f"{checked} Say only the read-back this turn, no times. After they confirm it, call "
+            "check_availability; if they correct it, check it again."
         )
 
     @function_tool
@@ -1448,16 +1227,6 @@ class SummitAirAgent(Agent):
                 "An emergency is active. Do not book a visit; follow the safety instructions."
             )
         if not is_real_name(name):
-            # Both gaps in one refusal: on the 10:01 call the model was refused for the name, asked
-            # it, and was refused again for the number, a second round trip of about a second.
-            items = history_of(context)
-            if items is not None and not number_settled(items):
-                raise ToolError(
-                    "Nothing is booked yet. Ask the caller for their name. Then, in its own turn, "
-                    "confirm the number they're calling from is the best one to reach them (for "
-                    "someone else's home, which number reaches someone there). Then book. Don't "
-                    "use a placeholder name."
-                )
             raise ToolError(
                 "No name yet. Ask the caller for their name, then book. Don't use a placeholder."
             )
@@ -1504,12 +1273,6 @@ class SummitAirAgent(Agent):
             raise ToolError(
                 "This address hasn't been checked on this call. Call check_address, read the "
                 "address back and hear a yes, then book."
-            )
-        if (items := history_of(context)) is not None and not number_settled(items):
-            raise ToolError(
-                "The callback number hasn't come up. Confirm the number they're calling from is "
-                "the best one to reach them, or for someone else's home ask which number reaches "
-                "someone there, then book."
             )
         turn = call.turn  # read at entry: the next turn can arrive while the write is in flight
         async with call.book_lock:  # a turn's tool calls run concurrently; one write per turn
@@ -1568,7 +1331,7 @@ class SummitAirAgent(Agent):
                         phone,
                         address,
                         booking["previous"] or {"phone": call.caller_number or ""},
-                        {"name": call.said_name, "address": call.checked_address},
+                        {"address": call.checked_address},
                     )
                 except Exception:
                     logger.exception("the booking's contact was not copied onto the call's tasks")
