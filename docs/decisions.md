@@ -14,11 +14,20 @@ changed.
 | [006](#adr-006-business-rules-in-configuration-not-in-the-prompt) | Business rules in configuration | Accepted |
 | [007](#adr-007-postgres-as-the-booking-store-superseded) | Postgres as the booking store | Superseded by 008 |
 | [008](#adr-008-sqlite-on-the-workers-host) | SQLite on the worker's host | Accepted 2026-09-23 |
-| [009](#adr-009-urgent-is-detected-in-code) | Urgent is detected in code | Accepted 2026-09-27 |
+| [009](#adr-009-urgent-is-detected-in-code) | Urgent is detected in code | Accepted 2026-09-27, revised 2026-09-28 |
 | [010](#adr-010-one-visit-per-call) | One visit per call | Accepted 2026-09-27 |
 | [011](#adr-011-the-failure-ladder-and-the-shared-key) | The failure ladder, and the shared key | Accepted 2026-09-27 |
 | [012](#adr-012-evals-fixed-clocks-database-checks-a-spend-ledger) | Evals: fixed clocks, database checks, a spend ledger | Accepted 2026-09-27 |
 | [013](#adr-013-hosting-launchd-and-a-watchdog) | Hosting: launchd and a watchdog | Accepted 2026-09-27 |
+| [014](#adr-014-one-tool-call-per-turn) | One tool call per turn | Accepted 2026-09-28 |
+| [015](#adr-015-a-zip-the-caller-never-said) | A ZIP the caller never said | Accepted 2026-09-28; its ask-first rule and number step removed by 022 |
+| [016](#adr-016-a-confirmation-with-no-booking-behind-it-is-caught-and-corrected) | A confirmation with no booking behind it is caught and corrected | Accepted 2026-09-28 |
+| [017](#adr-017-a-reply-guard-on-the-models-output) | A reply guard on the model's output | Accepted 2026-09-28 |
+| [018](#adr-018-no-heat-in-the-cold-is-urgent-whoever-is-home) | No heat in the cold is urgent whoever is home | Accepted 2026-09-28 |
+| [019](#adr-019-the-booking-tool-says-the-confirmation-itself) | The booking tool says the confirmation itself | Accepted 2026-09-28 |
+| [020](#adr-020-a-failure-mid-call-makes-it-a-repair-and-a-no-to-risk-holds-for-the-call) | A failure mid-call makes it a repair; a "no" to risk holds | Accepted 2026-09-28 |
+| [021](#adr-021-code-puts-the-callers-details-on-a-paged-task-and-a-yes-confirms-only-a-read-back-heard-to-the-end) | Code puts the caller's details on a paged task | Accepted 2026-09-28; parts 2 and 3 superseded by 022 |
+| [022](#adr-022-code-owns-facts-and-actions-the-model-owns-the-conversation) | Code owns facts and actions; the model owns the conversation | Accepted 2026-09-28 |
 
 ## ADR-001: LiveKit Agents, one always-on worker
 
@@ -76,13 +85,13 @@ while the reply sat ready. The hosted v1 detector scored the same kind of turn a
 call 3. Its usage counts against a separate monthly request quota, not the inference credit. It is
 back, and the maximum wait drops from 3 s to 2 s.
 
-**Components.**
+**Components, as of 2026-09-28.**
 
 | Layer | Choice | Why |
 |---|---|---|
-| Speech to text | Deepgram Nova-3, with keyterms | Runs on Deepgram's signup credit (see revision below). On call 4 it captured a dictated address and ZIP exactly, but heard "AC" as "IC", so "AC" is now a keyterm |
-| Language model | Gemma 4 31B leads, GPT-4.1 mini as its fallback | On 2026-09-24 both passed all 5 of this repo's model tests, including the replay of the call where Gemma dropped a tool result behind the since-removed filler line. Replaying call 5's turns, Gemma's first sentence arrived at 0.33 s median against 0.64 s for GPT-4.1 mini. The next phone call on Gemma confirms it; if Gemma drops a tool result on the phone again, GPT-4.1 mini leads |
-| Text to speech | Deepgram Aura-2 | Same account and credit as speech to text |
+| Speech to text | Deepgram Nova-3, with keyterms; no backup | Runs on Deepgram's signup credit (see revision below). On call 4 it captured a dictated address and ZIP exactly, but heard "AC" as "IC", so "AC" is now a keyterm. A missing Deepgram key stops the worker at start (`REQUIRED_KEYS`), and a failure mid-call goes to the failure ladder (ADR-011) |
+| Language model | GPT-4.1 mini leads, GPT-4.1 as its fallback, both on OpenAI's API | See the 2026-09-27 revision below. Gemma 4 31B led from 2026-09-24, when replaying call 5's turns put its first sentence at 0.33 s median against 0.64 s for GPT-4.1 mini, until LiveKit Inference's credit ran out |
+| Text to speech | Deepgram Aura-2 (`aura-2-arcas-en`), OpenAI gpt-4o-mini-tts (`onyx`) as backup | Same account and credit as speech to text. The backup is also a male voice, so a fallback doesn't switch voices mid-call |
 
 **Revision, 2026-09-23.** The first choice was AssemblyAI Universal-3.5 Pro for speech to text (the
 lowest word error rate and strongest entity accuracy in independent streaming benchmarks) and Inworld
@@ -90,7 +99,8 @@ TTS-2 Flash for text to speech (the fastest time to first audio), both through L
 After the first test calls, speech turned out to be the biggest cost against LiveKit Inference's free
 credit, which covers only about 20 to 30 calls with everything on it. That risked the number going
 dead during the review. Moving speech to Deepgram leaves the credit to the model. Both original
-choices remain as the fallback when no Deepgram key is set. The original model fallback, GPT-4.1,
+choices stayed as the fallback when no Deepgram key was set, until the 2026-09-27 revision: a
+missing Deepgram key now stops the worker at start. The original model fallback, GPT-4.1,
 was replaced by the two candidates backing each other up.
 
 **Revision, 2026-09-27: OpenAI models on OpenAI's API, GPT-4.1 as the fallback.** Gemma 4 31B and
@@ -252,7 +262,7 @@ isolation two concurrent inserts can both pass the count.
 
 ## ADR-009: Urgent is detected in code
 
-**Status:** Accepted 2026-09-27
+**Status:** Accepted 2026-09-27. Revised 2026-09-28 (below).
 
 **Decision.** Every caller turn updates two flags on the call: `system_down` (no heat, heat out, a
 furnace or boiler not working, freezing, no AC, too hot) and `at_risk` (a parent or grandparent,
@@ -285,6 +295,14 @@ took any short "No, ..." as one. `cold_no_risk_night` 3 of 3 after the change, 0
 [ADR-018](#adr-018-no-heat-in-the-cold-is-urgent-whoever-is-home): the denial above still holds
 for a cooling failure, or no heat when the caller hasn't said it's cold, but not for no heat in the
 cold.
+
+**Revision, 2026-09-28 evening: a yes to the at-risk question means the system is down.** On the
+16:40 call (`7gjANeDhy3Md`) the caller said "the AC. And now it's broken", too spread out for
+`SYSTEM_DOWN`, then "Yes." to the at-risk question. `at_risk` was set but `system_down` wasn't, so
+the backstop never fired, and the model paged 22 s later, after the name, the number and
+"Goodbye". The prompt has the agent ask who is at risk only once heating or cooling has failed, so
+a yes to that question (`RISK_QUESTION` in the agent's last turn) now also sets `system_down`
+(`12e0b26`). A needless page is cheap. Offline tests only.
 
 **Evidence.** Simulated `elderly_no_heat`, `infant_no_heat`, `ac_oxygen` and `risk_during_readback`,
 on both clocks, 16 of 16 in the final run. On the phone, Gate 2 call 1: "My heat went out and my
@@ -415,7 +433,9 @@ scenario (`two_issues`, `address_change`, `commercial`, `elderly_no_heat` on bot
 
 ## ADR-015: A ZIP the caller never said
 
-**Status:** Accepted 2026-09-28
+**Status:** Accepted 2026-09-28. The ask-first ZIP rule and the number step below were removed by
+[ADR-022](#adr-022-code-owns-facts-and-actions-the-model-owns-the-conversation) the same day; the
+prompt still asks for both.
 
 **Decision.** `check_address` refuses a ZIP that appears nowhere in the caller's turns, with number
 words read as digits ("one one two oh one", "eleven two oh one", "ten six zero one"). If the caller
@@ -440,7 +460,8 @@ must be the checked ones, so a blank ZIP can't carry a town the check never saw.
 **Same date, the number step.** `book_appointment` also refuses until the callback number has
 come up on the call, asked by the agent or volunteered by the caller, after the model booked a
 sister's apartment on the caller's own number without asking which number reaches someone there
-(`relative_address`, 2 of 3 at the Stage 4 commit and at the overnight commits alike).
+(`relative_address`, 2 of 3 at the Stage 4 commit and at the overnight commits alike). Removed by
+ADR-022: booking now needs only a real number, from the caller or caller ID.
 
 **Evidence.** `no_zip` 3 of 3 (booked at 48 Bergen Street, Brooklyn, ZIP blank, no ZIP spoken by the
 agent), `split_address` after the ask-first rule, and `address_change`, `asr_street`, `blocked_id`,
@@ -540,7 +561,8 @@ scenario now expects one urgent task.
 
 ## ADR-019: The booking tool says the confirmation itself
 
-**Status:** Accepted 2026-09-28. Offline tests only; not yet heard on a phone call.
+**Status:** Accepted 2026-09-28. Heard on the 14:28 phone call (`GKp6z86JAVAG`), which booked 1013
+with the confirmation said by code.
 
 **Decision.** When `book_appointment` writes a booking, code builds the confirmation from the
 stored row (`confirmation_line`: first name, day, window, address, the reference digit by digit,
@@ -636,8 +658,8 @@ request after "anything else" taken as a goodbye.
 
 ## ADR-022: Code owns facts and actions; the model owns the conversation
 
-**Status:** Accepted 2026-09-28 (David). Offline tests plus two simulated calls; not yet heard on
-a phone call.
+**Status:** Accepted 2026-09-28 (David). Offline tests plus two simulated calls. It was live on the
+16:40 and 16:45 phone calls, but neither reached the address read-back, a booking or `end_call`.
 
 **Decision.** Code reads the caller's words only for safety: the gas and carbon monoxide script
 and the urgent page backstop (ADR-004, ADR-009, ADR-018). Everything else code knows comes from

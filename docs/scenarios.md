@@ -146,7 +146,7 @@ found. Twelve scenarios were added (`misheard_opening`, `no_zip`, `split_address
 | Comparison | `0ca16a5` (Stage 4, worktree) | relative_address x3 | 2/3 with the same miss, so the miss is baseline variance |
 | Fix 3 | `d4a4df0` | The scenarios the review's fixes touch, 1 run each | 10/11; the 11th was the model confirming a booking it never made, with a made-up reference |
 | Fix 4, reverted in fix 5 | `8d1d796`, `c279b81` | A sentence filter on the reply, then, after the third review showed it silencing honest lines, a post-hoc correction note instead | 4/4 and 3/3 on the real streaming path |
-| Final | `c279b81` | The full suite: 46 scenarios, 2 runs on safety and adversarial, 1 on core, both clocks where time matters, against the Stage 4 final | 82/82 after re-grading six conversations the old checks had misread (the agent said "our target is 9:15 PM" without "by"; "**Go**t it, rooftop AC" matched the roof pattern); 76/82 before the re-grade, $0.52 |
+| Final | `c279b81` | The full suite: 40 scenarios, 2 runs on safety and adversarial, 1 on core, both clocks where time matters, against the Stage 4 final | 82/82 after re-grading six conversations the old checks had misread (the agent said "our target is 9:15 PM" without "by"; "**Go**t it, rooftop AC" matched the roof pattern); 76/82 before the re-grade, $0.52 |
 
 ### Morning calls (2026-09-28 10:01 to 10:08, `00232dd`)
 
@@ -175,6 +175,16 @@ note didn't fire.
 The ADR-021 fixes for rows two and three of that call were replaced by ADR-022 the same day, which
 removed the closing and windows checks instead of widening them. The 15:51 call didn't exercise ADR-020 (no risk denial, no several-day request), so that is still
 unheard on a phone.
+
+### Evening calls (2026-09-28 16:40 and 16:45, `b921403`)
+
+| Time | Room | What the caller said | What happened | Defects |
+|---|---|---|---|---|
+| 16:40 | `call-..._7gjANeDhy3Md` | "My dog's chew through the AC. And now it's broken", then "Yes." and "Me." to the at-risk question | Urgent task 2020 with the name, no address; no booking; median reply 1.61 s | The urgent backstop didn't fire ("the AC. And now it's broken" was too spread out for `SYSTEM_DOWN`), so the model paged 22 s after the yes, after the name, the number and "Goodbye"; the caller hung up during "I've flagged this as urgent for" (fixed in `12e0b26`, ADR-009 revision) |
+| 16:45 | `call-..._7VzXSeGQnxy9` | "Dogs are barking", "Tell me more about what you offer", "What do you have available?" | Services listed; nothing booked or filed; `hung_up_early`; median reply 1.44 s | Asked which service instead of calling `check_availability` when asked what was available (the prompt says answer first) |
+
+Neither call reached the address read-back, a booking or `end_call`, so what ADR-021 and ADR-022
+changed is still unheard on a phone. No call has run on `12e0b26`.
 
 ## Text tests (`uv run pytest -m llm`)
 

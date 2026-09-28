@@ -4,6 +4,8 @@ Reviewed from `a539514` against the original employer assignment. No model, voic
 change. The code and regression tests in this commit cover:
 
 - A caller saying "yes, one more thing" after "anything else?" cannot authorize a hang-up.
+  (Removed by ADR-022 on the evening of 2026-09-28: after the first turn, ending the call is the
+  model's call, and the prompt carries this rule.)
 - An interrupted SQLite booking keeps its lock until the write finishes. A same-turn retry cannot
   race it or move the appointment; the next caller turn can still request a correction.
 - Booking contact corrections update copied dispatch details, including the caller-ID number.

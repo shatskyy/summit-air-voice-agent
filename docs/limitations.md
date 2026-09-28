@@ -37,8 +37,8 @@ in [scenarios.md](scenarios.md); simulated-call results are in [the eval report]
   ([ADR-014](decisions.md#adr-014-one-tool-call-per-turn)), so each tool adds a model round trip of
   roughly a second. When the turn detector thinks the caller is mid-sentence it waits up to 1.1 s,
   and up to 2.0 s after the agent asks for an address or a number (2.5 s until that morning, when a
-  finished address waited the full 2.5 s). The windows note on the address yes throws away that
-  turn's preemptive reply, a few hundred milliseconds.
+  finished address waited the full 2.5 s). Since ADR-022 the turn after the address yes calls
+  `check_availability` itself, one more model round trip, about a second.
 - **The reply guard catches exact repeats only.** A sentence said twice in one reply is dropped,
   a paraphrase is not. A booking made before the caller answered the agent's question is held;
   the model has to book again on the answer ([ADR-017](decisions.md#adr-017-a-reply-guard-on-the-models-output)).

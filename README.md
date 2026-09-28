@@ -56,7 +56,7 @@ correction for its next reply, but cannot take back what the caller already hear
 
 ## Testing
 
-The September 27 text simulation (`c279b81`) passed 82 of 82 conversations across 46 scenarios, including
+The September 27 text simulation (`c279b81`) passed 82 of 82 conversations across 40 scenarios, including
 changed addresses, vulnerable residents, refused information and off-script requests. Six results
 were regraded after correcting the checks. The [report](evals/REPORT.md) links the evidence.
 That run predates the September 28 fixes. Offline checks cover the current code; neither kind of
