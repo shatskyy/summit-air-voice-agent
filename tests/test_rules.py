@@ -191,9 +191,9 @@ async def test_an_address_outside_the_area_is_caught_before_any_window(db):
     assert ctx.userdata.checked_zip is None
 
 
-async def test_an_address_without_a_town_is_sent_back_for_the_town(db):
+async def test_an_address_without_a_borough_is_sent_back_for_the_borough(db):
     ctx = FakeContext(Call(call_id="call-a", db=db))
-    with pytest.raises(ToolError, match="which town"):
+    with pytest.raises(ToolError, match="which borough"):
         await SummitAirAgent("").check_address(ctx, "14 Maple Street", " ", "11225")
 
 

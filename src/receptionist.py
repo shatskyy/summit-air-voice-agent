@@ -1127,7 +1127,7 @@ class SummitAirAgent(Agent):
 
         Args:
             street: House number and street, with any apartment or unit.
-            town: The town or city.
+            town: The borough (Manhattan, Brooklyn or Queens), neighborhood or town.
             zip_code: The five-digit ZIP code.
         """
         call = context.userdata
@@ -1138,7 +1138,7 @@ class SummitAirAgent(Agent):
             raise ToolError(problem)
         zip_code = re.sub(r"\D", "", zip_code)
         if not town.strip():
-            raise ToolError("Ask which town the address is in, then check the address again.")
+            raise ToolError("Ask which borough the address is in, then check the address again.")
         call = context.userdata
         if not zip_code:
             # No ZIP. A borough or a Queens town places the address on its own, but only once the
@@ -1264,7 +1264,7 @@ class SummitAirAgent(Agent):
             issue: The problem in the caller's words, or maintenance, or a replacement or
                 install estimate.
             priority: True for an urgent call where someone vulnerable is without heat or cooling.
-            note: What dispatch needs: a site contact and access for commercial, a membership the
+            note: What dispatch needs: access the caller mentioned for commercial, a membership the
                 caller mentioned, or an earlier visit that was missed.
             business_name: For commercial, the business's name as the caller gave it. Required.
             site_contact: For commercial, who meets the technician on site. Required.
@@ -1304,7 +1304,7 @@ class SummitAirAgent(Agent):
         if customer_type == "commercial" and not (business and contact):
             raise ToolError(
                 "A commercial booking needs the business's name and a site contact. Ask for "
-                "whichever is missing, and any access instructions, then book."
+                "whichever is missing, then book."
             )
         if business:
             note = f"Business: {business}. Site contact: {contact}. {note or ''}".strip()
