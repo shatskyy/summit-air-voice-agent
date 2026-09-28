@@ -1,0 +1,40 @@
+# no_show / night / openai/gpt-4.1-mini / run 2
+FAIL: booking note doesn't say the visit was missed: ''
+style: {'bundled': 1, 'reasked_type': 0, 'lists': 0, 'words': 17.7}
+cost: $0.0074
+
+AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?
+CALLER: Your technician was supposed to come Friday morning and nobody showed up. I took the morning off work. This is ridiculous.
+  tool  create_dispatch_task({"kind": "callback", "reason": "technician no show Friday morning", "summary": "Customer reports no technician arrival for Friday morning appointment, missed work", "name": null, "callback_number": null, "address": null})
+  ->    Task 2001 created. Dispatch has the callback. The callback target is 10 AM tomorrow. Tell the caller the target, and never promise an arrival time.
+AGENT : I'm sorry about that. Our target is to call you back by 10 AM tomorrow. Can I offer a new appointment for a visit?
+CALLER: I want to talk to a manager.
+  tool  create_dispatch_task({"kind": "callback", "reason": "request to talk to manager", "summary": "Customer wants to speak to a manager about technician no show", "name": null, "callback_number": null, "address": null})
+  ->    Task 2002 created. Dispatch has the callback. The callback target is 10 AM tomorrow. Tell the caller the target, and never promise an arrival time.
+AGENT : I have a manager scheduled to call you by 10 AM tomorrow. Would you like me to book a new appointment for you, too?
+CALLER: Yes, please book a new appointment. My AC isn't cooling and I need it fixed soon.
+AGENT : Thanks. Can I have your name for the booking?
+CALLER: David Shatsky.
+AGENT : Is this the best number to reach you: 914-555-0100?
+CALLER: The number I'm calling from is fine.
+AGENT : What is the address where the technician should come?
+CALLER: 48 Bergen Street, Brooklyn, 11201.
+  tool  check_address({"street": "48 Bergen Street", "town": "Brooklyn", "zip_code": "11201"})
+  ->    In the service area. Read it back once as 48 Bergen Street, Brooklyn, ZIP 11201, and wait for a yes.
+AGENT : That's 48 Bergen Street, Brooklyn, ZIP 11201, right?
+CALLER: Yes, that's correct.
+  tool  check_availability({"earliest_date": "2026-09-29", "part_of_day": "any"})
+  ->    Open windows: Tuesday, September 29, between 8 AM and noon (slot_id 2026-09-29-0800); Tuesday, September 29, between noon and 4 PM (slot_id 2026-09-29-1200)
+AGENT : I have Tuesday, September 29, between 8 AM and noon or between noon and 4 PM. Which works better?
+Is there anyone at the address who would be at risk without cooling, like someone older, a baby, or someone with a health condition?
+CALLER: The morning between 8 AM and noon works better. No one at risk here.
+  tool  book_appointment({"slot_id": "2026-09-29-0800", "customer_type": "residential", "name": "David Shatsky", "callback_number": "914-555-0100", "address": "48 Bergen Street, Brooklyn", "zip_code": "11201", "issue": "AC isn't cooling", "priority": false, "note": null, "business_name": null, "site_contact": null})
+  ->    Booked. Reference 1001 (say "one oh oh one"): Tuesday, September 29, between 8 AM and noon at 48 Bergen Street, Brooklyn. Tell the caller the day, window, address and reference number.
+AGENT : David, you're booked for Tuesday, September 29, between 8 AM and noon at 48 Bergen Street, Brooklyn. Your reference number is 1001. Anything else I can do?
+CALLER: No, thank you.
+  tool  end_call({})
+  ->    
+AGENT : Thanks for calling Summit Air. Goodbye.
+
+bookings: [{'ref': 1001, 'call_id': 'eval-no_show-night-2', 'slot_id': '2026-09-29-0800', 'customer_type': 'residential', 'priority': 0, 'name': 'David Shatsky', 'phone': '914-555-0100', 'address': '48 Bergen Street, Brooklyn', 'zip': '11201', 'issue': "AC isn't cooling", 'note': '', 'created_at': '2026-09-28 00:24:02'}]
+tasks: [{'ref': 2001, 'call_id': 'eval-no_show-night-2', 'kind': 'callback', 'reason': 'technician no show Friday morning', 'summary': 'Customer reports no technician arrival for Friday morning appointment, missed work', 'name': '', 'phone': '+19145550100', 'address': '', 'due_at': '2026-09-29T10:00-04:00', 'status': 'open', 'created_at': '2026-09-28 00:23:50'}, {'ref': 2002, 'call_id': 'eval-no_show-night-2', 'kind': 'callback', 'reason': 'request to talk to manager', 'summary': 'Customer wants to speak to a manager about technician no show', 'name': '', 'phone': '+19145550100', 'address': '', 'due_at': '2026-09-29T10:00-04:00', 'status': 'open', 'created_at': '2026-09-28 00:23:52'}]

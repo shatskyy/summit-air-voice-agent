@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 0.446354,
+  "total": 0.844695,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -81,6 +81,46 @@
       "estimate": 0.0215,
       "cost": 0.02627,
       "results": "evals/results/2026-09-27-2020-3510bc2-dirty.json"
+    },
+    {
+      "at": "2026-09-27T20:24:24-04:00",
+      "commit": "a6f234e",
+      "kind": "eval",
+      "label": "Stage 2 full suite (after)",
+      "conversations": 50,
+      "estimate": 0.2722,
+      "cost": 0.275534,
+      "results": "evals/results/2026-09-27-2021-a6f234e.json"
+    },
+    {
+      "at": "2026-09-27T20:25:46-04:00",
+      "commit": "a6f234e",
+      "kind": "eval",
+      "label": "no_show night recheck (variance or regression?)",
+      "conversations": 4,
+      "estimate": 0.0219,
+      "cost": 0.029539,
+      "results": "evals/results/2026-09-27-2025-a6f234e.json"
+    },
+    {
+      "at": "2026-09-27T20:26:24-04:00",
+      "commit": "519ea65",
+      "kind": "eval",
+      "label": "no_show night recheck at the baseline commit (run from a worktree)",
+      "conversations": 4,
+      "estimate": 0.0209,
+      "cost": 0.030175,
+      "results": "evals/results/2026-09-27-2026-519ea65.json"
+    },
+    {
+      "at": "2026-09-27T20:27:53-04:00",
+      "commit": "a6f234e",
+      "kind": "eval",
+      "label": "A8 spelled reference in the prompt",
+      "conversations": 10,
+      "estimate": 0.0558,
+      "cost": 0.063093,
+      "results": "evals/results/2026-09-27-2027-a6f234e-dirty.json"
     }
   ]
 }
