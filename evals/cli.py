@@ -29,8 +29,9 @@ def plan(args) -> list[tuple]:
             clocks = args.clock or s.clocks
             if clock_name not in clocks:
                 continue
+            runs = args.runs_for.get(s.category, args.runs)
             for m in args.model or [DEFAULT_MODEL]:
-                out += [(s, clock_name, m, i) for i in range(1, args.runs + 1)]
+                out += [(s, clock_name, m, i) for i in range(1, runs + 1)]
     return out
 
 
@@ -63,6 +64,10 @@ def rescore(path: Path, compare: Path | None) -> int:
         report.compare_lines(json.loads(compare.read_text())["results"], results) if compare else []
     )
     report.write_report(report.render(meta, results, ledger.total(ledger.load()), changes))
+    if report.write_readme(
+        meta, results, json.loads(compare.read_text())["results"] if compare else None
+    ):
+        print("README eval table updated.")
     print(f"Re-graded {path.name} -> {out.name}")
     for k, (p, n) in sorted(report.tally(results).items()):
         print(f"  {k[0]:16} {k[1]:5} {p}/{n}")
@@ -73,6 +78,13 @@ async def main() -> int:
     ap = argparse.ArgumentParser(description="Simulated calls, priced and ledgered.")
     ap.add_argument("scenarios", nargs="*", help=f"any of {', '.join(BY_NAME)}")
     ap.add_argument("-n", "--runs", type=int, default=1)
+    ap.add_argument(
+        "--runs-for",
+        action="append",
+        default=[],
+        metavar="CATEGORY=N",
+        help="runs for one category, overriding -n (e.g. --runs-for safety=2)",
+    )
     ap.add_argument("-m", "--model", action="append", help=f"default: {DEFAULT_MODEL}")
     ap.add_argument("--clock", action="append", choices=list(CLOCKS), help="default: each's own")
     ap.add_argument("-j", "--jobs", type=int, default=3, help="conversations at once")
@@ -89,6 +101,12 @@ async def main() -> int:
     args = ap.parse_args()
     if args.rescore:
         return rescore(args.rescore, args.compare)
+    try:
+        args.runs_for = {k: int(v) for k, v in (x.split("=") for x in args.runs_for)}
+    except ValueError:
+        ap.error("--runs-for takes CATEGORY=N")
+    if bad := set(args.runs_for) - set(report.CATEGORIES):
+        ap.error(f"unknown category: {', '.join(sorted(bad))}")
     unknown = [n for n in args.scenarios if n not in BY_NAME]
     if unknown:
         ap.error(f"unknown scenario(s): {', '.join(unknown)}")
@@ -115,7 +133,7 @@ async def main() -> int:
         "stamp": started.strftime("%Y-%m-%d-%H%M"),
         "commit": commit,
         "models": sorted({m for _, _, m, _ in todo}),
-        "runs": args.runs,
+        "runs": report.runs_text(args.runs, args.runs_for),
         "scenarios": sorted({s.name for s, *_ in todo}),
         "compare": str(args.compare or ""),
         "estimate": round(estimate, 4),
@@ -165,10 +183,13 @@ async def main() -> int:
         )
 
     changes = []
+    before = None
     if args.compare:
         before = json.loads(args.compare.read_text())["results"]
         changes = report.compare_lines(before, results)
     report.write_report(report.render(meta, results, total, changes))
+    if report.write_readme(meta, results, before):
+        print("README eval table updated.")
 
     ran = [r for r in results if not r.get("skipped")]
     print(f"\n{len(ran)} conversations in {time.monotonic() - t0:.0f}s, ${spent:.4f}. -> {path}")
