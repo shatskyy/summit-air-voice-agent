@@ -455,6 +455,16 @@ def history_of(context) -> list | None:
     return getattr(history, "items", None)
 
 
+def zip_asked(items) -> bool:
+    """Whether the agent has asked the caller for the ZIP on this call."""
+    return any(
+        getattr(item, "type", None) == "message"
+        and item.role == "assistant"
+        and re.search(r"\bzip\b", item.text_content or "", re.IGNORECASE)
+        for item in items
+    )
+
+
 def risk_denied_last(items) -> bool:
     """Whether the caller's latest turn says nobody is at risk and nothing more: "no, it's just
     me", "nobody". "No, but my son is sick" is not a denial."""
@@ -865,8 +875,15 @@ class SummitAirAgent(Agent):
             raise ToolError("Ask which town the address is in, then check the address again.")
         call = context.userdata
         if not zip_code:
-            # No ZIP. A borough or a Queens town places the address on its own; anywhere else,
-            # the ZIP decides, so ask for it once and treat "don't know" as outside the area.
+            # No ZIP. A borough or a Queens town places the address on its own, but only once the
+            # caller has been asked: without this the model skipped the ZIP whenever it had the
+            # borough (split_address, 0 of 3). Anywhere else, the ZIP decides, so ask for it once
+            # and treat "don't know" as outside the area.
+            if (items := history_of(context)) is not None and not zip_asked(items):
+                raise ToolError(
+                    "Ask for the ZIP code first. If they don't know it, check the address again "
+                    "with the ZIP left blank."
+                )
             if not town_covered(town):
                 return (
                     f"No ZIP, and {town} isn't {counties_spoken()}, so this is outside the "

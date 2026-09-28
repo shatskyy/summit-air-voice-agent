@@ -1836,15 +1836,22 @@ def test_the_model_may_not_send_two_tool_calls_at_once(monkeypatch):
 
 
 class SpokenContext(FakeContext):
-    """FakeContext plus the caller's turns, which check_address reads to make sure the ZIP it was
-    given was actually said on the call."""
+    """FakeContext plus the call so far, which check_address reads to make sure the ZIP it was
+    given was actually said, and that the caller was asked for one before it is left blank. A
+    line starting "AGENT: " is the agent's; the rest are the caller's."""
 
     def __init__(self, call, said):
         super().__init__(call)
         history = llm.ChatContext()
         for text in said:
-            history.add_message(role="user", content=text)
+            if text.startswith("AGENT: "):
+                history.add_message(role="assistant", content=text[7:])
+            else:
+                history.add_message(role="user", content=text)
         self.session = type("Session", (), {"history": history})()
+
+
+ZIP_ASKED = "AGENT: And what's the ZIP code there?"
 
 
 @pytest.mark.parametrize(
@@ -1880,7 +1887,10 @@ async def test_a_zip_the_caller_never_said_is_refused(db):
     "town", ["Brooklyn", "brooklyn", "Manhattan", "New York", "NYC", "Astoria"]
 )
 async def test_a_covered_borough_books_without_a_zip(db, town):
-    ctx = SpokenContext(Call(call_id="call-a", db=db), ["48 Bergen Street in " + town])
+    ctx = SpokenContext(
+        Call(call_id="call-a", db=db),
+        ["48 Bergen Street in " + town, ZIP_ASKED, "I don't know it, sorry."],
+    )
     agent = SummitAirAgent("")
     result = await agent.check_address(ctx, "48 Bergen Street", town, "")
     assert result.startswith("In the service area") and "no ZIP" in result
@@ -1895,7 +1905,9 @@ async def test_a_covered_borough_books_without_a_zip(db, town):
 
 
 async def test_a_town_outside_the_area_without_a_zip_is_not_booked(db):
-    ctx = SpokenContext(Call(call_id="call-a", db=db), ["14 Maple Avenue in Yonkers"])
+    ctx = SpokenContext(
+        Call(call_id="call-a", db=db), ["14 Maple Avenue in Yonkers", ZIP_ASKED, "No idea."]
+    )
     result = await SummitAirAgent("").check_address(ctx, "14 Maple Avenue", "Yonkers", "")
     assert "outside the service area" in result and "Don't offer times" in result
     assert ctx.userdata.checked_zip is None
@@ -1913,7 +1925,9 @@ async def test_booking_without_a_zip_needs_the_borough_check_first(db):
 
 async def test_a_zip_that_was_never_said_cannot_be_booked_either(db):
     """The booking ZIP must be the checked one, so an invented ZIP can't enter at booking."""
-    ctx = SpokenContext(Call(call_id="call-a", db=db), ["48 Bergen Street in Brooklyn"])
+    ctx = SpokenContext(
+        Call(call_id="call-a", db=db), ["48 Bergen Street in Brooklyn", ZIP_ASKED, "Don't know."]
+    )
     agent = SummitAirAgent("")
     await agent.check_address(ctx, "48 Bergen Street", "Brooklyn", "")
     await agent.check_availability(ctx, "2026-09-29", "any")
@@ -2049,3 +2063,12 @@ async def test_softer_urgency_the_rules_cannot_see_is_still_the_models_call(db, 
 def test_the_prompt_says_how_to_handle_a_missing_zip_and_a_split_address():
     assert "ZIP left blank" in receptionist.PROMPT
     assert "in pieces" in receptionist.PROMPT
+
+
+async def test_a_blank_zip_is_refused_until_the_caller_has_been_asked_for_one(db):
+    """split_address, 0 of 3 after the borough path landed: with "Street. In Brooklyn." the model
+    checked the address with the ZIP blank and never asked for it."""
+    ctx = SpokenContext(Call(call_id="call-a", db=db), ["It's 48 Bergen", "Street. In Brooklyn."])
+    with pytest.raises(ToolError, match="Ask for the ZIP code first"):
+        await SummitAirAgent("").check_address(ctx, "48 Bergen Street", "Brooklyn", "")
+    assert ctx.userdata.checked_zip is None
