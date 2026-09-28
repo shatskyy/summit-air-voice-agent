@@ -2187,3 +2187,102 @@ async def test_booking_waits_until_the_number_has_come_up(db):
 async def test_a_caller_who_volunteers_the_number_has_settled_it(db, said):
     ctx = SpokenContext(Call(call_id="call-a", db=db, caller_number="+19145550100"), [said])
     assert receptionist.number_settled(ctx.session.history.items)
+
+
+# A booking confirmation with no booking behind it never reaches the voice (overnight pass)
+
+
+def fake_stream(*pieces):
+    async def stream(agent, chat_ctx, tools, model_settings):
+        for piece in pieces:
+            if isinstance(piece, str):
+                yield llm.ChatChunk(id="x", delta=llm.ChoiceDelta(role="assistant", content=piece))
+            else:
+                yield piece
+
+    return stream
+
+
+async def spoken(agent, monkeypatch, *pieces):
+    monkeypatch.setattr(receptionist.Agent.default, "llm_node", staticmethod(fake_stream(*pieces)))
+    out = []
+    async for chunk in agent.llm_node(llm.ChatContext(), [], None):
+        out.append(chunk)
+    return out
+
+
+def talking_agent(db, monkeypatch, **call_fields):
+    line = UrgentLine(Call(call_id="call-a", db=db, caller_number="+19145550100", **call_fields))
+    return urgent_agent(line, monkeypatch, []), line.userdata
+
+
+async def test_a_fabricated_confirmation_is_cut_before_the_voice(db, monkeypatch):
+    """cold_no_risk_night on the demo clock, 2026-09-27 22:43: "Which works?" then, in the same
+    reply, "David, you're booked for Wednesday... Your reference number is one two three four",
+    with nothing booked."""
+    agent, call = talking_agent(db, monkeypatch)
+    out = await spoken(
+        agent, monkeypatch,
+        "We have Wednesday, September 30, 8 AM to noon, or noon to 4 PM. ",
+        "Which works? David, you're booked for Wednesday, September 30, between 8 AM and noon. ",
+        "Your reference number is one two three four. Is there anything else?",
+    )  # fmt: skip
+    text = "".join(c for c in out if isinstance(c, str))
+    assert "Which works?" in text and "booked" not in text and "reference" not in text
+    assert "anything else" not in text  # nothing after the cut is spoken
+    assert call.cut_confirmations == 1
+    assert any(
+        i.type == "message" and i.role == "system" and "not spoken" in (i.text_content or "")
+        for i in agent.chat_ctx.items
+    )
+
+
+async def test_a_real_confirmation_passes_once_the_visit_is_written(db, monkeypatch):
+    agent, call = talking_agent(db, monkeypatch, has_booking=True)
+    out = await spoken(
+        agent, monkeypatch,
+        "David, you're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen ",
+        "Street. Your reference number is one oh oh one. Is there anything else?",
+    )  # fmt: skip
+    text = "".join(c for c in out if isinstance(c, str))
+    assert "one oh oh one" in text and "anything else?" in text
+    assert call.cut_confirmations == 0
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Which window would you like booked?",
+        "It's not booked yet; which window works?",
+        "Once you pick a window you're booked.",
+        "Just to confirm, 48 Bergen Street, Brooklyn, right?",
+        "Is anyone there who'd be at risk in the cold?",
+        "Our target is to call you back by 2:35 PM.",
+    ],
+)
+async def test_questions_conditions_and_other_lines_are_not_cut(db, monkeypatch, said):
+    agent, call = talking_agent(db, monkeypatch)
+    out = await spoken(agent, monkeypatch, said)
+    assert "".join(c for c in out if isinstance(c, str)).strip() == said
+    assert call.cut_confirmations == 0
+
+
+async def test_tool_calls_pass_through_the_filter(db, monkeypatch):
+    agent, _ = talking_agent(db, monkeypatch)
+    call_chunk = llm.ChatChunk(
+        id="x",
+        delta=llm.ChoiceDelta(
+            role="assistant",
+            tool_calls=[llm.FunctionToolCall(name="check_address", arguments="{}", call_id="c1")],
+        ),
+    )
+    out = await spoken(agent, monkeypatch, "Got it. ", call_chunk)
+    assert (
+        out[-1] is call_chunk and "".join(c for c in out if isinstance(c, str)).strip() == "Got it."
+    )
+
+
+async def test_the_last_sentence_is_spoken_when_the_stream_ends_without_a_space(db, monkeypatch):
+    agent, _ = talking_agent(db, monkeypatch)
+    out = await spoken(agent, monkeypatch, "What's the address there?")
+    assert "".join(c for c in out if isinstance(c, str)) == "What's the address there?"

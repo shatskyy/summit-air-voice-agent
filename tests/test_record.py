@@ -145,6 +145,7 @@ async def test_the_flags_say_which_backstops_fired(db, pushes):
         "urgent_by_code": True,
         "promise_backstop": False,
         "fallback_model": True,
+        "confirmations_cut": 0,
         "errors": ["llm_error: down"],
     }
 

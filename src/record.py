@@ -138,6 +138,7 @@ def summarize(call: Call, items, booking: dict | None, tasks: list[dict]) -> dic
                 "urgent_by_code": call.urgent_by_code,
                 "promise_backstop": call.promise_kept,
                 "fallback_model": call.fallback_used,
+                "confirmations_cut": call.cut_confirmations,
                 "errors": call.errors,
             }
         ),

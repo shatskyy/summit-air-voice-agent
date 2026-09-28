@@ -222,6 +222,8 @@ class Call:
     turn: int = 0  # caller turns completed so far
     booked_turn: int = -1  # the turn whose booking write went through
     book_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    has_booking: bool = False  # book_appointment has written this call's visit
+    cut_confirmations: int = 0  # booking confirmations cut before the voice (spoken_sentences)
 
 
 def now() -> datetime:
@@ -793,6 +795,39 @@ class GuardedEndCall(EndCallTool):
         return await super()._end_call(ctx)
 
 
+# A booking confirmation in the agent's own words. With no booking in the store it is fabricated:
+# on one simulated call the model asked "Which works?" and went on, in the same breath, "David,
+# you're booked for Wednesday... Your reference number is one two three four", with no tool call.
+FAKE_CONFIRMATION = re.compile(
+    r"\b(?:you'?re|you are|he'?s|she'?s|they'?re|it'?s|that'?s|is|are|has been|have been|i'?ve got"
+    r" you|got you|i have you)\W+(?:all\W+)?(?:booked|scheduled)\b"
+    r"|\ball set\b|\b(?:appointment|visit|technician) (?:is|has been) (?:confirmed|booked|scheduled)\b"
+    r"|\breference (?:number|is)\b|\byour reference\b|\bbooked (?:you|it|that|him|her|them) (?:for|in)\b",
+    re.IGNORECASE,
+)
+# A question, a condition or a negation is not a confirmation: "Which window would you like
+# booked?", "it's not booked yet", "once you pick one you're booked".
+NOT_A_CONFIRMATION = re.compile(
+    r"\?|\b(?:not|isn'?t|aren'?t|haven'?t|hasn'?t|yet|once|after|before|can'?t|cannot|won'?t|until"
+    r"|if|when|would|could|unless)\b",
+    re.IGNORECASE,
+)
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+CUT_NOTE = (
+    "Your last reply told the caller the visit was booked, with a reference. That sentence was not "
+    "spoken to them, because nothing is booked on this call. Book with book_appointment once the "
+    "caller accepts a window, and confirm only what that tool returns."
+)
+
+
+def fabricated_confirmation(call: Call, sentence: str) -> bool:
+    return (
+        not call.has_booking
+        and bool(FAKE_CONFIRMATION.search(sentence))
+        and not NOT_A_CONFIRMATION.search(sentence)
+    )
+
+
 class SummitAirAgent(Agent):
     def __init__(self, instructions: str) -> None:
         super().__init__(
@@ -812,6 +847,49 @@ class SummitAirAgent(Agent):
 
     async def on_enter(self) -> None:
         self.session.say(GREETING)
+
+    async def llm_node(self, chat_ctx, tools, model_settings):
+        """The model's reply, one sentence at a time, with a booking confirmation that has no
+        booking behind it cut before it reaches the voice. Tool calls pass straight through. The
+        voice already waits for a whole sentence before it speaks, so holding the text until each
+        sentence ends costs nothing."""
+        call: Call = self.session.userdata
+        pending = ""
+        cut = False
+        async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
+            if cut:
+                continue  # drain the stream: nothing after a fabricated confirmation is spoken
+            if isinstance(chunk, str):
+                text = chunk
+            elif isinstance(chunk, llm.ChatChunk) and chunk.delta and chunk.delta.content:
+                text = chunk.delta.content
+                if chunk.delta.tool_calls:  # text and a tool call in one chunk: split them
+                    yield chunk.model_copy(
+                        update={"delta": chunk.delta.model_copy(update={"content": None})}
+                    )
+            else:
+                yield chunk  # a tool call, usage, or a flush
+                continue
+            pending += text
+            *done, pending = SENTENCE_END.split(pending)
+            for sentence in done:
+                if fabricated_confirmation(call, sentence):
+                    cut = True
+                    break
+                yield sentence + " "
+            if cut:
+                await self.cut_confirmation(call, pending)
+                pending = ""
+        if pending and not cut:
+            if fabricated_confirmation(call, pending):
+                await self.cut_confirmation(call, "")
+            else:
+                yield pending
+
+    async def cut_confirmation(self, call: Call, rest: str) -> None:
+        call.cut_confirmations += 1
+        logger.warning("cut a booking confirmation with no booking behind it")
+        await self.add_note(llm.ChatContext(), CUT_NOTE)
 
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
@@ -1181,6 +1259,7 @@ class SummitAirAgent(Agent):
                     "another."
                 )
             call.booked_turn = turn
+            call.has_booking = True
         window = speak_window(booking)
         call.moved = call.moved or booking["change"] == "moved"
         ref = f'{booking["ref"]} (say "{speak_digits(booking["ref"])}")'
