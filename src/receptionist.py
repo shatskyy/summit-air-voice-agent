@@ -535,11 +535,14 @@ def history_of(context) -> list | None:
 
 
 def zip_asked(items) -> bool:
-    """Whether the agent has asked the caller for the ZIP on this call."""
+    """Whether the ZIP has come up on this call: the agent asked for it, or the caller raised it
+    ("I don't know the ZIP", "What's the ZIP code?"). On the 2026-09-28 10:01 and 10:04 calls the
+    caller said "I don't know the ZIP" in the address turn and the agent asked for it anyway,
+    because only the agent's turns counted."""
     return any(
         getattr(item, "type", None) == "message"
-        and item.role == "assistant"
-        and re.search(r"\bzip\b", item.text_content or "", re.IGNORECASE)
+        and item.role in ("assistant", "user")
+        and re.search(r"\bzip(?:\s*code|code)?\b", item.text_content or "", re.IGNORECASE)
         for item in items
     )
 

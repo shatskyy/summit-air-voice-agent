@@ -2105,6 +2105,32 @@ async def test_a_blank_zip_is_refused_until_the_caller_has_been_asked_for_one(db
 
 
 @pytest.mark.parametrize(
+    "said",
+    [
+        # 2026-09-28 10:01, call eQGJXmApj2C5: the address and "I don't know the ZIP" in one turn
+        [
+            "Heat's out of my mother's 80.",
+            "Forty eight Bergen Street, Brooklyn. I don't know the ZIP.",
+        ],
+        # 2026-09-28 10:04, call KwzEuKkUqMrK: the whole request in one monologue
+        [
+            (
+                "Hi. I wanna mute eight a, uh, AC unit. There's nothing wrong with my current one. "
+                "I just want an upgrade. I'm at 48 Bergen Street, Brooklyn, I don't know the ZIP. "
+                "My name is David Shatsky. I'm available tomorrow morning."
+            )
+        ],
+        ["48 Bergen Street, Brooklyn.", "No zip code, sorry."],
+    ],
+)
+async def test_a_caller_who_said_they_dont_know_the_zip_is_not_asked_again(db, said):
+    ctx = SpokenContext(Call(call_id="call-a", db=db), said)
+    result = await SummitAirAgent("").check_address(ctx, "48 Bergen Street", "Brooklyn", "")
+    assert "no ZIP needed" in result
+    assert ctx.userdata.checked_zip == ""
+
+
+@pytest.mark.parametrize(
     "name", ["Your sister", "my mom", "the tenant", "her husband", "Sister", "caller"]
 )
 def test_a_relation_is_not_a_name(name):
