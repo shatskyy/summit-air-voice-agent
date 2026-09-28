@@ -9,7 +9,31 @@ startup rather than a quiet switch to that credit.
 
 import os
 
+from livekit.agents import llm
+from livekit.agents.types import NOT_GIVEN, NotGivenOr
 from livekit.plugins import openai
+
+
+class OneToolAtATime(openai.LLM):
+    """OpenAI's model, told to send one tool call per turn whenever it has tools. Every parallel
+    pair the calls produced did harm: a callback filed beside an address check (call KTWmzz),
+    end_call beside a task (call 2), and two bookings at once in simulation (change_window). A
+    second tool costs one more round trip. A request with no tools (the simulated caller, the test
+    judge) is left alone, because OpenAI rejects the setting without tools."""
+
+    def chat(
+        self,
+        *,
+        chat_ctx: llm.ChatContext,
+        tools: list[llm.Tool] | None = None,
+        parallel_tool_calls: NotGivenOr[bool] = NOT_GIVEN,
+        **kwargs,
+    ) -> llm.LLMStream:
+        if tools:
+            parallel_tool_calls = False
+        return super().chat(
+            chat_ctx=chat_ctx, tools=tools, parallel_tool_calls=parallel_tool_calls, **kwargs
+        )
 
 
 def make_llm(model: str):
@@ -19,7 +43,4 @@ def make_llm(model: str):
         raise ValueError(f"{model!r} is not an OpenAI model; no model runs on LiveKit Inference")
     if not os.getenv("OPENAI_API_KEY"):
         raise RuntimeError(f"OPENAI_API_KEY is not set, so {model} can't run")
-    # One tool call per model turn. Every parallel pair the phone calls produced did harm: a
-    # callback filed beside an address check (call KTWmzz), end_call beside a task (call 2), and
-    # two bookings at once in simulation (change_window). A second tool costs one more round trip.
-    return openai.LLM(model=name, parallel_tool_calls=False)
+    return OneToolAtATime(model=name)

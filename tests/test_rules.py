@@ -1803,8 +1803,22 @@ async def test_each_caller_turn_is_counted(db, monkeypatch):
 def test_the_model_may_not_send_two_tool_calls_at_once(monkeypatch):
     """The other half of the guarantee: OpenAI is told not to emit parallel tool calls, so a turn
     can't carry two bookings, or a callback filed beside an address check (call KTWmzz), or end_call
-    beside a task (call 2)."""
+    beside a task (call 2). Only when the request carries tools: OpenAI refuses the setting on a
+    request without them (400), which is what the simulated caller and the test judge send."""
+    from livekit.plugins import openai
+
     from models import make_llm
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    assert make_llm("openai/gpt-4.1-mini")._opts.parallel_tool_calls is False
+    seen = []
+    monkeypatch.setattr(openai.LLM, "chat", lambda self, **kw: seen.append(kw))
+    model = make_llm("openai/gpt-4.1-mini")
+    tool = next(t for t in SummitAirAgent("").tools if getattr(t, "id", "") == "end_call")
+    model.chat(chat_ctx=llm.ChatContext(), tools=[tool])
+    model.chat(chat_ctx=llm.ChatContext())
+    model.chat(chat_ctx=llm.ChatContext(), tools=[])
+    from livekit.agents.types import NOT_GIVEN
+
+    assert seen[0]["parallel_tool_calls"] is False
+    assert seen[1]["parallel_tool_calls"] is NOT_GIVEN
+    assert seen[2]["parallel_tool_calls"] is NOT_GIVEN
