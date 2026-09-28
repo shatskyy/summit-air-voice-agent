@@ -218,6 +218,22 @@ def add_task(path: Path, **task) -> int:
         return conn.execute(sql, task).fetchone()["ref"]
 
 
+def fill_task_contact(path: Path, call_id: str, name: str, phone: str, address: str) -> None:
+    """Fill a call's tasks' blank name, phone and address from its booking. An urgent task filed
+    by code on the caller's first turn has none of them (2026-09-28 10:01, task 2015), so
+    dispatch reading the task alone saw an urgent job with no address. A field already set keeps
+    its value."""
+    sql = """
+        update tasks set
+            name = case when name = '' then :name else name end,
+            phone = case when phone = '' then :phone else phone end,
+            address = case when address = '' then :address else address end
+        where call_id = :call_id
+    """
+    with connect(path) as conn:
+        conn.execute(sql, {"call_id": call_id, "name": name, "phone": phone, "address": address})
+
+
 def set_task_status(path: Path, ref: int, status: str) -> None:
     with connect(path) as conn:
         conn.execute("update tasks set status = ? where ref = ?", (status, ref))

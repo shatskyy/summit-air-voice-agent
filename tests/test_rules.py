@@ -2337,3 +2337,31 @@ def test_the_house_number_question_does_not_settle_the_callback_number(db):
         Call(call_id="call-a", db=db), ["AGENT: Can we call you back at 914-555-0100?", "Yes."]
     )
     assert receptionist.number_settled(ctx.session.history.items)
+
+
+async def test_the_booking_fills_in_the_urgent_task_filed_before_the_address(db):
+    """2026-09-28 10:01, task 2015: code filed the urgent task on the first turn, before a name or
+    an address, and nothing filled them in after the booking, so dispatch saw an urgent job with
+    no address. A field the task already had keeps its value."""
+    agent = SummitAirAgent("")
+    call = Call(call_id="call-a", db=db, caller_number="+19145550100")
+    ctx = FakeContext(call)
+    await file_task(call, "urgent", "no heat or cooling with someone at risk", "Heat's out")
+    await file_task(call, "callback", "manager", "tech never came", name="Maria")
+    await agent.check_address(ctx, "14 Maple Street", "Brooklyn", "11225")
+    await agent.check_availability(ctx, "2026-09-29", "morning")
+    await agent.book_appointment(
+        ctx,
+        "2026-09-29-0800",
+        "residential",
+        "Maria Lopez",
+        "+19145550100",
+        "14 Maple Street, Brooklyn",
+        "11225",
+        "no heat",
+        priority=True,
+    )
+    urgent, callback = store.tasks_for(db, "call-a")
+    assert (urgent["name"], urgent["address"]) == ("Maria Lopez", "14 Maple Street, Brooklyn")
+    assert urgent["phone"] == "+19145550100"
+    assert (callback["name"], callback["address"]) == ("Maria", "14 Maple Street, Brooklyn")

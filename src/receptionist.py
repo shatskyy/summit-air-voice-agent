@@ -1212,6 +1212,12 @@ class SummitAirAgent(Agent):
                     "another."
                 )
             call.booked_turn = turn
+        try:
+            await asyncio.to_thread(
+                store.fill_task_contact, call.db, call.call_id, name, phone, address
+            )
+        except Exception:
+            logger.exception("the booking's contact was not copied onto the call's tasks")
         window = speak_window(booking)
         call.moved = call.moved or booking["change"] == "moved"
         ref = f'{booking["ref"]} (say "{speak_digits(booking["ref"])}")'
