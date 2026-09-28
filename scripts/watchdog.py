@@ -15,6 +15,7 @@ The last state lives in data/watchdog-state.json.
 
 import argparse
 import asyncio
+import importlib
 import json
 import os
 import sqlite3
@@ -35,7 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 load_dotenv(ROOT / ".env.local")
 
-import store  # needs src/ on the path
+store = importlib.import_module("store")  # from src/, once it is on the path
 
 AGENT_NAME = "summit-air"
 DB = Path(os.getenv("SUMMIT_AIR_DB", ROOT / "data" / "summit-air.db"))
