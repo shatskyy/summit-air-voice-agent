@@ -8,6 +8,7 @@ import pytest
 from livekit.agents import AgentSession, APIConnectionError, StopResponse, ToolError, llm
 from livekit.agents.voice.agent_session import SessionConnectOptions
 
+import paging
 import receptionist
 import store
 from receptionist import (
@@ -341,7 +342,7 @@ async def test_an_urgent_task_states_a_target_and_pages(db, monkeypatch):
         pages.append(title)
         return True
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+19145550100"))
     result = await SummitAirAgent("").create_dispatch_task(
         ctx, "urgent", "no heat, mother is 78", "furnace out"
@@ -593,7 +594,7 @@ async def test_the_turn_that_fires_the_backstop_is_kept_for_the_model_and_the_re
     async def fake_page(title, message):
         pass
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     line = HazardLine(Call(call_id="call-a", db=db))
     monkeypatch.setattr(SummitAirAgent, "session", property(lambda self: line))
     agent = SummitAirAgent("")
@@ -653,7 +654,7 @@ async def test_on_call_is_paged_even_when_the_emergency_task_cannot_be_written(d
     def locked(*args, **kwargs):
         raise store.sqlite3.OperationalError("database is locked")
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     monkeypatch.setattr(store, "add_task", locked)
     call = Call(call_id="call-a", caller_number="+19145550100", db=db)
 
@@ -674,7 +675,7 @@ async def test_an_emergency_the_model_filed_is_the_calls_one_emergency_task(db, 
     async def fake_page(title, message):
         pages.append(title)
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     call = Call(call_id="call-a", db=db)
     ctx = FakeContext(call)
     await SummitAirAgent("").create_dispatch_task(
@@ -697,7 +698,7 @@ async def test_a_hazard_files_one_emergency_task_per_call(db, monkeypatch):
     async def fake_page(title, message):
         pass
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     call = Call(call_id="call-a", db=db)
     assert await flag_hazard(call, "I smell gas") is True
     assert await flag_hazard(call, "yes, it's really strong gas smell") is False
@@ -723,7 +724,7 @@ async def test_a_promised_page_is_filed_when_the_model_forgot(db, said, monkeypa
     async def fake_page(title, message):
         pass
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     call = Call(call_id="call-a", db=db)
     assert await keep_promise(call, said) is True
     assert await keep_promise(call, said) is False  # once is enough
@@ -740,7 +741,7 @@ async def test_ordinary_lines_and_filed_pages_file_nothing(db, monkeypatch):
     async def fake_page(title, message):
         pass
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     call = Call(call_id="call-a", db=db)
     for said in [
         "Our target is to call you back by 10 AM tomorrow.",
@@ -862,7 +863,7 @@ async def ntfy(monkeypatch):
     site = web.TCPSite(runner, "127.0.0.1", 0)
     await site.start()
     port = site._server.sockets[0].getsockname()[1]
-    monkeypatch.setattr(receptionist, "NTFY_URL", f"http://127.0.0.1:{port}")
+    monkeypatch.setattr(paging, "NTFY_URL", f"http://127.0.0.1:{port}")
     monkeypatch.setenv("NTFY_TOPIC", "test-topic")
     yield reply
     await runner.cleanup()
@@ -872,10 +873,10 @@ async def test_a_page_that_ntfy_refuses_is_logged_as_failed(ntfy, caplog):
     """ntfy answers a rate-limited or broken publish with an error status, not an exception, so a
     refused page used to pass as sent."""
     ntfy["status"] = 500
-    assert await receptionist.page_on_call("Summit Air urgent #2001", "no heat") is False
+    assert await paging.page_on_call("Summit Air urgent #2001", "no heat") is False
     assert "push to NTFY_TOPIC failed" in caplog.text
     ntfy["status"] = 200
-    assert await receptionist.page_on_call("Summit Air urgent #2002", "no heat") is True
+    assert await paging.page_on_call("Summit Air urgent #2002", "no heat") is True
 
 
 async def test_the_model_is_told_paged_only_when_ntfy_accepted_the_page(db, ntfy):
@@ -1041,7 +1042,7 @@ def urgent_agent(line, monkeypatch, pages):
         pages.append((title, message))
         return True
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     monkeypatch.setattr(SummitAirAgent, "session", property(lambda self: line))
     return SummitAirAgent("")
 
@@ -1386,7 +1387,7 @@ def gas_call(db, monkeypatch, hold=0.2):
     async def hang_up():
         hung_up.append(True)
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     monkeypatch.setattr(receptionist, "PAGE_HOLD_SECONDS", hold)
     call = Call(call_id="call-a", db=db, caller_number="+19145550100", hang_up=hang_up)
     line = EmergencyLine(call)
@@ -1683,7 +1684,7 @@ async def test_a_dropped_call_with_someone_at_risk_is_filed_urgent(db, monkeypat
     async def fake_page(title, message):
         return True
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     said, kinds, _ = await ladder_run(db, "llm_error", system_down=True, at_risk=True)
     assert kinds == ["urgent"]
     # The urgent target (15 minutes), not the routine one (two office hours).
@@ -2584,7 +2585,7 @@ async def test_an_urgent_task_filed_before_details_gets_the_address(db, monkeypa
         pages.append((title, message))
         return True
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     agent = SummitAirAgent("")
     ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+16505550142"))
     await agent.create_dispatch_task(ctx, "urgent", "no heat, 80-year-old at home", "furnace out")
@@ -2880,7 +2881,7 @@ async def test_a_promise_after_a_denial_files_an_office_callback_not_a_page(db, 
     async def fake_page(title, message):
         pages.append(title)
 
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     call = Call(call_id="call-a", db=db, risk_denied=True)
     said = "I've flagged this as urgent for our on-call technician. Our target is to call you back."
     assert await keep_promise(call, said) is True

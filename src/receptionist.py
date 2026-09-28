@@ -13,12 +13,10 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-import aiohttp
 import yaml
 from livekit.agents import (
     Agent,
@@ -32,184 +30,148 @@ from livekit.agents import (
 from livekit.agents.beta.tools import EndCallTool
 
 import store
+from guards import (
+    FABRICATED,
+    PAGE_PROMISE,
+    ReplyGuard,
+    asked_since_caller,
+    flag_fabricated_confirmation,
+    guard_reply,
+)
+from paging import (
+    HeldPage,
+    _background,
+    address_escalation,
+    confirmed,
+    first_name,
+    page_on_call,
+    push,
+    push_text,
+    release_held_page,
+    start_page,
+    zip_of,
+)
+from rules import (
+    GENERIC_BUSINESS,
+    SPANISH,
+    SYSTEM_DOWN,
+    at_risk_in,
+    caller_digits,
+    clear_no,
+    confirms,
+    given,
+    hazard_in,
+    history_of,
+    is_real_name,
+    note_urgency,
+    repair_note,
+    risk_denied_last,
+    same_visit,
+    spoken_numbers,
+    street_key,
+    street_problem,
+    urgent_reason,
+)
+from speech import (
+    CHECK_IN,
+    EMERGENCY_CLOSE,
+    GOODBYE,
+    GREETING,
+    SAFETY_SCRIPT,
+    SILENT_GOODBYE,
+    SPANISH_LINE,
+    SPANISH_LINE_NO_NUMBER,
+    TROUBLE,
+    TROUBLE_NO_NUMBER,
+    confirmation_line,
+    spanish_due,
+    speak_clock,
+    speak_digits,
+    speak_due,
+    speak_phone,
+    speak_window,
+    spoken_list,
+    tell_caller,
+)
 
 logger = logging.getLogger("summit-air")
+
+# What the worker, the call record, the simulator and the tests use from this module, including
+# the names now defined in rules, speech, paging and guards.
+__all__ = [
+    "CHECK_IN",
+    "CONFIG",
+    "DEFAULT_DB",
+    "DICTATION_MAX_DELAY",
+    "EMERGENCY_CLOSE",
+    "FABRICATED",
+    "GOODBYE",
+    "GREETING",
+    "MAX_DELAY",
+    "MAX_TOOL_STEPS",
+    "PAGE_PROMISE",
+    "PROMPT",
+    "ROOT",
+    "SAFETY_SCRIPT",
+    "SILENT_GOODBYE",
+    "SPANISH_LINE_NO_NUMBER",
+    "SYSTEM_DOWN",
+    "TROUBLE_NO_NUMBER",
+    "TZ",
+    "Call",
+    "FailureLadder",
+    "GuardedEndCall",
+    "ReplyGuard",
+    "SilenceWatch",
+    "SummitAirAgent",
+    "asked_since_caller",
+    "at_risk_in",
+    "caller_digits",
+    "clear_no",
+    "file_task",
+    "first_name",
+    "flag_fabricated_confirmation",
+    "flag_hazard",
+    "guard_reply",
+    "hazard_in",
+    "in_coverage",
+    "init_store",
+    "is_real_name",
+    "keep_promise",
+    "note_urgency",
+    "now",
+    "office_minutes_from",
+    "office_open",
+    "page_on_call",
+    "push",
+    "push_text",
+    "release_held_page",
+    "render_instructions",
+    "same_visit",
+    "say_goodbye",
+    "skip_reply_after_confirmation",
+    "spanish_due",
+    "speak_digits",
+    "speak_due",
+    "speak_phone",
+    "speak_window",
+    "spoken_numbers",
+    "street_key",
+    "town_covered",
+    "transcript_text",
+    "urgent_reason",
+    "wants_dictation",
+    "zip_of",
+]
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG = yaml.safe_load((ROOT / "config" / "business.yaml").read_text())
 TZ = ZoneInfo(CONFIG["business"]["timezone"])
 PROMPT = (Path(__file__).parent / "prompt.md").read_text()
 DEFAULT_DB = Path(os.getenv("SUMMIT_AIR_DB", ROOT / "data" / "summit-air.db"))
-NTFY_URL = "https://ntfy.sh"
-
-# Fixed rather than generated: it needs no model call, so it is the fastest path to the first word,
-# and it discloses automation before anything else.
-GREETING = "Thanks for calling Summit Air. This is the automated assistant. How can I help?"
-
-# Known shortcut: a keyword list over-triggers by design (a chirping smoke detector matches). The
-# script below is worded to be harmless when that happens, and a clear no to it cancels the page; a
-# classifier is the upgrade if false alarms cost calls. A negation just before a match, in the same
-# clause, cancels that match (hazard_in).
-# Words that can stand between the fuel and "leak": "gas is leaking", "the propane tank might be
-# leaking". None names an appliance, so "my gas furnace is leaking water" stays a routine call.
-LEAK_BRIDGE = r"(?:(?:is|was|tank|lines?|pipes?|might|may|could|be|seems|to|still)\W+){0,3}"
-HAZARD = re.compile(
-    r"smell\w*\W+(?:\w+\W+){0,3}(?:gas(?:sy)?|propane|sulfur|sulphur)\b"
-    r"|\b(?:gas|propane|sulfur|sulphur)\W+(?:smell|odou?r)"
-    r"|\b(?:gas|propane)\W+" + LEAK_BRIDGE + r"leak|\bleak\w*\W+(?:gas|propane)\b|rotten eggs?"
-    r"|carbon monoxide|monoxide|\bco\W+(?:alarm|detector)"
-    r"|\bsmoke\b|\bsmoking\b|\bon fire\b|\bflames?\b|burning smell|smell\w*\W+(?:\w+\W+){0,3}burning"
-    r"|\bsparks?\b|\bsparking\b",
-    re.IGNORECASE,
-)
-# A negation ending the text before a hazard match, with at most one word between: "I don't smell
-# gas", "no smoke", "I don't really smell gas". "I don't know, I smell gas" still fires: the comma
-# starts a new clause.
-NEGATED = re.compile(
-    r"\b(?:no|not|never|don[’']?t|doesn[’']?t|didn[’']?t|isn[’']?t|wasn[’']?t)(?:\W+\w+)?\W*$",
-    re.IGNORECASE,
-)
-CLAUSE = re.compile(r"[,.;!?]|\bbut\b", re.IGNORECASE)
 
 
-def hazard_in(text: str) -> bool:
-    """Whether the turn names a hazard that isn't negated in its own clause."""
-    return any(
-        not NEGATED.search(CLAUSE.split(text[: m.start()])[-1]) for m in HAZARD.finditer(text)
-    )
-
-
-# The answers to the safety script's closing question. A clear no is short and only a no; anything
-# else, a hesitation included, lets the page go.
-# "No heat either" names a problem; "No, just dusty" and "No I said I don't" answer the question.
-CLEAR_NO = re.compile(
-    r"^\W*(?:no|nope|nah|not really)(?:\W*$|\s*[,.!]|\s+(?:i|i'?m|it|it'?s|nothing|not|we|there"
-    r"|that'?s|just|no|sir|ma'?am)\b)",
-    re.IGNORECASE,
-)
-NOT_ONLY_NO = re.compile(r"\b(?:but|yes|yeah|actually)\b", re.IGNORECASE)
-CONFIRM = re.compile(
-    r"^\W*(?:yes|yeah|yep|yup|it is|that'?s right|correct|i do|we do|uh.?huh)\b", re.IGNORECASE
-)
 PAGE_HOLD_SECONDS = 15.0  # how long the emergency page waits for the answer to the script
-
-
-def clear_no(text: str) -> bool:
-    return (
-        bool(CLEAR_NO.match(text))
-        and len(text.split()) <= 8
-        and not NOT_ONLY_NO.search(text)
-        and not hazard_in(text)
-    )
-
-
-def confirms(text: str) -> bool:
-    return bool(CONFIRM.match(text)) or hazard_in(text)
-
-
-# Spoken by code when the caller confirms a hazard, then the call ends: the caller should be leaving,
-# not talking to us.
-EMERGENCY_CLOSE = (
-    "Okay. Get everyone outside now and call 911 from there. Our on-call technician will call you "
-    "at this number by {target}. Please hang up and go."
-)
-
-# Spoken by code when the call ends. On call 5 the model, asked to generate its own goodbye after
-# end_call, repeated the opening greeting after it.
-GOODBYE = "Thanks for calling Summit Air. Goodbye."
-
-# Said when the line goes quiet: one check-in, then a goodbye if it stays quiet.
-CHECK_IN = "The caller has gone quiet. Ask briefly whether they are still there."
-SILENT_GOODBYE = "I'll let you go. Call us back any time."
-
-SAFETY_SCRIPT = (
-    "Just to be safe: if you smell gas, see smoke, or have a carbon monoxide alarm going off right "
-    "now, please leave the house with everyone, don't touch any light switches or appliances, and "
-    "call 911 from outside. Is that what's happening?"
-)
-
-
-# Urgent is decided in code, not left to the model: no heat or cooling, with someone at risk in the
-# home. Keyword lists, like HAZARD, so they over-trigger rather than miss; a false urgent costs one
-# early callback, a missed one leaves an 80-year-old in the cold. Up to three words may stand between
-# the system and what went wrong ("the AC's completely out").
-_BETWEEN = r"(?:\W+\w+){0,3}?\W+"
-SYSTEM_DOWN = re.compile(
-    r"\bno (?:heat|heating|ac|a/?c|air|air conditioning|cooling)\b"
-    r"|\b(?:heat|heating|furnace|boiler|heater|heat pump|ac|a/c|air conditioner|air conditioning"
-    r"|cooling)" + _BETWEEN + r"(?:out|not working|isn'?t working|stopped|won'?t|broke|broken"
-    r"|died|dead|not cooling|isn'?t cooling|not heating|isn'?t heating)\b"
-    r"|\bfreezing\b|\bcold in (?:here|the (?:house|apartment|home))\b|\btoo hot\b|\bsweltering\b",
-    re.IGNORECASE,
-)
-# No heat in the cold is urgent on its own, whoever is home: Rainey's brief lists "no heat in
-# winter" as urgent beside "no AC with a medical condition or elderly resident" (David, 2026-09-28,
-# after the 10:08 call ran routine for "20 degrees out, just me" and paged only on "as soon as
-# possible"). Cooling still needs someone at risk. The heat half of SYSTEM_DOWN, with no cooling
-# words and no water heater (plumbing, which Summit Air doesn't do).
-HEAT_DOWN = re.compile(
-    r"\bno (?:heat|heating|hot air)\b|\bno heat\b"
-    r"|\b(?:heat|heating|furnace|boiler|(?<!water )heater|heat pump|radiators?)"
-    + _BETWEEN
-    + r"(?:out|off|not working|isn'?t working|stopped|won'?t|broke|broken|died|dead|not heating"
-    r"|isn'?t heating|not coming on|gone)\b",
-    re.IGNORECASE,
-)
-# The caller saying it is cold, in the home or outside. "Freezing up" (an iced coil) and "blowing
-# cold" (an AC) don't count, and COLD only matters beside HEAT_DOWN.
-_COLD_NUMBER = (
-    r"(?:\d|[1-3]\d|4[0-5]|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
-    r"|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty"
-    r"|(?:twenty|thirty)[\s-]\w+|forty(?:[\s-](?:one|two|three|four|five))?)"
-)
-COLD = re.compile(
-    r"\b(?:it'?s|it is|getting|so|really|very|absolutely|pretty|way too|too)\W+(?:\w+\W+)?"
-    r"(?:freezing|cold|frigid|icy)\b(?!\W+up\b)"
-    r"|\bfreezing\W+(?:in here|inside|outside|out|cold)\b"
-    r"|\bcold (?:in (?:here|the (?:house|apartment|home|place))|inside|outside|out there)\b"
-    r"|\bcold snap\b|\bbelow (?:zero|freezing)\b|\b\d+\W*below\b|\bsnow(?:ing|storm)?\b|\bwinter\b"
-    r"|\b" + _COLD_NUMBER + r"\W*(?:degrees|°)",
-    re.IGNORECASE,
-)
-AT_RISK = re.compile(
-    r"\b(?:mother|mom|mum|father|dad|parents?|grandmother|grandma|grandfather|grandpa"
-    r"|grandparents?|granny|elderly|seniors?)\b"
-    r"|\b(?:6[5-9]|[7-9]\d|10\d|110)\W*years?\W*old\b"
-    # "I'm 82 and I live alone", "she's 84", "my wife is 79": an age said as a bare number right
-    # after a person. Only a pronoun or a relation anchors it: "address is 72 Bergen", "it is 88
-    # in here" and "the thermostat is 66" are not people (a fresh-context review caught the first
-    # cut, which pages on-call for "address is 72 Bergen Street").
-    r"|\b(?:i'?m|i am|she'?s|she is|he'?s|he is|(?:wife|husband|aunt|uncle|mother|mom|father|dad"
-    r"|grandmother|grandfather|grandma|grandpa|sister|brother|neighbor|tenant|roommate|partner)"
-    r"(?:'s|\W+(?:is|who'?s|who is|turned|just turned)))\W+(?:6[5-9]|[7-9]\d|10\d|110)\b"
-    r"(?!\W*(?:degrees|percent|%|dollars|minutes|blocks|miles|years? ago|st\b|nd\b|rd\b|th\b"
-    r"|[a-z]+ (?:street|st|avenue|ave|road|rd|place|lane|drive|boulevard|blvd)\b))"
-    r"|\b(?:babies|baby|infant|newborn)\b|\b\w+\W+months?\W+old\b"
-    r"|\b(?:oxygen|asthma|copd|heart condition|pregnant|dialysis|bedridden|disabled"
-    r"|medical condition)\b",
-    re.IGNORECASE,
-)
-# A denial earlier in the same clause: "no one elderly", "nobody's at risk".
-RISK_DENIED = re.compile(
-    r"\b(?:no|not|nobody|no one|none|isn'?t|aren'?t)\b" + r"(?:\W+\w+){0,3}\W*$", re.IGNORECASE
-)
-NOBODY = re.compile(r"\b(?:nobody|no one|just me|i'?m fine)\b", re.IGNORECASE)
-PLAIN_YES = re.compile(r"^\W*(?:yes|yeah|yep|yup|she is|he is|they are)\b", re.IGNORECASE)
-RISK_QUESTION = re.compile(
-    r"at risk|someone older|elderly|a baby|health problem|medical", re.IGNORECASE
-)
-
-
-def at_risk_in(text: str, last_agent: str) -> bool:
-    """Whether this caller turn says someone vulnerable is in the home: a named risk not denied in
-    its own clause, or a plain yes right after the agent asked who is at risk."""
-    for match in AT_RISK.finditer(text):
-        clause = re.split(r"[,.;!?]|\bbut\b", text[: match.start()])[-1]
-        if not RISK_DENIED.search(clause):
-            return True
-    return bool(
-        RISK_QUESTION.search(last_agent) and PLAIN_YES.match(text) and not NOBODY.search(text)
-    )
 
 
 @dataclass
@@ -285,11 +247,6 @@ def office_open(at: datetime) -> bool:
     return day in office["days"] and office["start"] <= at.strftime("%H:%M") < office["end"]
 
 
-def spoken_list(words: list[str], joiner: str = "and") -> str:
-    """["a", "b", "c"] as "a, b and c"."""
-    return ", ".join(words[:-1]) + f" {joiner} " + words[-1] if len(words) > 1 else "".join(words)
-
-
 def counties_spoken() -> str:
     """The service area as a caller hears it: "Manhattan, Brooklyn and Queens"."""
     return spoken_list(CONFIG["coverage"]["counties"])
@@ -323,35 +280,6 @@ def render_instructions(at: datetime, caller_number: str | None) -> str:
     )
 
 
-def speak_phone(number: str) -> str:
-    """A US number as it is said: "+16505550142" becomes "650-555-0142". On the Gate 1 call the
-    model read the caller ID back as "plus one six five oh...". Anything else is left as it came."""
-    digits = re.sub(r"\D", "", number)
-    if len(digits) == 11 and digits.startswith("1"):
-        digits = digits[1:]
-    if len(digits) != 10 or number.strip().startswith("+") and not number.strip().startswith("+1"):
-        return number
-    return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
-
-
-DIGIT_WORDS = ["oh", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
-
-
-def speak_digits(ref: int) -> str:
-    """A reference number digit by digit, the way dispatchers say it: 1003 is "one oh oh three".
-    The voice reads the bare digits as "one thousand three"."""
-    return " ".join(DIGIT_WORDS[int(d)] for d in str(ref))
-
-
-def speak_clock(hhmm: str) -> str:
-    hour, minute = map(int, hhmm.split(":"))
-    if (hour, minute) == (12, 0):
-        return "noon"
-    suffix = "AM" if hour < 12 else "PM"
-    hour = hour % 12 or 12
-    return f"{hour}:{minute:02d} {suffix}" if minute else f"{hour} {suffix}"
-
-
 def office_minutes_from(at: datetime, minutes: int) -> datetime:
     """When `minutes` of office time will have passed after `at`. Evenings and weekends don't count,
     so a routine callback asked for at 11 PM is due the next morning, not at 1 AM."""
@@ -371,52 +299,6 @@ def office_minutes_from(at: datetime, minutes: int) -> datetime:
         day = opens + timedelta(days=1)
 
 
-def speak_due(due: datetime, at: datetime) -> str:
-    clock = speak_clock(due.strftime("%H:%M"))
-    days = (due.date() - at.date()).days
-    if days == 0:
-        return clock
-    if days == 1:
-        return f"{clock} tomorrow"
-    return f"{clock} {due:%A}"
-
-
-def speak_window(slot: dict) -> str:
-    day = date.fromisoformat(slot["day"])
-    return f"{day:%A}, {day:%B} {day.day}, between {speak_clock(slot['start'])} and {speak_clock(slot['end'])}"
-
-
-def confirmation_line(booking: dict, name: str, address: str) -> str:
-    """What the caller hears once a booking is written, ending in the closing question."""
-    window = speak_window(booking)
-    digits = speak_digits(booking["ref"])
-    if booking["change"] == "moved":
-        return (
-            f"Done, you're now booked for {window}. Your reference number stays {digits}. "
-            "Is there anything else I can help with?"
-        )
-    if booking["change"] == "updated":
-        return (
-            f"I've updated your visit on {window}. Same reference, {digits}. "
-            "Is there anything else I can help with?"
-        )
-    first = name.split()[0].strip(",.") if name.split() else ""
-    opening = f"{first}, you're" if first else "You're"
-    return (
-        f"{opening} booked for {window} at {address}. Your reference number is {digits}. "
-        "Is there anything else I can help with?"
-    )
-
-
-def tell_caller(context, line: str) -> None:
-    """Queue a fixed line from inside a tool. It stays interruptible: LiveKit drops a caller turn
-    that completes while the agent can't be interrupted, so "hold on, I smell gas" said over it
-    would be lost. A context with no session (the rule tests) has no one to tell."""
-    session = getattr(context, "session", None)
-    if session is not None and hasattr(session, "say"):
-        session.say(line)
-
-
 def skip_reply_after_confirmation(call: Call, event) -> None:
     """After book_appointment has spoken the confirmation, cancel the model's reply to the tool
     result, which would only say it again. A refused booking (ToolError) never sets the flag, so
@@ -424,112 +306,6 @@ def skip_reply_after_confirmation(call: Call, event) -> None:
     if call.confirmation_spoken:
         call.confirmation_spoken = False
         event.cancel_tool_reply()
-
-
-# What a model writes when it never asked. A real name is anything else with a letter in it.
-PLACEHOLDERS = {
-    "",
-    "caller",
-    "the caller",
-    "customer",
-    "unknown",
-    "n/a",
-    "na",
-    "none",
-    "sir",
-    "ma'am",
-}
-
-
-# "Your sister", "the tenant", "my mom": who the visit is for, not a name. GPT-4.1 mini booked a
-# sister's apartment under "Your sister" without asking anyone's name (relative_address).
-RELATION = re.compile(
-    r"^(?:your|my|his|her|their|the|a|an)\b|\b(?:sister|brother|mother|father|mom|dad|wife"
-    r"|husband|son|daughter|aunt|uncle|grandmother|grandfather|tenant|landlord|owner|neighbor"
-    r"|roommate|caller|customer|resident)$",
-    re.IGNORECASE,
-)
-
-
-def is_real_name(name: str) -> bool:
-    cleaned = name.strip().lower()
-    return (
-        cleaned not in PLACEHOLDERS
-        and any(c.isalpha() for c in cleaned)
-        and not RELATION.search(cleaned)
-    )
-
-
-# A business_name made only of these words describes the business instead of naming it: "dental
-# office", "the restaurant". GPT-4.1 mini booked "dental office" in the simulated calls.
-GENERIC_BUSINESS = re.compile(
-    r"(?:(?:the|a|an|our|my|dental|dentist|doctor'?s?|medical|law|office|offices|clinic|store|"
-    r"shop|restaurant|salon|building|company|business|practice|firm|school|church|warehouse|"
-    r"gym|bakery|cafe|bar|hotel|apartment|apartments|plaza|center)\s*)+",
-    re.IGNORECASE,
-)
-
-
-def given(detail: str) -> str:
-    """The detail as the model passed it, or blank when it is a placeholder like "Unknown"."""
-    return "" if detail.strip().lower() in PLACEHOLDERS else detail
-
-
-# A street needs a name as well as a type. On a test call speech-to-text heard "48 Bergen Street" as
-# "487 Lane", and the model read "487 Lane" back as an address.
-STREET_TYPES = {
-    "street", "st", "avenue", "ave", "lane", "ln", "road", "rd", "place", "pl", "boulevard",
-    "blvd", "drive", "dr", "court", "ct", "way", "terrace", "parkway", "pkwy",
-}  # fmt: skip
-HOUSE_NUMBER = re.compile(r"^\s*\d+[a-z]?(?:-\d+)?\b", re.IGNORECASE)
-UNIT = re.compile(r"\b(?:apt|apartment|unit|suite|ste|floor|fl)\b.*|#.*", re.IGNORECASE)
-
-
-def street_problem(street: str) -> str | None:
-    """What is missing from a street, as the next step for the model, or None when it has a house
-    number and a name. "Broadway", "Avenue A" and "5th Avenue" are names; "Lane" alone is not."""
-    street = UNIT.sub("", street.split(",")[0])
-    number = HOUSE_NUMBER.match(street)
-    if not number:
-        return "Ask for the house number and street name, then check the address again."
-    words = re.findall(r"[a-z0-9]+", street[number.end() :].lower())
-    if not [w for w in words if w not in STREET_TYPES]:
-        return "Ask for the street name, then check the address again."
-    return None
-
-
-def street_key(address: str) -> list[str]:
-    """The house number and the street's name words, without the unit or the street type, which
-    is what makes two addresses different: "14 Maple St. Apt 2" and "14 Maple Street, Brooklyn"
-    are the same place, "150 West 72nd" and "150 West 73rd" are not."""
-    parts = [UNIT.sub("", part).strip() for part in address.lower().split(",")]
-    street = next((p for p in parts if HOUSE_NUMBER.match(p)), parts[0] if parts else "")
-    words = re.findall(r"\d+(?:-\d+)?[a-z]*|[a-z]+", street)
-    return words[:1] + [w for w in words[1:] if w not in STREET_TYPES][:2]
-
-
-def same_visit(held: dict, address: str, zip_code: str) -> bool:
-    """Whether a booking call with this address changes the visit the call holds, rather than
-    adding a second one. The same place, however written, is the same visit. So is a correction
-    of one part of it in the same ZIP: "it's forty, not fourteen" or "Bergen, not Burger" keeps
-    the number or the street and changes the other. A different number on a different street is a
-    second address, which is a callback, so the first visit is never moved to it by mistake."""
-    if held["zip"] != zip_code:
-        return False
-    was, now = street_key(held["address"]), street_key(address)
-    if was == now:
-        return True
-    if len(was) < 2 or len(now) < 2:
-        return False
-    if was[1:] == now[1:]:  # the same street, a corrected house number
-        return True
-    # The same house number on a street that sounds alike: "Burger" for "Bergen". "48 Dean" for
-    # "48 Bergen" is a different property.
-    return (
-        was[0] == now[0]
-        and len(was) == len(now) == 2
-        and SequenceMatcher(None, was[1], now[1]).ratio() >= 0.6
-    )
 
 
 def in_coverage(zip_code: str) -> bool:
@@ -558,122 +334,6 @@ def town_covered(town: str) -> bool:
     return cleaned in TOWNS
 
 
-# Digits as speech-to-text writes them when the caller says them one at a time or in pairs:
-# "one one two oh one", "eleven two oh one", "ten six zero one".
-NUMBER_WORDS = {
-    "oh": "0", "o": "0", "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
-    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
-    "eleven": "11", "twelve": "12", "thirteen": "13", "fourteen": "14", "fifteen": "15",
-    "sixteen": "16", "seventeen": "17", "eighteen": "18", "nineteen": "19", "twenty": "20",
-    "thirty": "30", "forty": "40", "fifty": "50", "sixty": "60", "seventy": "70", "eighty": "80",
-    "ninety": "90",
-}  # fmt: skip
-
-
-TENS = {"twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"}
-UNITS = {"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"}
-
-
-def spoken_numbers(text: str) -> list[str]:
-    """The numbers in a caller's words, as digit strings: "48 Bergen, one one two oh one" gives
-    ["48", "1", "1", "2", "0", "1"]. "twenty one" is 21 and "two hundred one" is 201, since a ZIP
-    is said in pairs and hundreds as often as digit by digit ("eleven two twenty-one")."""
-    words = re.findall(r"[a-z]+|\d+", text.lower())
-    out: list[str] = []
-    i = 0
-    while i < len(words):
-        w = words[i]
-        if w.isdigit():
-            out.append(w)
-        elif w in ("double", "triple") and i + 1 < len(words) and words[i + 1] in NUMBER_WORDS:
-            out += [NUMBER_WORDS[words[i + 1]]] * (2 if w == "double" else 3)
-            i += 1
-        elif w in TENS and i + 1 < len(words) and words[i + 1] in UNITS:
-            out.append(str(int(NUMBER_WORDS[w]) + int(NUMBER_WORDS[words[i + 1]])))
-            i += 1
-        elif w == "hundred" and out and i + 1 < len(words) and words[i + 1] in NUMBER_WORDS:
-            n = int(out.pop()) * 100 + int(NUMBER_WORDS[words[i + 1]])
-            out.append(str(n))
-            i += 1
-        elif w == "hundred" and out:
-            out.append(str(int(out.pop()) * 100))
-        elif w in NUMBER_WORDS:
-            out.append(NUMBER_WORDS[w])
-        i += 1
-    return out
-
-
-def caller_digits(items) -> str:
-    """Every digit the caller has said so far, in order, with number words spelled out. Empty when
-    there is no history to read (the offline tests' bare context). A ZIP is checked as a run of
-    this string, so a ZIP hidden inside a phone number passes; that is the old behavior, not a
-    new hole."""
-    if items is None:
-        return ""
-    out = []
-    for item in items:
-        if getattr(item, "type", None) != "message" or item.role != "user":
-            continue
-        out += spoken_numbers(item.text_content or "")
-    return "".join(out)
-
-
-def history_of(context) -> list | None:
-    session = getattr(context, "session", None)
-    history = getattr(session, "history", None)
-    return getattr(history, "items", None)
-
-
-# What a plain denial of risk is made of, and nothing else: "No, it's just me, I'm fine." A turn
-# with any other word in it ("No, she just had a stroke") is the model's to judge.
-DENIAL_WORDS = {
-    "no", "nope", "nah", "nobody", "none", "one", "not", "really", "just", "me", "us", "myself",
-    "it", "its", "is", "im", "i", "am", "a", "an", "fine", "healthy", "adult", "adults", "here",
-    "home", "at", "risk", "there", "theres", "thats", "that", "all", "only", "ok", "okay", "thanks",
-    "thank", "you", "nothing", "like", "of", "the", "sort", "kind", "we", "were", "are", "both",
-    "good", "young", "and", "my", "wife", "husband", "dog", "cat",
-}  # fmt: skip
-
-
-def risk_denied_last(items) -> bool:
-    """Whether the caller's latest turn is a plain denial of risk and nothing more: "no, it's just
-    me", "nobody, I'm fine". "No, she just had a stroke" or "no, but my son is sick" is not, and a
-    bare "No." counts only as the answer to the agent's at-risk question."""
-    messages = [i for i in items or [] if getattr(i, "type", None) == "message"]
-    last_agent = next(
-        (m.text_content or "" for m in reversed(messages) if m.role == "assistant"), ""
-    )
-    for item in reversed(messages):
-        if item.role == "user":
-            text = item.text_content or ""
-            words = re.findall(r"[a-z]+", text.lower().replace("'", ""))
-            if not words or AT_RISK.search(text):
-                return False
-            if not NOBODY.search(text) and not RISK_QUESTION.search(last_agent):
-                return False  # a plain no to some other question
-            return words[0] in {"no", "nope", "nah", "nobody", "none", "just"} and all(
-                w in DENIAL_WORDS for w in words
-            )
-    return False
-
-
-def repair_note(call: Call, was_down: bool) -> str | None:
-    """The note for the model when the caller says the system has failed after windows were
-    offered: the visit is now a repair, so the earliest window comes first. Sets the flag that holds
-    booking until check_availability runs again. None otherwise, and never for a call already
-    urgent, where the urgent task decides what happens next."""
-    if was_down or not call.system_down or not call.offered or urgent_reason(call):
-        return None
-    call.reoffer_for_repair = True
-    held = " and offer to move their booking to it" if call.booked_turn >= 0 else ""
-    return (
-        "The caller just said their system has failed, so this visit is now a repair, not an "
-        "estimate or maintenance. If you haven't asked whether anyone there is at risk, ask that "
-        "first. Then call check_availability from today and offer the earliest open window"
-        f"{held}, and book with the issue in their words."
-    )
-
-
 def init_store(db: Path) -> None:
     hours = CONFIG["hours"]
     store.init(
@@ -683,9 +343,6 @@ def init_store(db: Path) -> None:
         now().date(),
         hours["days_ahead"],
     )
-
-
-_background: set[asyncio.Task] = set()
 
 
 async def file_task(
@@ -736,141 +393,6 @@ async def file_task(
         call.held_page = HeldPage(title, message, PAGE_HOLD_SECONDS)
         return ref, due, call.held_page.task
     return ref, due, start_page(title, message)
-
-
-# ntfy topics are readable by anyone who knows the name, so a push carries no caller's words, number
-# or street: a first name, the ZIP, what happened and where to look. The rest stays in the database.
-ZIP_IN = re.compile(r"\b\d{5}\b")
-
-
-def first_name(name: str) -> str:
-    name = given(name or "").strip()
-    return name.split()[0] if is_real_name(name) else ""
-
-
-def zip_of(call: Call, address: str = "") -> str:
-    found = ZIP_IN.findall(address or "")
-    return found[-1] if found else call.checked_zip or ""
-
-
-def paged_tasks(call: Call) -> list[tuple[int, str]]:
-    """The call's paged tasks, as (ref, kind), leaving out an emergency called off as false."""
-    refs = [(call.urgent_task, "urgent")]
-    if not call.false_alarm:
-        refs.append((call.hazard_task, "emergency"))
-    return [(ref, kind) for ref, kind in refs if ref is not None]
-
-
-async def address_escalation(call: Call, address: str) -> None:
-    """Write a checked in-area address onto the call's paged tasks and tell on-call it arrived, once
-    per task (first name and ZIP only, like every push). A later correction is written too."""
-    call.checked_address = address
-    for ref, kind in paged_tasks(call):
-        await asyncio.to_thread(store.update_task_contact, call.db, ref, "", "", address)
-        if ref not in call.address_pushed:
-            call.address_pushed.add(ref)
-            start_page(
-                f"Summit Air {kind} #{ref}: address added",
-                push_text(call, "Service address now on the task", "", address, ref),
-            )
-
-
-def push_text(call: Call, reason: str, name: str = "", address: str = "", ref=None) -> str:
-    """A page or dispatch push: the reason, a first name and ZIP when known, and the lookup."""
-    who = " ".join(p for p in (first_name(name), zip_of(call, address)) if p)
-    lookup = f"Details: scripts/calls.py {ref or call.call_id}"
-    return "\n".join([reason] + ([who] if who else []) + [lookup])
-
-
-class HeldPage:
-    """An emergency page that waits for the caller's answer to the safety script: it goes out on
-    release() (any answer but a clear no, or the caller hanging up) or after `wait` seconds, and
-    never after cancel(). The task's result is whether ntfy accepted it."""
-
-    def __init__(self, title: str, message: str, wait: float) -> None:
-        self._go = asyncio.Event()
-        self.cancelled = False
-        self.task = asyncio.create_task(self._send(title, message, wait))
-        _background.add(self.task)
-        self.task.add_done_callback(_background.discard)
-
-    async def _send(self, title: str, message: str, wait: float) -> bool:
-        try:
-            await asyncio.wait_for(self._go.wait(), wait)
-        except TimeoutError:
-            pass
-        self._go.set()
-        if self.cancelled:
-            return False
-        return await page_on_call(title, message)
-
-    def release(self) -> None:
-        self._go.set()
-
-    def cancel(self) -> bool:
-        """Call off the page. False when it had already gone out."""
-        if self._go.is_set():
-            return False
-        self.cancelled = True
-        self._go.set()
-        return True
-
-
-async def release_held_page(call: Call) -> None:
-    """Send a held page now and wait up to 5 s for it: the caller hung up without answering."""
-    if call.held_page is None:
-        return
-    call.held_page.release()
-    try:
-        await asyncio.wait_for(asyncio.shield(call.held_page.task), timeout=5)
-    except TimeoutError:
-        pass
-
-
-def start_page(title: str, message: str) -> asyncio.Task[bool]:
-    """Page the on-call phone in the background. The task's result is whether ntfy accepted it."""
-    page = asyncio.create_task(page_on_call(title, message))
-    _background.add(page)
-    page.add_done_callback(_background.discard)
-    return page
-
-
-async def confirmed(page: asyncio.Task[bool]) -> bool:
-    """Whether ntfy accepted the page, waiting at most 3 s. The page keeps trying after that."""
-    try:
-        return await asyncio.wait_for(asyncio.shield(page), timeout=3)
-    except TimeoutError:
-        return False
-
-
-async def page_on_call(title: str, message: str) -> bool:
-    """Push to the on-call phone through ntfy. True means ntfy accepted it. A failed page is logged,
-    never raised into the call."""
-    return await push("NTFY_TOPIC", title, message, priority="urgent", tags="rotating_light")
-
-
-async def push(
-    variable: str, title: str, message: str, priority: str = "default", tags: str = ""
-) -> bool:
-    """Post to the ntfy topic named by the environment variable `variable`. True means ntfy
-    accepted it; a failure is logged, never raised."""
-    topic = os.getenv(variable)
-    if not topic:
-        logger.warning("%s is not set, so the push was skipped: %s", variable, title)
-        return False
-    try:
-        # ntfy refuses a page with an error status (429 when rate-limited), not an exception.
-        async with aiohttp.ClientSession(raise_for_status=True) as http:
-            await http.post(
-                f"{NTFY_URL}/{topic}",
-                data=message.encode(),
-                headers={"Title": title, "Priority": priority, "Tags": tags},
-                timeout=aiohttp.ClientTimeout(total=5),
-            )
-    except Exception:
-        logger.exception("push to %s failed: %s", variable, title)
-        return False
-    return True
 
 
 class GuardedEndCall(EndCallTool):
@@ -1460,42 +982,6 @@ class SummitAirAgent(Agent):
         )
 
 
-# Spanish on either of the caller's first two turns (A6). Only English is served, so code answers
-# in Spanish rather than letting the model improvise a promise.
-SPANISH = re.compile(
-    r"\b(?:hola|habla|español|espanol|necesito|aire acondicionado|calefacci[oó]n|no funciona"
-    r"|por favor)\b",
-    re.IGNORECASE,
-)
-SPANISH_LINE = (
-    "Lo siento, por ahora solo atendemos en inglés. Le llamaremos a este número {when}. Si "
-    "prefiere, podemos seguir en inglés."
-)
-SPANISH_LINE_NO_NUMBER = (
-    "Lo siento, por ahora solo atendemos en inglés. ¿Me da su número de teléfono para que le "
-    "llamemos? Si prefiere, podemos seguir en inglés."
-)
-DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-
-
-def spanish_due(due: datetime, at: datetime) -> str:
-    """A callback target in Spanish: "antes de las 2:35 de la tarde", "mañana antes de las 10 de
-    la mañana", "el lunes antes de las 10 de la mañana"."""
-    hour, minute = due.hour, due.minute
-    if (hour, minute) == (12, 0):
-        clock = "del mediodía"
-    else:
-        h = hour % 12 or 12
-        part = "de la mañana" if hour < 12 else "de la tarde" if hour < 19 else "de la noche"
-        clock = f"{'de la' if h == 1 else 'de las'} {h}{f':{minute:02d}' if minute else ''} {part}"
-    days = (due.date() - at.date()).days
-    if days == 0:
-        return f"antes {clock}"
-    if days == 1:
-        return f"mañana antes {clock}"
-    return f"el {DIAS[due.weekday()]} antes {clock}"
-
-
 class SilenceWatch:
     """Check in once when the caller goes quiet, then say goodbye and hang up if they stay quiet.
 
@@ -1533,17 +1019,6 @@ class SilenceWatch:
         self._closing = True  # the goodbye has started, so speech no longer calls it off
         await self._session.say(SILENT_GOODBYE, allow_interruptions=False)
         await self._hang_up()
-
-
-# Said by code when the model or speech-to-text fails for good during a call (A5). Without a number
-# nobody can call back, so that caller is asked to call again instead.
-TROUBLE = (
-    "I'm sorry, I'm having trouble on my end. Someone from Summit Air will call you back at this "
-    "number by {target}."
-)
-TROUBLE_NO_NUMBER = (
-    "I'm sorry, I'm having trouble on my end. Please call Summit Air back in a few minutes."
-)
 
 
 def transcript_text(items) -> str:
@@ -1628,15 +1103,6 @@ async def say_goodbye(event: llm.Toolset.ToolCalledEvent) -> None:
     event.ctx.session.say(GOODBYE, allow_interruptions=False)
 
 
-# What the agent says when it tells a caller on-call is coming. GPT-4.1 mini said "I am paging the
-# on-call technician now" without calling the tool (decision 4; 1 of 4 simulated elderly calls).
-PAGE_PROMISE = re.compile(
-    r"\bpag(e|ing)\b.{0,30}on.?call|on.?call (technician|tech)\b.{0,40}(call|reach|paged)"
-    r"|callback within \d+ minutes|within (15|fifteen) minutes",
-    re.IGNORECASE,
-)
-
-
 # Turn timing. When the turn detector thinks a caller is mid-thought it waits max_delay before
 # replying, and the hosted detector scores complete short answers low ("No." 0.31 against its
 # 0.56 bar), so 9 of 21 turns on the 16:09 call waited the full 2 s. Most turns get a short cap;
@@ -1689,227 +1155,6 @@ async def keep_promise(call: Call, text: str) -> bool:
             push_text(call, "on-call callback the agent promised; the caller's number is in calls"),
         )
     return True
-
-
-# The booking confirmation the prompt dictates, "[first name], you're booked for [day]", and its
-# close relatives. On one simulated call the model asked "Which works?" and went on, in the same
-# reply, "David, you're booked for Wednesday... Your reference number is one two three four",
-# with no tool call and nothing in the store. A first cut filtered the reply sentence by sentence
-# before the voice; a fresh-context review showed it silencing honest lines ("You're all set. Our
-# target is to call you back by 10 AM") and dropping the tool call that would have made the
-# confirmation true, so this is the keep_promise shape instead: after the fact, never silencing,
-# and precise about the phrase.
-FABRICATED = re.compile(
-    r"\b(?:you'?re|you are|you'?ve been|you have been|i'?ve got you|i have you) (?:now |all |officially )?"
-    r"(?:booked|down) (?:for|in|on)\b|\breference number is\b|\bconfirmation number is\b",
-    re.IGNORECASE,
-)
-CORRECTION_NOTE = (
-    "Your last reply told the caller the visit was booked, but nothing is booked on this call and "
-    "no reference exists. In your next reply say plainly that it is not booked yet, then book it "
-    "with book_appointment once they accept a window, and confirm only what that tool returns."
-)
-
-
-async def flag_fabricated_confirmation(agent: Agent, call: Call, text: str) -> bool:
-    """A spoken booking confirmation with no booking in the store: tell the model so its next
-    reply corrects it. True means one was found. The store is read, not a flag, since a booking
-    can land after the tool was cancelled by an interruption."""
-    if not FABRICATED.search(text):
-        return False
-    if await asyncio.to_thread(store.booking_for, call.db, call.call_id):
-        return False
-    call.fabricated_confirmations += 1
-    logger.warning("the agent confirmed a booking that does not exist; telling it to correct")
-    try:
-        kept = agent.chat_ctx.copy()
-        kept.add_message(role="system", content=CORRECTION_NOTE)
-        await agent.update_chat_ctx(kept)
-    except Exception:
-        logger.exception("the correction note was not added")
-    return True
-
-
-# The reply guard (ADR-017). It sits on the model's output stream, which feeds the voice, the
-# transcript and the tool calls alike, so what it drops is neither said, stored nor run. It does
-# two things and nothing else, each from the 2026-09-28 10:04 call:
-# - A sentence identical to one already said in the same reply is dropped. The model wrote "We
-#   don't need the ZIP for Brooklyn. You want an estimate to install a new AC, right?" twice in
-#   one reply, and the caller heard both.
-# - A book_appointment call made after the agent has asked the caller something they haven't
-#   answered yet is held, never run. The model said "Which do you want?" and moved the booking
-#   in the same reply, then was talked over by the caller's answer. Holding the call leaves the
-#   question standing; the model books on the caller's answer.
-# Last night's reverted filter (ADR-016) cut confirmation sentences and dropped a booking riding
-# beside them. This one never cuts the first sentence, never drops a sentence that isn't an exact
-# repeat, and never drops any other tool call. If it fails, the rest of the reply goes through as
-# the model wrote it.
-SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\n+")
-
-
-def sentence_key(sentence: str) -> str:
-    return " ".join(re.findall(r"[a-z0-9]+", sentence.lower()))
-
-
-def asked_since_caller(items) -> bool:
-    """Whether the agent has already asked a question since the caller last spoke: a
-    book_appointment call now would book before the caller answered it."""
-    for item in reversed(items or []):
-        if getattr(item, "type", None) != "message":
-            continue
-        if item.role == "user":
-            return False
-        if item.role == "assistant" and "?" in (item.text_content or ""):
-            return True
-    return False
-
-
-class ReplyGuard:
-    """One model reply's text, sentence by sentence. The first sentence streams straight through,
-    so the first audio waits on nothing; later ones are held to their end, behind the audio of the
-    first, and dropped if the reply already said them."""
-
-    def __init__(self, asked: bool = False) -> None:
-        self.asked = asked  # the agent has asked something the caller hasn't answered
-        self.said: set[str] = set()
-        self.first = ""  # the first sentence so far, already passed through
-        self.first_done = False
-        self.pending = ""  # a later sentence, held until it ends
-        self.repeats = 0
-
-    def _settle(self, sentence: str, gap: str) -> str:
-        key = sentence_key(sentence)
-        if key and key in self.said:
-            self.repeats += 1
-            return ""
-        if key:
-            self.said.add(key)
-        if sentence.rstrip().endswith("?"):
-            self.asked = True
-        return sentence + gap
-
-    def _close_first(self) -> None:
-        self.first_done = True
-        if key := sentence_key(self.first):
-            self.said.add(key)
-        if self.first.rstrip().endswith("?"):
-            self.asked = True
-
-    def feed(self, text: str) -> str:
-        """The part of `text` to say now."""
-        if not self.first_done:
-            joined = self.first + text
-            end = SENTENCE_BREAK.search(joined)
-            if end is None:
-                self.first = joined
-                return text
-            passed = joined[len(self.first) : end.end()]
-            self.first = joined[: end.start()]
-            self._close_first()
-            return passed + self.feed(joined[end.end() :])
-        self.pending += text
-        out = []
-        while end := SENTENCE_BREAK.search(self.pending):
-            sentence, gap = self.pending[: end.start()], self.pending[end.start() : end.end()]
-            self.pending = self.pending[end.end() :]
-            out.append(self._settle(sentence, gap))
-        return "".join(out)
-
-    def flush(self) -> str:
-        """Whatever is still held, at the end of the reply or before a tool call."""
-        if not self.first_done:
-            if self.first:
-                self._close_first()
-            return ""
-        sentence, self.pending = self.pending, ""
-        return self._settle(sentence, "") if sentence.strip() else sentence
-
-
-async def guard_reply(chunks, call: Call, asked: bool = False):
-    """The model's output with the reply guard applied (see ReplyGuard). `asked` says whether an
-    earlier step of this turn already asked the caller something."""
-    guard = ReplyGuard(asked)
-    broken = False
-    try:
-        async for chunk in chunks:
-            if broken:
-                yield chunk
-                continue
-            try:
-                out = list(_guard_chunk(guard, chunk, call))
-            except Exception:
-                logger.exception(
-                    "the reply guard failed; the rest of this reply goes through as is"
-                )
-                broken = True
-                if guard.pending:
-                    yield guard.pending
-                yield chunk
-                continue
-            for item in out:
-                yield item
-        if not broken and (tail := guard.flush()):
-            yield tail
-    finally:
-        call.repeats_dropped += guard.repeats
-
-
-def _guard_chunk(guard: ReplyGuard, chunk, call: Call):
-    if isinstance(chunk, str):
-        if text := guard.feed(chunk):
-            yield text
-        return
-    if not isinstance(chunk, llm.ChatChunk):  # a FlushSentinel: say what is held, then pass it
-        if tail := guard.flush():
-            yield tail
-        yield chunk
-        return
-    if chunk.delta is None:
-        yield chunk
-        return
-    content = guard.feed(chunk.delta.content) if chunk.delta.content else ""
-    kept = chunk.delta.tool_calls
-    if kept:
-        content += guard.flush()  # the words come before the tool call; judge them first
-        if guard.asked:
-            kept = [tool for tool in kept if tool.name != "book_appointment"]
-            if held := len(chunk.delta.tool_calls) - len(kept):
-                call.bookings_held += held
-                logger.warning(
-                    "held a booking made before the caller answered the agent's question"
-                )
-    delta = chunk.delta.model_copy(update={"content": content or None, "tool_calls": kept})
-    yield chunk.model_copy(update={"delta": delta})
-
-
-def note_urgency(call: Call, turn_ctx: llm.ChatContext, text: str) -> None:
-    """Update the two urgency flags from a caller turn. Every turn counts, the one that fired the
-    safety script included, so a false alarm doesn't lose "the heat's out"."""
-    messages = [i for i in turn_ctx.items if i.type == "message"]
-    last_agent = next(
-        (m.text_content or "" for m in reversed(messages) if m.role == "assistant"), ""
-    )
-    call.system_down = call.system_down or bool(SYSTEM_DOWN.search(text))
-    at_risk = at_risk_in(text, last_agent)
-    # The prompt has the agent ask who is at risk only once heating or cooling has failed, so a yes
-    # to that question means the model judged the system down, even when the caller's words were
-    # too far apart for SYSTEM_DOWN: "the AC. And now it's broken" paged on-call 22 s late, after
-    # the name, the number and "Goodbye" (call 7gjANeDhy3Md). A needless page is cheap.
-    if at_risk and RISK_QUESTION.search(last_agent):
-        call.system_down = True
-    call.at_risk = call.at_risk or at_risk
-    call.heat_down = call.heat_down or bool(HEAT_DOWN.search(text))
-    call.cold = call.cold or bool(COLD.search(text))
-
-
-def urgent_reason(call: Call) -> str | None:
-    """Why this call is urgent by the rules code enforces, or None: no heat or cooling with
-    someone at risk, or no heat in the cold whoever is home."""
-    if call.system_down and call.at_risk:
-        return "no heat or cooling with someone at risk"
-    if call.heat_down and call.cold:
-        return "no heat in cold weather"
-    return None
 
 
 async def hang_up_after(call: Call, handle) -> None:

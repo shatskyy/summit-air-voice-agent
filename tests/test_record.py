@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from livekit.agents import llm
 
+import paging
 import receptionist
 import record
 import store
@@ -52,7 +53,7 @@ def pushes(monkeypatch):
         return True
 
     monkeypatch.setattr(receptionist, "push", fake_push)
-    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    monkeypatch.setattr(paging, "page_on_call", fake_page)
     return sent
 
 
