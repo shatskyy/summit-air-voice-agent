@@ -1,6 +1,6 @@
 # Final pass, September 28
 
-Reviewed from `ef71585` against the original employer assignment. No model, voice or architecture
+Reviewed from `a539514` against the original employer assignment. No model, voice or architecture
 change. The code and regression tests in this commit cover:
 
 - A caller saying "yes, one more thing" after "anything else?" cannot authorize a hang-up.
@@ -21,7 +21,7 @@ The baseline passed 468 offline tests. The final behavior passes 485 offline tes
 model tests excluded. Locked installation, Ruff lint and formatting passed in a fresh checkout without secrets on Python
 3.11, as did all 485 tests. The local Python 3.14 run also passed all 485.
 No paid simulations or phone calls were run for this pass. The September 27 result of 82/82 is
-historical evidence on `1e01941`, not a result on this revision. Earlier phone evidence remains in
+historical evidence on `c279b81`, not a result on this revision. Earlier phone evidence remains in
 [scenarios.md](scenarios.md).
 
 ## Remaining limits

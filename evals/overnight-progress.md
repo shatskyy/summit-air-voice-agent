@@ -1,11 +1,11 @@
 # Overnight pass, 2026-09-27 into 2026-09-28
 
-Branch `overnight` off `main` at `15fb596` (Stage 4). The line is dark (booted out at 22:03 ET by
+Branch `overnight` off `main` at `fd4e282` (Stage 4). The line is dark (booted out at 22:03 ET by
 Stage 4) and stays dark until the end. Every change below traces to one of Rainey's five required
 behaviors (answer and identify the issue; residential or commercial; name, address, availability;
 routine versus urgent; book or confirm next steps) or the four grading criteria (does it work;
 the unexpected; conversation quality; judgment on what to build). Baseline: the Stage 4 final eval,
-57/57 at `6cd8ef5`, `evals/results/2026-09-27-2149-6cd8ef5.json`.
+57/57 at `c268677`, `evals/results/2026-09-27-2149-6cd8ef5.json`.
 
 Ledger at start: $1.7890 of $3.00. OpenAI balance ~$3.16. Reserve for the final eval: ~$0.30.
 
@@ -13,7 +13,7 @@ Ledger at start: $1.7890 of $3.00. OpenAI balance ~$3.16. Reserve for the final 
 
 Each entry: what was tried, the result, the commit.
 
-### 1. The known defect: two bookings in one turn (`6c9f4e5`, corrected in `a8e8380`)
+### 1. The known defect: two bookings in one turn (`546897e`, corrected in `6b7cf37`)
 
 - Reproduced offline first: two `book_appointment` calls run with `asyncio.gather` the way LiveKit
   runs a turn's tool calls, new window then old. Both returned "Moved" and the store ended on the
@@ -24,7 +24,7 @@ Each entry: what was tried, the result, the commit.
   per caller turn and tells the model what stands. A refused booking is not a write.
 - First attempt put the flag on the model itself; OpenAI 400s a request without tools, which is
   what the simulated caller sends, so the first sim run crashed 5/5 (`2026-09-27-2220/2221`
-  results, $0.006). Corrected in `a8e8380`.
+  results, $0.006). Corrected in `6b7cf37`.
 - Sims after the fix: change_window 3/3; two_issues, address_change, commercial, elderly_no_heat
   (both clocks), no_show demo all 1/1; no_show night 0/1 with an empty "missed visit" note, the
   scenario that ran 2/4 and 3/4 before Phase 2 (variance, not the fix; the transcript shows the
@@ -32,9 +32,9 @@ Each entry: what was tried, the result, the commit.
 - Fresh-context review (offline only): found the flag-without-tools crash independently, a race
   (the booking turn was read after the write; the next turn can complete mid-write) and that
   `disallow_interruptions()` on the confirmation makes LiveKit drop a caller turn said over it
-  without running the hazard hook. All three fixed in `5ef7a37`.
+  without running the hazard hook. All three fixed in `bde102e`.
 
-### 2. Scenarios from the real calls and from speech (`9e92cee`)
+### 2. Scenarios from the real calls and from speech (`ee62913`)
 
 Twelve new scenarios, pass criteria written first (see the commit). Discovery run on the Stage 4
 agent, 1 run each, 17 conversations, $0.114: 13/17.
@@ -45,16 +45,16 @@ agent, 1 run each, 17 conversations, $0.114: 13/17.
   right; the check flagged the quoted word. Check corrected.
 - new_install and member passed their stricter no-risk-question check.
 
-### 3. Fix 2 (`5ef7a37`): the ZIP, the borough, the denial guard, the age, the correction
+### 3. Fix 2 (`bde102e`): the ZIP, the borough, the denial guard, the age, the correction
 
 See the commit message. Verification runs below.
 
-Verification of fix 2 (`5ef7a37`), 3 runs each, $0.092: cold_no_risk_night 3/3, misheard_opening
+Verification of fix 2 (`bde102e`), 3 runs each, $0.092: cold_no_risk_night 3/3, misheard_opening
 3/3, no_zip 3/3, split_address 0/3 (the model checked "48 Bergen Street, Brooklyn" with the ZIP blank
 and never asked for it). Then 1 run on each scenario the ZIP check touches, $0.066: 7/8, the miss
 being relative_address (the sister's number not on the booking).
 
-### 4. Fix 2b (`7ca1456`, `875402d`, `c106fd6`)
+### 4. Fix 2b (`6afb9e3`, `5b60bb0`, `37eb1f0`)
 
 - A blank ZIP is accepted only after an agent turn asked for the ZIP (`zip_asked`).
 - The conversation-quality prompt pass: "don't ask" leads the home-or-business rule, the three
@@ -65,9 +65,9 @@ being relative_address (the sister's number not on the booking).
 - "Your sister" is not a name (the model booked under it and asked nobody's name).
 - Results files carry seconds in the stamp; two same-minute runs had overwritten each other.
 - split_address 3/3, relative_address 2/3 ($0.045). relative_address at the Stage 4 commit
-  (`e27c29b`, run from a worktree, $0.019): 2/3 with the same miss, so that is baseline variance.
+  (`0ca16a5`, run from a worktree, $0.019): 2/3 with the same miss, so that is baseline variance.
 
-### 5. Fix 3 (`345bd20`): the second fresh-context review
+### 5. Fix 3 (`d4a4df0`): the second fresh-context review
 
 The review found, offline: "Address is 72 Bergen Street" set at_risk (is/am/are counted as a
 person); "No, she just had a stroke" counted as a denial and blocked the model's urgent task; a
@@ -77,7 +77,7 @@ aren't; "Brooklyn, NY" and "Williamsburg" not covered. All fixed with the review
 tests. Also: booking waits until the callback number has come up (the relative_address miss).
 Sims, 1 run each on demo, $0.063 + $0.012: 10/11. The 11th is below.
 
-### 6. Fix 4 (`b146ca5`): a fabricated confirmation, cut before the voice
+### 6. Fix 4 (`8d1d796`): a fabricated confirmation, cut before the voice
 
 The 11th: cold_no_risk_night forced onto the demo clock. The denial guard worked (the model tried
 to page on-call for a healthy adult; refused; the call went routine). Then, offering the windows,
@@ -90,7 +90,7 @@ with the rest of that reply, and tells the model it was never spoken. Six offlin
 real streaming path is checked by the sims below and the final eval. The prompt-pass line
 "unless a tool said so on this call" was a loophole and now reads "in this same turn".
 
-### 7. Fix 5 (`1e01941`): the third review, and the filter reverted
+### 7. Fix 5 (`c279b81`): the third review, and the filter reverted
 
 The third fresh-context review, on the filter, found offline that it cut 8 of 8 honest
 pre-booking lines it tried ("You're all set. Our target is to call you back by 10 AM" became dead
@@ -111,7 +111,7 @@ words rather than a confirmation spoken by code from the tool result; why one to
 rather than a span near the question; what reconciles the store with what the caller heard when
 the confirmation is talked over; the worst-case silence on a five-step turn.
 
-### 8. The final eval (`1e01941`, `evals/results/2026-09-27-225902-1e01941-rescored.json`)
+### 8. The final eval (`c279b81`, `evals/results/2026-09-27-225902-1e01941-rescored.json`)
 
 82 conversations (46 scenarios; 2 runs on safety and adversarial, 1 on core; both clocks where time
 matters), $0.520: **76/82 as graded, 82/82 after re-grading with two corrected checks, no model

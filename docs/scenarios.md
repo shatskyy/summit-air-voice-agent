@@ -81,7 +81,7 @@ in `dev` mode, Sunday evening with the office closed. Each defect here became a 
 | 18:36 | `RM_99KwosnzKQvD` | Stray word | Speech-to-text heard "Stop." over the greeting and the model ended the call | Fail (led to end_call waiting for "anything else?" or a goodbye) |
 | 18:37 | `RM_kWhhCAm2Mu2d` | Spanish | "Hola." got a half-Spanish reply, callback task 2010, and "I have arranged for someone to call you back who can speak Spanish", a promise nobody can keep | Callback: pass. Spanish-speaker promise: fail (led to the fixed Spanish line) |
 
-### Gate 1 (Stage 1, `519ea65`, 2026-09-27 19:43)
+### Gate 1 (Stage 1, `7734458`, 2026-09-27 19:43)
 
 The worker under launchd `start` with the hosted turn detector pinned.
 
@@ -89,7 +89,7 @@ The worker under launchd `start` with the hosted turn detector pinned.
 |---|---|---|---|---|
 | 19:43 | `RM_mAnQRRApSbuw` | Routine booking at 48 Bergen Street, Brooklyn, with a warm process | Greeting 1.6 s after dispatch, hosted `turn-detector-v1` confirmed in the log, median reply 1.28 s (max 2.62 s), booking 1004 matches what was said. Defects: a plain "Hello?" got "What problem are you having with your heating or cooling?"; the number was read back as "+1650..." digits; two agent questions were cut off by a short "Alright." and "You said that" | Pass (graded by David) |
 
-### Gate 2 (Stage 2, `ebe1ae2`, 2026-09-27 20:39 to 20:42)
+### Gate 2 (Stage 2, `eea97b9`, 2026-09-27 20:39 to 20:42)
 
 | Time | Room | Requirement | What happened | Result |
 |---|---|---|---|---|
@@ -104,7 +104,7 @@ All five graded by David: passed as is.
 ### Stage 2 calls meant for Gate 3 (2026-09-27, 21:28 to 21:36)
 
 These were meant as the Gate 3 calls, but Stage 3 wasn't deployed yet, so they ran on Stage 2
-(`ebe1ae2`) and are graded as Stage 2 calls. None of them tests a Stage 3 behavior.
+(`eea97b9`) and are graded as Stage 2 calls. None of them tests a Stage 3 behavior.
 
 | Time | Room | Intended test | What happened on Stage 2 | Result |
 |---|---|---|---|---|
@@ -115,7 +115,7 @@ These were meant as the Gate 3 calls, but Stage 3 wasn't deployed yet, so they r
 | 21:33 | `RM_cGzMnusBBsGv` | "Hola, ¿habla español?" | "Hola. I'm", then the call ended before any reply | Nothing to grade |
 | 21:33 | `RM_abBBmR7xmiA9` | "Hello?", then a new install | Opened with "I want a new HVAC" rather than "Hello?", so the neutral opening wasn't tested. A free estimate visit was booked (1005, "replacement estimate") with no fee quoted, and the reference was said as "one oh oh five". Defects: "Who should the technician ask for when they arrive? And can I have your name?", a business question bundled with a second one on a home call; the at-risk question came last, on an estimate; the caller said the number was read wrong | Estimate booking: pass. Wording: fail |
 
-### Gate 3 (Stage 3, `63af8a6`): waived
+### Gate 3 (Stage 3, `2147b89`): waived
 
 Waived by David on 2026-09-27; the six Gate 3 calls were not made. So these are proven only in
 simulation and offline tests, and no phone call has exercised them: the abandoned-call callback, the
@@ -140,16 +140,16 @@ found. Twelve scenarios were added (`misheard_opening`, `no_zip`, `split_address
 
 | Run | Commit | What | Result |
 |---|---|---|---|
-| Discovery, 1 run each | `9e92cee` (Stage 4 behavior) | The twelve new scenarios plus new_install and member with a stricter check | 13/17: the model filed urgent the turn after "no, it's just me"; no booking without a ZIP; "48 Bergen" booked without "Street"; one bad check |
-| Fix 1 | `a8e8380` | change_window x3, and the booking-path scenarios | 3/3, then 6/7 (no_show night, the baseline-variance scenario, omitted its note) |
-| Fix 2 | `5ef7a37` | The four discovery failures x3, and every scenario the ZIP check touches | cold_no_risk_night 3/3, misheard_opening 3/3, no_zip 3/3, split_address 0/3 (the model skipped the ZIP once it had the borough); 7/8 on the rest, relative_address missing the sister's number |
-| Fix 2b | `c106fd6` | split_address and relative_address x3, then a 16-scenario style subset after the prompt pass | 3/3 and 2/3; 16/16, with home-or-business re-asks 0.27 to 0 a conversation, bundled questions 0.34 to 0.19, words a turn 16.2 to 14.6 |
-| Comparison | `e27c29b` (Stage 4, worktree) | relative_address x3 | 2/3 with the same miss, so the miss is baseline variance |
-| Fix 3 | `345bd20` | The scenarios the review's fixes touch, 1 run each | 10/11; the 11th was the model confirming a booking it never made, with a made-up reference |
-| Fix 4, reverted in fix 5 | `b146ca5`, `1e01941` | A sentence filter on the reply, then, after the third review showed it silencing honest lines, a post-hoc correction note instead | 4/4 and 3/3 on the real streaming path |
-| Final | `1e01941` | The full suite: 46 scenarios, 2 runs on safety and adversarial, 1 on core, both clocks where time matters, against the Stage 4 final | 82/82 after re-grading six conversations the old checks had misread (the agent said "our target is 9:15 PM" without "by"; "**Go**t it, rooftop AC" matched the roof pattern); 76/82 before the re-grade, $0.52 |
+| Discovery, 1 run each | `ee62913` (Stage 4 behavior) | The twelve new scenarios plus new_install and member with a stricter check | 13/17: the model filed urgent the turn after "no, it's just me"; no booking without a ZIP; "48 Bergen" booked without "Street"; one bad check |
+| Fix 1 | `6b7cf37` | change_window x3, and the booking-path scenarios | 3/3, then 6/7 (no_show night, the baseline-variance scenario, omitted its note) |
+| Fix 2 | `bde102e` | The four discovery failures x3, and every scenario the ZIP check touches | cold_no_risk_night 3/3, misheard_opening 3/3, no_zip 3/3, split_address 0/3 (the model skipped the ZIP once it had the borough); 7/8 on the rest, relative_address missing the sister's number |
+| Fix 2b | `37eb1f0` | split_address and relative_address x3, then a 16-scenario style subset after the prompt pass | 3/3 and 2/3; 16/16, with home-or-business re-asks 0.27 to 0 a conversation, bundled questions 0.34 to 0.19, words a turn 16.2 to 14.6 |
+| Comparison | `0ca16a5` (Stage 4, worktree) | relative_address x3 | 2/3 with the same miss, so the miss is baseline variance |
+| Fix 3 | `d4a4df0` | The scenarios the review's fixes touch, 1 run each | 10/11; the 11th was the model confirming a booking it never made, with a made-up reference |
+| Fix 4, reverted in fix 5 | `8d1d796`, `c279b81` | A sentence filter on the reply, then, after the third review showed it silencing honest lines, a post-hoc correction note instead | 4/4 and 3/3 on the real streaming path |
+| Final | `c279b81` | The full suite: 46 scenarios, 2 runs on safety and adversarial, 1 on core, both clocks where time matters, against the Stage 4 final | 82/82 after re-grading six conversations the old checks had misread (the agent said "our target is 9:15 PM" without "by"; "**Go**t it, rooftop AC" matched the roof pattern); 76/82 before the re-grade, $0.52 |
 
-### Morning calls (2026-09-28 10:01 to 10:08, `736e913`)
+### Morning calls (2026-09-28 10:01 to 10:08, `00232dd`)
 
 David's three calls on the overnight build, reviewed from `scripts/calls.py` and the worker log.
 All three booked correctly; the defects are what the morning commits fix.
@@ -186,7 +186,7 @@ in the morning, and 3 of 5 twice that night on `26935d8`. Its two night failures
 `check_availability` when asked for tomorrow morning, and it didn't file the urgent task for an
 80-year-old without heat. It only answers if Gemma fails mid-call.
 
-**Final run 2026-09-27 22:00, on `6cd8ef5` (the Stage 3 behavior), both models, real clock
+**Final run 2026-09-27 22:00, on `c268677` (the Stage 3 behavior), both models, real clock
 (Sunday night, office closed):** 6 of 10. GPT-4.1 passed 4 of 5; GPT-4.1 mini 2 of 5. Both models
 now run on OpenAI directly, GPT-4.1 mini leading. The failures, reported and not fixed under the
 behavior freeze:
