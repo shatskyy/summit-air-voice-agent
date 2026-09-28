@@ -223,7 +223,9 @@ def render_instructions(at: datetime, caller_number: str | None) -> str:
         time=speak_clock(at.strftime("%H:%M")),
         office_status=("The office is open. " if office_open(at) else "The office is closed. ")
         + hours,
-        caller_number=caller_number or "unknown, so ask for a callback number",
+        caller_number=speak_phone(caller_number)
+        if caller_number
+        else "unknown, so ask for a callback number",
         number_step=(
             "confirm the number they are calling from is the best one to reach them rather than "
             "asking them to recite it."
@@ -235,6 +237,26 @@ def render_instructions(at: datetime, caller_number: str | None) -> str:
         after_hours_fee=CONFIG["pricing"]["after_hours_fee"],
         urgent_minutes=CONFIG["callback_target_minutes"]["urgent"],
     )
+
+
+def speak_phone(number: str) -> str:
+    """A US number as it is said: "+16505550142" becomes "650-555-0142". On the Gate 1 call the
+    model read the caller ID back as "plus one six five oh...". Anything else is left as it came."""
+    digits = re.sub(r"\D", "", number)
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if len(digits) != 10 or number.strip().startswith("+") and not number.strip().startswith("+1"):
+        return number
+    return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
+
+
+DIGIT_WORDS = ["oh", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+
+
+def speak_digits(ref: int) -> str:
+    """A reference number digit by digit, the way dispatchers say it: 1003 is "one oh oh three".
+    The voice reads the bare digits as "one thousand three"."""
+    return " ".join(DIGIT_WORDS[int(d)] for d in str(ref))
 
 
 def speak_clock(hhmm: str) -> str:
@@ -816,7 +838,8 @@ class SummitAirAgent(Agent):
                 f"That window just filled up.{kept} Call check_availability again and offer "
                 "another."
             )
-        ref, window = booking["ref"], speak_window(booking)
+        window = speak_window(booking)
+        ref = f'{booking["ref"]} (say "{speak_digits(booking["ref"])}")'
         if booking["change"] == "moved":
             return (
                 f"Moved from {speak_window(booking['previous'])} to {window}, reference {ref}, at "

@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 0.420084,
+  "total": 0.446354,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -71,6 +71,16 @@
       "estimate": 0.078,
       "cost": 0.063735,
       "results": "evals/results/2026-09-27-2018-f6b6003-dirty.json"
+    },
+    {
+      "at": "2026-09-27T20:21:13-04:00",
+      "commit": "3510bc2",
+      "kind": "eval",
+      "label": "A8 speakable numbers",
+      "conversations": 4,
+      "estimate": 0.0215,
+      "cost": 0.02627,
+      "results": "evals/results/2026-09-27-2020-3510bc2-dirty.json"
     }
   ]
 }

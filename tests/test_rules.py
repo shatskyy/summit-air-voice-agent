@@ -818,7 +818,7 @@ def test_the_prompt_renders_every_placeholder():
     prompt = render_instructions(datetime(2026, 9, 29, 13, 5, tzinfo=TZ), "+19145550100")
     assert "{" not in prompt and "}" not in prompt
     assert "Tuesday, September 29, 2026" in prompt and "1:05 PM" in prompt
-    assert "The office is open" in prompt and "+19145550100" in prompt
+    assert "The office is open" in prompt and "914-555-0100" in prompt
 
 
 def test_evenings_and_weekends_are_after_hours():
@@ -1436,3 +1436,33 @@ async def test_urgent_detection_resumes_after_a_false_alarm(db, monkeypatch):
     await turn(agent2, "No, just dusty.")
     await turn(agent2, "My mother is 80 and she lives here.")
     assert line2.userdata.urgent_task is not None
+
+
+# Speakable numbers (A8)
+
+
+@pytest.mark.parametrize(
+    ("number", "spoken"),
+    [
+        ("+16505550142", "650-555-0142"),
+        ("+19145550100", "914-555-0100"),
+        ("9145550100", "914-555-0100"),
+        ("+442079460000", "+442079460000"),  # not a US number: left as it came
+    ],
+)
+def test_the_caller_number_is_written_the_way_it_is_said(number, spoken):
+    assert receptionist.speak_phone(number) == spoken
+    assert f"The caller's phone number is {spoken}." in render_instructions(MONDAY_9AM, number)
+
+
+@pytest.mark.parametrize(("ref", "spoken"), [(1003, "one oh oh three"), (1027, "one oh two seven")])
+def test_a_reference_is_spelled_for_speech(ref, spoken):
+    assert receptionist.speak_digits(ref) == spoken
+
+
+async def test_the_booking_result_spells_the_reference(db):
+    agent, ctx = await checked_call(db)
+    booked = await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    assert "1001" in booked and '"one oh oh one"' in booked
+    moved = await agent.book_appointment(ctx, "2026-09-29-1200", *BOOK_ARGS)
+    assert '"one oh oh one"' in moved
