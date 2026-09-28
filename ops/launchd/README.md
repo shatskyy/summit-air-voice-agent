@@ -1,8 +1,8 @@
 # launchd jobs
 
 The phone line runs on one Mac under launchd. These are the copies of the three LaunchAgents; the
-live ones are in `~/Library/LaunchAgents/`. The paths inside are absolute to this checkout, so edit
-`WorkingDirectory` and the log paths if the repo lives somewhere else.
+live ones are in `~/Library/LaunchAgents/`. launchd needs absolute paths, so the copies say
+`/path/to/summit-air-voice-agent` and the load step below swaps in the checkout's real path.
 
 | Job | What it runs | When |
 |---|---|---|
@@ -13,7 +13,8 @@ live ones are in `~/Library/LaunchAgents/`. The paths inside are absolute to thi
 Load one (and start it now):
 
 ```sh
-cp ops/launchd/com.shatsky.summit-air-watchdog.plist ~/Library/LaunchAgents/
+sed "s|/path/to/summit-air-voice-agent|$PWD|g" ops/launchd/com.shatsky.summit-air-watchdog.plist \
+  > ~/Library/LaunchAgents/com.shatsky.summit-air-watchdog.plist   # run from the repo root
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.shatsky.summit-air-watchdog.plist
 launchctl print gui/$(id -u)/com.shatsky.summit-air-watchdog | grep -E "state|last exit"
 ```
