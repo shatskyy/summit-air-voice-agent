@@ -1256,10 +1256,72 @@ async def test_a_street_without_a_house_number_is_sent_back(db, street):
         await SummitAirAgent("").check_address(ctx, street, "Brooklyn", "11201")
 
 
-def test_the_booking_confirmation_uses_the_callers_first_name():
-    assert (
-        "[first name]" in receptionist.PROMPT.split("Only after book_appointment succeeds")[1][:80]
-    )
+class Speaking(FakeContext):
+    """A FakeContext whose session records what the tools say to the caller."""
+
+    def __init__(self, call):
+        from types import SimpleNamespace
+
+        super().__init__(call)
+        self.said = []
+        self.session = SimpleNamespace(say=self.said.append)
+
+
+async def test_the_booking_tool_tells_the_caller_the_confirmation_itself(db):
+    """ADR-019: on the 1:06 PM call the model took a second round to word the confirmation, and
+    the booking turn took 5.9 s. Code now says it, from the row just written."""
+    agent = SummitAirAgent("")
+    ctx = Speaking(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    await agent.check_address(ctx, "14 Maple Street", "Brooklyn", "11225")
+    await agent.check_availability(ctx, "2026-09-29", "morning")
+    result = await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    assert ctx.said == [
+        (
+            "Maria, you're booked for Tuesday, September 29, between 8 AM and noon at 14 Maple "
+            "Street, Brooklyn. Your reference number is one oh oh one. Is there anything else I "
+            "can help with?"
+        )
+    ]
+    assert ctx.userdata.confirmation_spoken
+    assert "add nothing this turn" in result
+    ctx.userdata.turn += 1
+    await agent.check_availability(ctx, "2026-09-29", "afternoon")
+    await agent.book_appointment(ctx, "2026-09-29-1200", *BOOK_ARGS)
+    assert ctx.said[1].startswith("Done, you're now booked for Tuesday, September 29, between noon")
+    assert "stays one oh oh one" in ctx.said[1]
+
+
+async def test_a_refused_booking_says_nothing(db):
+    ctx = Speaking(Call(call_id="call-a", db=db))
+    with pytest.raises(ToolError):
+        await SummitAirAgent("").book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    assert ctx.said == [] and not ctx.userdata.confirmation_spoken
+
+
+def test_the_spoken_confirmation_lets_the_caller_close_the_call():
+    booking = {"ref": 1001, "change": "booked", "day": "2026-09-29", "start": "08:00",
+               "end": "12:00"}  # fmt: skip
+    line = receptionist.confirmation_line(booking, "David Shatsky", "92 2nd Avenue, Manhattan")
+    assert line.startswith("David, you're booked")
+    items = [said("assistant", line), said("user", "No, that's all.")]
+    assert receptionist.closing_confirmed(items)
+
+
+def test_the_model_reply_is_cancelled_only_after_a_spoken_confirmation():
+    class Executed:
+        cancelled = False
+
+        def cancel_tool_reply(self):
+            self.cancelled = True
+
+    call = Call(call_id="call-a", db="")
+    refused = Executed()
+    receptionist.skip_reply_after_confirmation(call, refused)
+    assert not refused.cancelled
+    call.confirmation_spoken = True
+    booked = Executed()
+    receptionist.skip_reply_after_confirmation(call, booked)
+    assert booked.cancelled and not call.confirmation_spoken
 
 
 # Gas: negation, a held page, a closed emergency (A4)
@@ -1502,6 +1564,53 @@ async def test_the_booking_result_spells_the_reference(db):
     ctx.userdata.turn += 1  # the caller's next turn
     moved = await agent.book_appointment(ctx, "2026-09-29-1200", *BOOK_ARGS)
     assert '"one oh oh one"' in moved
+
+
+class BookingLLM(llm.LLM):
+    """A model that books on its first request and would say "SECOND ROUND" on any later one."""
+
+    def __init__(self):
+        super().__init__()
+        self.requests = 0
+
+    def chat(self, *, chat_ctx, tools=None, conn_options=None, **kwargs):
+        self.requests += 1
+        return BookingStream(self, chat_ctx=chat_ctx, tools=tools or [], conn_options=conn_options)
+
+
+class BookingStream(llm.LLMStream):
+    async def _run(self):
+        import json
+
+        if self._llm.requests == 1:
+            args = dict(zip(["customer_type", "name", "callback_number", "address", "zip_code",
+                             "issue"], BOOK_ARGS)) | {"slot_id": "2026-09-29-0800"}  # fmt: skip
+            delta = llm.ChoiceDelta(
+                role="assistant",
+                tool_calls=[
+                    llm.FunctionToolCall(
+                        name="book_appointment", arguments=json.dumps(args), call_id="book-1"
+                    )
+                ],
+            )
+        else:
+            delta = llm.ChoiceDelta(role="assistant", content="SECOND ROUND")
+        self._event_ch.send_nowait(llm.ChatChunk(id=f"r{self._llm.requests}", delta=delta))
+
+
+async def test_a_session_speaks_the_booking_once_with_one_model_request(db):
+    """End to end in a text session: the tool's line is said, and the model is not asked again."""
+    agent, ctx = await checked_call(db)
+    call = ctx.userdata
+    model = BookingLLM()
+    async with AgentSession(llm=model, userdata=call) as session:
+        await session.start(agent)
+        await session.run(user_input="Morning works, and this number is fine.")
+        said = [i.text_content for i in session.history.items
+                if i.type == "message" and i.role == "assistant"]  # fmt: skip
+    assert model.requests == 1
+    assert said[-1].startswith("Maria, you're booked for Tuesday, September 29")
+    assert not any("SECOND ROUND" in s for s in said)
 
 
 # The failure ladder (A5)

@@ -257,6 +257,9 @@ class Call:
     pending_windows: str = ""  # windows found with the address, for the note on the caller's yes
     repeats_dropped: int = 0  # sentences the reply guard kept from being said twice in one reply
     bookings_held: int = 0  # book_appointment calls held because the caller hadn't answered yet
+    # book_appointment said the confirmation itself (ADR-019), so the model's reply to the tool
+    # result is cancelled: one model round instead of two on the booking turn.
+    confirmation_spoken: bool = False
 
 
 def now() -> datetime:
@@ -368,6 +371,47 @@ def speak_due(due: datetime, at: datetime) -> str:
 def speak_window(slot: dict) -> str:
     day = date.fromisoformat(slot["day"])
     return f"{day:%A}, {day:%B} {day.day}, between {speak_clock(slot['start'])} and {speak_clock(slot['end'])}"
+
+
+def confirmation_line(booking: dict, name: str, address: str) -> str:
+    """What the caller hears once a booking is written, ending in the closing question that
+    closing_confirmed looks for."""
+    window = speak_window(booking)
+    digits = speak_digits(booking["ref"])
+    if booking["change"] == "moved":
+        return (
+            f"Done, you're now booked for {window}. Your reference number stays {digits}. "
+            "Is there anything else I can help with?"
+        )
+    if booking["change"] == "updated":
+        return (
+            f"I've updated your visit on {window}. Same reference, {digits}. "
+            "Is there anything else I can help with?"
+        )
+    first = name.split()[0].strip(",.") if name.split() else ""
+    opening = f"{first}, you're" if first else "You're"
+    return (
+        f"{opening} booked for {window} at {address}. Your reference number is {digits}. "
+        "Is there anything else I can help with?"
+    )
+
+
+def tell_caller(context, line: str) -> None:
+    """Queue a fixed line from inside a tool. It stays interruptible: LiveKit drops a caller turn
+    that completes while the agent can't be interrupted, so "hold on, I smell gas" said over it
+    would be lost. A context with no session (the rule tests) has no one to tell."""
+    session = getattr(context, "session", None)
+    if session is not None and hasattr(session, "say"):
+        session.say(line)
+
+
+def skip_reply_after_confirmation(call: Call, event) -> None:
+    """After book_appointment has spoken the confirmation, cancel the model's reply to the tool
+    result, which would only say it again. A refused booking (ToolError) never sets the flag, so
+    the model still answers a refusal."""
+    if call.confirmation_spoken:
+        call.confirmation_spoken = False
+        event.cancel_tool_reply()
 
 
 # What a model writes when it never asked. A real name is anything else with a letter in it.
@@ -916,6 +960,10 @@ class SummitAirAgent(Agent):
         )
 
     async def on_enter(self) -> None:
+        call: Call = self.session.userdata
+        self.session.on(
+            "function_tools_executed", lambda event: skip_reply_after_confirmation(call, event)
+        )
         self.session.say(GREETING)
 
     async def llm_node(self, chat_ctx: llm.ChatContext, tools, model_settings):
@@ -1355,21 +1403,21 @@ class SummitAirAgent(Agent):
                 )
         window = speak_window(booking)
         ref = f'{booking["ref"]} (say "{speak_digits(booking["ref"])}")'
+        # The caller hears the confirmation from code, built from the row just written (ADR-019):
+        # the model's second round to word it took the 1:06 PM booking turn to 5.9 s.
+        tell_caller(context, confirmation_line(booking, name, address))
+        call.confirmation_spoken = True
+        told = "The caller has been told this, with the reference; add nothing this turn."
         if booking["change"] == "moved":
             return (
                 f"Moved from {speak_window(booking['previous'])} to {window}, reference {ref}, at "
-                f"{address}. Tell the caller the new day and window, and that the reference is the "
-                "same."
+                f"{address}. {told}"
             )
         if booking["change"] == "updated":
             return (
-                f"Updated. Reference {ref}: still {window} at {address}, now for: {issue}. Tell "
-                "the caller what changed; the day, window and reference are the same."
+                f"Updated. Reference {ref}: still {window} at {address}, now for: {issue}. {told}"
             )
-        return (
-            f"Booked. Reference {ref}: {window} at {address}. Tell the caller the day, window, "
-            "address and the reference as spelled."
-        )
+        return f"Booked. Reference {ref}: {window} at {address}. {told}"
 
     @function_tool
     async def create_dispatch_task(

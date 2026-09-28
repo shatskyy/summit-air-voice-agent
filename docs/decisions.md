@@ -537,3 +537,34 @@ blowing cold, a water heater and no heat at 65 degrees stay routine. The `cold_n
 scenario now expects one urgent task.
 
 **Would reverse it.** On-call load from healthy callers that Summit Air says it doesn't want.
+
+## ADR-019: The booking tool says the confirmation itself
+
+**Status:** Accepted 2026-09-28. Offline tests only; not yet heard on a phone call.
+
+**Decision.** When `book_appointment` writes a booking, code builds the confirmation from the
+stored row (`confirmation_line`: first name, day, window, address, the reference digit by digit,
+then "Is there anything else I can help with?") and says it with `session.say`. The tool result
+tells the model the caller has already heard it, and a `function_tools_executed` handler cancels
+the model's reply to that result. A refused booking (`ToolError`) sets nothing, so the model still
+answers a refusal. The line stays interruptible, for the reason in ADR-003: LiveKit
+drops a caller turn said over an uninterruptible line.
+
+**Why.** Latency and truth. On the 1:06 PM call on September 28 the booking turn took 5.9 s, against a
+median of 3.0 s, because the model made one request to call the tool and a second to word the
+confirmation. Cancelling the second request removes about 1.5 to 2 s from that turn. It also
+means "you're booked" can only be said after the write returns, which ADR-016 could only catch
+after the fact.
+
+**Cost.** The confirmation wording is fixed rather than varied, and it can't fold in a
+caller-specific remark (a parking note, a second issue) in the same breath; the model can still
+add that on the caller's next turn. ADR-016's check stays as the backstop for a model that says
+"you're booked" without calling the tool.
+
+**Evidence.** A text session with a scripted model that books on its first request and would say
+"SECOND ROUND" on a later one: the model gets one request, and the last thing said is the
+confirmation. Rule tests cover the booked, moved and updated lines, a refused booking saying
+nothing, and "No, that's all" after the line closing the call.
+
+**Would reverse it.** A caller talking over the confirmation and the model then repeating it, or
+callers finding the fixed wording stiff.
