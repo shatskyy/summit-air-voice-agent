@@ -2181,7 +2181,7 @@ def test_a_different_zip_is_always_a_second_address():
 
 
 async def test_a_corrected_house_number_after_booking_moves_the_same_booking(db):
-    """Paul's line: "wait, did you say fourteen? It's forty." The row must say 40, not a callback
+    """A caller's correction: "wait, did you say fourteen? It's forty." The row must say 40, not a callback
     while the technician drives to 14."""
     agent, ctx = await checked_call(db)
     ctx.userdata.turn = 1

@@ -33,7 +33,8 @@ in [scenarios.md](scenarios.md); simulated-call results are in [the eval report]
   as if it were a business (call `kaAJD7TK4HWb`); the prompt now forbids it, and the eval counts
   such bundles rather than failing on them.
 - **Recognition.** Street names are misheard ("Bergen" as "Burger"), and nothing checks a street
-  against a street list or a ZIP against a town. A ZIP the caller never said is refused, but a
+  against a street list or a ZIP against a town. A house number the transcript spells out in words
+  ("ninety two second Avenue") has no digits for the street check, so the agent asks for it again. A ZIP the caller never said is refused, but a
   misheard one they did say is not.
 - **Pushes carry no caller details**: the outcome, a first name, the ZIP and a lookup, never the
   number, the street or the caller's words. `scripts/calls.py` has the rest. `DISPATCH_NTFY_TOPIC` falls back to `NTFY_TOPIC`, so without it dispatch summaries
