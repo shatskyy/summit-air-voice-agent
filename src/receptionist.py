@@ -142,6 +142,35 @@ SYSTEM_DOWN = re.compile(
     r"|\bfreezing\b|\bcold in (?:here|the (?:house|apartment|home))\b|\btoo hot\b|\bsweltering\b",
     re.IGNORECASE,
 )
+# No heat in the cold is urgent on its own, whoever is home: Rainey's brief lists "no heat in
+# winter" as urgent beside "no AC with a medical condition or elderly resident" (David, 2026-09-28,
+# after the 10:08 call ran routine for "20 degrees out, just me" and paged only on "as soon as
+# possible"). Cooling still needs someone at risk. The heat half of SYSTEM_DOWN, with no cooling
+# words and no water heater (plumbing, which Summit Air doesn't do).
+HEAT_DOWN = re.compile(
+    r"\bno (?:heat|heating|hot air)\b|\bno heat\b"
+    r"|\b(?:heat|heating|furnace|boiler|(?<!water )heater|heat pump|radiators?)"
+    + _BETWEEN
+    + r"(?:out|off|not working|isn'?t working|stopped|won'?t|broke|broken|died|dead|not heating"
+    r"|isn'?t heating|not coming on|gone)\b",
+    re.IGNORECASE,
+)
+# The caller saying it is cold, in the home or outside. "Freezing up" (an iced coil) and "blowing
+# cold" (an AC) don't count, and COLD only matters beside HEAT_DOWN.
+_COLD_NUMBER = (
+    r"(?:\d|[1-3]\d|4[0-5]|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve"
+    r"|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty"
+    r"|(?:twenty|thirty)[\s-]\w+|forty(?:[\s-](?:one|two|three|four|five))?)"
+)
+COLD = re.compile(
+    r"\b(?:it'?s|it is|getting|so|really|very|absolutely|pretty|way too|too)\W+(?:\w+\W+)?"
+    r"(?:freezing|cold|frigid|icy)\b(?!\W+up\b)"
+    r"|\bfreezing\W+(?:in here|inside|outside|out|cold)\b"
+    r"|\bcold (?:in (?:here|the (?:house|apartment|home|place))|inside|outside|out there)\b"
+    r"|\bcold snap\b|\bbelow (?:zero|freezing)\b|\b\d+\W*below\b|\bsnow(?:ing|storm)?\b|\bwinter\b"
+    r"|\b" + _COLD_NUMBER + r"\W*(?:degrees|°)",
+    re.IGNORECASE,
+)
 AT_RISK = re.compile(
     r"\b(?:mother|mom|mum|father|dad|parents?|grandmother|grandma|grandfather|grandpa"
     r"|grandparents?|granny|elderly|seniors?)\b"
@@ -201,6 +230,8 @@ class Call:
     warned: bool = False  # the safety script has been given, whether or not its task was written
     system_down: bool = False  # the caller said the heat or cooling has failed (A1)
     at_risk: bool = False  # the caller said someone vulnerable is in the home (A1)
+    heat_down: bool = False  # the caller said the heat has failed
+    cold: bool = False  # the caller said it is cold, in the home or outside
     held_page: HeldPage | None = None  # the emergency page, waiting on the answer to the script
     awaiting_answer: bool = False  # the safety script asked "Is that what's happening?"
     false_alarm: bool = False  # the caller answered the script with a clear no
@@ -998,17 +1029,17 @@ class SummitAirAgent(Agent):
     async def flag_urgent(
         self, call: Call, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
     ) -> None:
-        """File the urgent task in code the turn the caller has said both that the system is down
-        and that someone at risk is home, then tell the model it is filed. The model still replies.
-        The GPT-4.1 mini simulations filed it late or only promised it (keep_promise)."""
+        """File the urgent task in code the turn the caller has said the system is down and either
+        someone at risk is home or, for the heat, that it is cold (urgent_reason), then tell the
+        model it is filed. The model still replies. The GPT-4.1 mini simulations filed it late or
+        only promised it (keep_promise)."""
         text = new_message.text_content or ""
-        if not (call.system_down and call.at_risk) or call.urgent_task is not None:
+        reason = urgent_reason(call)
+        if reason is None or call.urgent_task is not None:
             return
         messages = [i for i in turn_ctx.items if i.type == "message"]
         said = [m.text_content for m in messages if m.role == "user" and m.text_content] + [text]
-        ref, due, page = await file_task(
-            call, "urgent", "no heat or cooling with someone at risk", " / ".join(said)
-        )
+        ref, due, page = await file_task(call, "urgent", reason, " / ".join(said))
         call.urgent_by_code = True
         paged = (
             "the on-call technician was paged"
@@ -1330,7 +1361,13 @@ class SummitAirAgent(Agent):
         # "No, it's just me" is routine at any hour. On a cold-night simulation the model paged
         # on-call the turn after the caller said exactly that. The model may still escalate what
         # the keyword rules can't see ("it's dangerous for her"), just not straight over a no.
-        if kind == "urgent" and not call.at_risk and risk_denied_last(history_of(context)):
+        # No heat in the cold is urgent whoever is home, so a "just me" doesn't make it routine.
+        if (
+            kind == "urgent"
+            and not call.at_risk
+            and not (call.heat_down and call.cold)
+            and risk_denied_last(history_of(context))
+        ):
             raise ToolError(
                 "The caller just said nobody there is at risk, so this is routine: no urgent "
                 "task, no on-call, no after-hours visit. Book the next open window."
@@ -1795,6 +1832,18 @@ def note_urgency(call: Call, turn_ctx: llm.ChatContext, text: str) -> None:
     )
     call.system_down = call.system_down or bool(SYSTEM_DOWN.search(text))
     call.at_risk = call.at_risk or at_risk_in(text, last_agent)
+    call.heat_down = call.heat_down or bool(HEAT_DOWN.search(text))
+    call.cold = call.cold or bool(COLD.search(text))
+
+
+def urgent_reason(call: Call) -> str | None:
+    """Why this call is urgent by the rules code enforces, or None: no heat or cooling with
+    someone at risk, or no heat in the cold whoever is home."""
+    if call.system_down and call.at_risk:
+        return "no heat or cooling with someone at risk"
+    if call.heat_down and call.cold:
+        return "no heat in cold weather"
+    return None
 
 
 async def hang_up_after(call: Call, handle) -> None:

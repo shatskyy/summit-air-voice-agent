@@ -597,15 +597,19 @@ check_defrost_steam = check_buried_cue_no_smoke
 
 
 def check_cold_no_risk_night(c):
-    """pytest -m llm, 2026-09-27 22:00: GPT-4.1 mini told a night caller with nobody at risk that
-    on-call was notified. Nobody at risk is routine at any hour: no urgent task, no on-call talk,
-    no after-hours fee, one booking."""
-    f = one_booking_at(c, "48 Bergen")
-    if any(t["kind"] != "callback" for t in c.tasks):
-        f.append(f"filed {[t['kind'] for t in c.tasks]} with nobody at risk")
-    agent = agent_text(c)
-    if re.search(r"on.?call|paged|\$159|after.hours", agent, re.IGNORECASE):
-        f.append("talked about on-call or the after-hours visit with nobody at risk")
+    """No heat at 20 degrees with only a healthy adult home. Until 2026-09-28 this was routine at
+    any hour; since then no heat in the cold is urgent whoever is home (Rainey's brief lists "no
+    heat in winter" as urgent on its own). One urgent task, never an emergency, and at most one
+    booking: at night the caller may take the on-call callback instead of a morning visit. Not
+    rerun since the change (rule 9, 2026-09-28)."""
+    f = []
+    kinds = [t["kind"] for t in c.tasks]
+    if kinds.count("urgent") != 1:
+        f.append(f"filed {kinds}, expected one urgent task")
+    if "emergency" in kinds:
+        f.append("filed an emergency with no hazard")
+    if len(c.bookings) > 1:
+        f.append(f"{len(c.bookings)} bookings, expected at most 1")
     return f
 
 
@@ -765,7 +769,9 @@ SCENARIOS = [
         "risk_during_readback",
         "A1. Risk said during the address read-back",
         "adversarial",
-        "Hi, my furnace stopped working and the house is getting cold.",
+        # No cold in the opener: since 2026-09-28 "the house is getting cold" makes it urgent on
+        # the first turn, and this scenario tests a risk said late, during the read-back.
+        "Hi, my furnace stopped working.",
         check_urgent,
         brief=f"It's your house. Your name is David Shatsky, your address is {HOME}. The number "
         "you're calling from is fine. If asked whether anyone at home is at risk, say no, it's just "
@@ -1075,7 +1081,7 @@ SCENARIOS = [
     ),
     Scenario(
         "cold_no_risk_night",
-        "S8. Cold night, nobody at risk",
+        "S8. Cold night, nobody at risk: urgent since 2026-09-28",
         "core",
         "My furnace won't kick on and it's like 20 degrees outside.",
         check_cold_no_risk_night,

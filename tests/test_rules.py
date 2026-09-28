@@ -2061,11 +2061,12 @@ def test_the_line_and_the_simulator_allow_the_same_number_of_tool_steps():
 )
 async def test_an_urgent_task_right_after_the_caller_denies_risk_is_refused(db, said):
     """cold_no_risk_night, discovery run: the model paged on-call the turn after the caller said
-    it was just them."""
+    it was just them. Since 2026-09-28 no heat in the cold is urgent whoever is home, so the
+    denial holds only when the caller hasn't said it's cold."""
     ctx = SpokenContext(
         Call(call_id="call-a", db=db, caller_number="+19145550100"),
         [
-            "My furnace won't kick on and it's like 20 degrees outside.",
+            "My furnace won't kick on.",
             "AGENT: Is anyone there who'd be at risk in the cold, like someone older or a baby?",
             said,
         ],
@@ -2610,3 +2611,73 @@ async def test_a_missing_name_and_number_are_asked_for_in_one_refusal(db):
             "no heat",
         )  # fmt: skip
     assert "name" in str(refused.value) and "best one to reach them" in str(refused.value)
+
+
+# No heat in the cold is urgent whoever is home (David, 2026-09-28, after the 10:08 call)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "My furnace won't kick on. It's 20 degrees out. It's just me.",  # 10:08, verbatim
+        "My furnace won't kick on and it's like 20 degrees outside.",  # cold_no_risk_night
+        "The heat's out and it's freezing in here.",
+        "No heat, and it's so cold in the apartment.",
+        "The boiler died, it's thirty two degrees out.",
+        "Heat stopped working during this cold snap.",
+        "My heat pump isn't heating and it's getting cold.",
+    ],
+)
+def test_no_heat_in_the_cold_is_urgent_whoever_is_home(said):
+    call = Call(call_id="call-a")
+    receptionist.note_urgency(call, llm.ChatContext(), said)
+    assert receptionist.urgent_reason(call) == "no heat in cold weather"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "My furnace stopped working.",  # no cold said
+        "My AC coil is freezing up.",  # an iced coil, not a cold home
+        "The AC isn't blowing cold anymore.",
+        "My water heater stopped, and it's freezing outside.",  # plumbing
+        "The heat's out, but it's 65 degrees in here, it's fine.",
+        "It's so cold in here, the AC is stuck on high.",  # cold, but the heat hasn't failed
+        "No AC and it's 95 out.",
+    ],
+)
+def test_the_cold_rule_needs_both_a_failed_heat_and_the_cold(said):
+    call = Call(call_id="call-a")
+    receptionist.note_urgency(call, llm.ChatContext(), said)
+    assert receptionist.urgent_reason(call) is None
+
+
+async def test_the_1008_opener_files_urgent_in_code_on_the_first_turn(db, monkeypatch):
+    """10:08: "It's 20 degrees out. It's just me." ran routine, and paged only when the caller
+    said "as soon as possible" two turns later."""
+    pages = []
+    line = UrgentLine(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    agent = urgent_agent(line, monkeypatch, pages)
+    await turn(agent, "My furnace won't kick on. It's 20 degrees out. It's just me.")
+    (task,) = store.tasks_for(db, "call-a")
+    assert (task["kind"], task["reason"]) == ("urgent", "no heat in cold weather")
+    assert line.userdata.urgent_by_code and len(pages) == 1
+
+
+async def test_just_me_does_not_turn_no_heat_in_the_cold_routine(db):
+    call = Call(call_id="call-a", db=db, caller_number="+19145550100", heat_down=True, cold=True)
+    ctx = SpokenContext(
+        call,
+        [
+            "My furnace won't kick on and it's like 20 degrees outside.",
+            "AGENT: Is anyone there who'd be at risk in the cold, like someone older or a baby?",
+            "No, it's just me.",
+        ],
+    )
+    result = await SummitAirAgent("").create_dispatch_task(ctx, "urgent", "no heat", "no heat")
+    assert result.startswith("Task 2001 created")
+
+
+def test_the_prompt_makes_no_heat_in_the_cold_urgent_whoever_is_home():
+    assert "whoever is home, even a healthy adult alone" in receptionist.PROMPT
+    assert "No heat in the cold stays urgent" in receptionist.PROMPT
