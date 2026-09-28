@@ -2681,3 +2681,17 @@ async def test_just_me_does_not_turn_no_heat_in_the_cold_routine(db):
 def test_the_prompt_makes_no_heat_in_the_cold_urgent_whoever_is_home():
     assert "whoever is home, even a healthy adult alone" in receptionist.PROMPT
     assert "No heat in the cold stays urgent" in receptionist.PROMPT
+
+
+def test_the_urgent_line_the_prompt_dictates_is_one_keep_promise_recognizes():
+    """If the model says the line without the task filed, keep_promise files it."""
+    line = (
+        "I've flagged this as urgent for our on-call technician. Our target is to call you back "
+        "by 10:24 AM."
+    )
+    assert "flagged this as urgent for our\non-call technician" in receptionist.PROMPT
+    assert receptionist.PAGE_PROMISE.search(line)
+
+
+def test_the_prompt_asks_for_the_street_before_the_borough():
+    assert "Ask for the town or borough before the street" in receptionist.PROMPT
