@@ -2365,3 +2365,172 @@ async def test_the_booking_fills_in_the_urgent_task_filed_before_the_address(db)
     assert (urgent["name"], urgent["address"]) == ("Maria Lopez", "14 Maple Street, Brooklyn")
     assert urgent["phone"] == "+19145550100"
     assert (callback["name"], callback["address"]) == ("Maria", "14 Maple Street, Brooklyn")
+
+
+# The reply guard (ADR-017): what the 2026-09-28 10:04 call said twice or booked too early.
+
+DOUBLED = (
+    "We don't need the ZIP for Brooklyn. You want an estimate to install a new AC, right?\n"
+    "We don't need the ZIP for Brooklyn. You want an estimate to install a new AC, right?"
+)
+
+
+def tokens(text, size=4):
+    return [text[i : i + size] for i in range(0, len(text), size)]
+
+
+def text_chunks(text, size=4):
+    return [llm.ChatChunk(id="r", delta=llm.ChoiceDelta(content=t)) for t in tokens(text, size)]
+
+
+def tool_chunk(name, content=None):
+    call = llm.FunctionToolCall(name=name, arguments="{}", call_id=f"c-{name}")
+    return llm.ChatChunk(id="r", delta=llm.ChoiceDelta(content=content, tool_calls=[call]))
+
+
+async def guarded(chunks, call=None, asked=False):
+    async def stream():
+        for chunk in chunks:
+            yield chunk
+
+    call = call or Call(call_id="call-a")
+    out = [chunk async for chunk in receptionist.guard_reply(stream(), call, asked)]
+    text = "".join(
+        c if isinstance(c, str) else (c.delta.content or "") if c.delta else "" for c in out
+    )
+    tools = [
+        t.name for c in out if isinstance(c, llm.ChatChunk) and c.delta for t in c.delta.tool_calls
+    ]
+    return text, tools, call
+
+
+@pytest.mark.parametrize("size", [1, 3, 7, 200])
+async def test_a_reply_that_says_the_same_thing_twice_is_said_once(size):
+    text, _, call = await guarded(text_chunks(DOUBLED, size))
+    assert text.strip() == DOUBLED.split("\n")[0]
+    assert call.repeats_dropped == 2
+
+
+async def test_the_first_sentence_streams_through_before_it_ends():
+    """No latency on the first audio: every piece of the first sentence goes out as it arrives."""
+
+    async def stream():
+        for piece in ["Got", " it, 48", " Bergen"]:
+            yield piece
+
+    guard = receptionist.guard_reply(stream(), Call(call_id="call-a"))
+    assert [await anext(guard) for _ in range(3)] == ["Got", " it, 48", " Bergen"]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Oh no, in this cold? What's the address there?",
+        (
+            "David, you're booked for Monday, September 28, between noon and 4 PM at 48 Bergen "
+            "Street, Brooklyn. Your reference number is one oh oh six. Is there anything else I "
+            "can do?"
+        ),
+        "Okay. Okay. Got it.",  # a repeated one-word sentence is dropped like any other repeat
+        "Thanks, David. Is 650-555-0142 the best number to reach you?",
+    ],
+)
+async def test_an_ordinary_reply_passes_whole(reply):
+    text, _, _ = await guarded(text_chunks(reply))
+    expected = reply if reply != "Okay. Okay. Got it." else "Okay. Got it."
+    assert text == expected
+
+
+async def test_a_booking_made_in_the_same_reply_as_the_question_is_held():
+    """10:04: "I see Tuesday afternoon 12 to 4 PM or Wednesday afternoon 12 to 4 PM open. Which do
+    you want?" and book_appointment in the same reply; the caller's answer talked over "Moved"."""
+    question = "I see Tuesday afternoon 12 to 4 PM or Wednesday afternoon 12 to 4 PM open. Which do you want?"
+    text, tools, call = await guarded([*text_chunks(question), tool_chunk("book_appointment")])
+    assert text == question
+    assert tools == []
+    assert call.bookings_held == 1
+
+
+async def test_a_booking_after_an_earlier_step_asked_the_caller_is_held():
+    _, tools, call = await guarded([tool_chunk("book_appointment")], asked=True)
+    assert tools == [] and call.bookings_held == 1
+
+
+@pytest.mark.parametrize(
+    ("chunks", "expected"),
+    [
+        # a statement, then the booking: nothing was asked, so it books
+        (
+            [*text_chunks("Got it, Tuesday afternoon."), tool_chunk("book_appointment")],
+            ["book_appointment"],
+        ),
+        # no words at all, the usual shape on the caller's answer
+        ([tool_chunk("book_appointment")], ["book_appointment"]),
+        # every other tool runs after a question: "What's the address?" and the urgent task
+        (
+            [*text_chunks("What's the address there?"), tool_chunk("create_dispatch_task")],
+            ["create_dispatch_task"],
+        ),
+        ([*text_chunks("Which works?"), tool_chunk("check_availability")], ["check_availability"]),
+    ],
+)
+async def test_other_tool_calls_and_answered_bookings_go_through(chunks, expected):
+    _, tools, call = await guarded(chunks)
+    assert tools == expected and call.bookings_held == 0
+
+
+def test_a_question_counts_as_unanswered_only_until_the_caller_speaks():
+    history = llm.ChatContext()
+    history.add_message(role="assistant", content="Which works, Monday or Tuesday?")
+    assert receptionist.asked_since_caller(history.items)
+    history.add_message(role="user", content="Tuesday, please.")
+    assert not receptionist.asked_since_caller(history.items)
+    history.add_message(role="system", content="A note from code.")
+    assert not receptionist.asked_since_caller(history.items)
+    history.add_message(role="assistant", content="Got it.")
+    assert not receptionist.asked_since_caller(history.items)
+
+
+async def test_usage_only_chunks_and_plain_strings_pass():
+    usage = llm.ChatChunk(
+        id="r", usage=llm.CompletionUsage(completion_tokens=1, prompt_tokens=1, total_tokens=2)
+    )
+    text, _, _ = await guarded(["Got it. ", "Got it. ", "Tuesday?", usage])
+    assert text == "Got it. Tuesday?"
+
+
+async def test_a_guard_that_fails_lets_the_rest_of_the_reply_through(monkeypatch):
+    calls = {"n": 0}
+    real = receptionist.ReplyGuard.feed
+
+    def flaky(self, text):
+        calls["n"] += 1
+        if calls["n"] == 3:
+            raise RuntimeError("boom")
+        return real(self, text)
+
+    monkeypatch.setattr(receptionist.ReplyGuard, "feed", flaky)
+    text, tools, _ = await guarded(
+        [*text_chunks("Got it. Tuesday works."), tool_chunk("book_appointment")]
+    )
+    assert "Tuesday works." in text
+    assert tools == ["book_appointment"]
+
+
+async def test_the_agent_sends_every_model_reply_through_the_guard(monkeypatch):
+    call = Call(call_id="call-a")
+
+    async def model(agent, chat_ctx, tools, model_settings):
+        for chunk in [*text_chunks(DOUBLED), tool_chunk("book_appointment")]:
+            yield chunk
+
+    monkeypatch.setattr(receptionist.Agent.default, "llm_node", model)
+    monkeypatch.setattr(
+        SummitAirAgent, "session", property(lambda self: type("S", (), {"userdata": call})())
+    )
+    history = llm.ChatContext()
+    history.add_message(role="user", content="Yeah. What's the ZIP code?")
+    out = [c async for c in SummitAirAgent("").llm_node(history, [], None)]
+    said = "".join(c.delta.content or "" for c in out if c.delta)
+    assert said.strip() == DOUBLED.split("\n")[0]
+    assert call.repeats_dropped == 2 and call.bookings_held == 1
