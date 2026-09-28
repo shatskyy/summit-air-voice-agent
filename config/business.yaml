@@ -16,6 +16,17 @@ coverage:
   # Known shortcut: ZIP prefixes approximate the boroughs. 110 is mostly Nassau County, so only
   # Queens' 11004 and 11005 are listed from it. A real deployment uses the customer's territory map.
   zip_prefixes: ["100", "101", "102", "112", "111", "113", "114", "116", "11004", "11005"]
+  # What a caller may call the town when they don't know the ZIP: the boroughs, the city, and the
+  # Queens post-office names people put on an envelope. An address in one of these books without
+  # a ZIP; anywhere else needs the ZIP to be checked.
+  towns:
+    [Manhattan, New York, New York City, NYC, Brooklyn, Queens, Astoria, Long Island City,
+     Sunnyside, Woodside, Jackson Heights, Elmhurst, Corona, Flushing, College Point, Whitestone,
+     Bayside, Little Neck, Douglaston, Fresh Meadows, Forest Hills, Rego Park, Kew Gardens,
+     Richmond Hill, Woodhaven, Ozone Park, Howard Beach, Jamaica, Hollis, Queens Village,
+     Springfield Gardens, Rosedale, Far Rockaway, Rockaway Park, Arverne, Ridgewood, Glendale,
+     Maspeth, Middle Village, Bellerose, Floral Park, Cambria Heights, Laurelton, Saint Albans,
+     St. Albans, East Elmhurst, Briarwood, Oakland Gardens]
 
 hours:
   office: { days: [mon, tue, wed, thu, fri], start: "08:00", end: "17:00" }

@@ -21,6 +21,7 @@ from evals.scenarios import Conversation, Scenario, style
 from models import make_llm
 from receptionist import (
     GREETING,
+    MAX_TOOL_STEPS,
     Call,
     SummitAirAgent,
     init_store,
@@ -162,7 +163,7 @@ async def play(scenario: Scenario, clock_name: str, model: str, run: int) -> dic
     async with (
         make_llm(model) as agent_llm,
         make_llm(CALLER_MODEL) as caller_llm,
-        AgentSession(llm=agent_llm, userdata=call) as session,
+        AgentSession(llm=agent_llm, userdata=call, max_tool_steps=MAX_TOOL_STEPS) as session,
     ):
         agent_usage = track(agent_llm, model)
         if scenario.brief:

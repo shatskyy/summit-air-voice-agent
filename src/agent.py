@@ -37,6 +37,7 @@ from receptionist import (
     DEFAULT_DB,
     DICTATION_MAX_DELAY,
     MAX_DELAY,
+    MAX_TOOL_STEPS,
     Call,
     FailureLadder,
     SilenceWatch,
@@ -237,6 +238,7 @@ async def entrypoint(ctx: JobContext) -> None:
         ),
         user_away_timeout=SILENCE_SECONDS,
         conn_options=SessionConnectOptions(llm_conn_options=LLM_CONN),
+        max_tool_steps=MAX_TOOL_STEPS,
     )
     # A provider that fails for good ends the call in code: a line, a callback task, the hang-up.
     session.on("error", FailureLadder(session, call).on_error)

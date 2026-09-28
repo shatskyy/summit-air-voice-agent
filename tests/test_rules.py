@@ -988,6 +988,10 @@ def test_a_working_system_is_not_called_down(said):
         "she has a heart condition",
         "he's bedridden",
         "she has a medical condition",
+        "I'm 82 and I live alone",
+        "she's 84, and it's 55 degrees in her apartment",
+        "my aunt lives here, she is 79",
+        "I am 90",
     ],
 )
 def test_someone_at_risk_is_recognized(said):
@@ -1003,6 +1007,10 @@ def test_someone_at_risk_is_recognized(said):
         ("Yes.", "What's the address there?"),  # a yes to something else
         ("I'm 35 years old.", ""),
         ("It's a 10-year-old furnace.", ""),
+        ("I'm 40.", ""),
+        ("it's 85 degrees in here", ""),
+        ("he's 90 percent sure it's the thermostat", ""),
+        ("I'm on 72nd Street", ""),
     ],
 )
 def test_no_one_at_risk_is_not_flagged(said, last_agent):
@@ -1822,3 +1830,222 @@ def test_the_model_may_not_send_two_tool_calls_at_once(monkeypatch):
     assert seen[0]["parallel_tool_calls"] is False
     assert seen[1]["parallel_tool_calls"] is NOT_GIVEN
     assert seen[2]["parallel_tool_calls"] is NOT_GIVEN
+
+
+# A ZIP the caller never said, and an address without one (overnight pass)
+
+
+class SpokenContext(FakeContext):
+    """FakeContext plus the caller's turns, which check_address reads to make sure the ZIP it was
+    given was actually said on the call."""
+
+    def __init__(self, call, said):
+        super().__init__(call)
+        history = llm.ChatContext()
+        for text in said:
+            history.add_message(role="user", content=text)
+        self.session = type("Session", (), {"history": history})()
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "48 Bergen Street, Brooklyn, 11201",
+        "It's 48 Bergen Street in Brooklyn, one one two oh one",
+        "eleven two oh one",
+        "one twelve zero one",
+        "ten thousand... no, 11201",
+        "Brooklyn 11,201",
+    ],
+)
+async def test_a_zip_the_caller_said_passes(db, said):
+    ctx = SpokenContext(Call(call_id="call-a", db=db), ["My furnace is out.", said])
+    result = await SummitAirAgent("").check_address(ctx, "48 Bergen Street", "Brooklyn", "11201")
+    assert result.startswith("In the service area")
+
+
+async def test_a_zip_the_caller_never_said_is_refused(db):
+    """Gate 1 call riWFX67: the caller said "I forgot" and the model checked and booked a ZIP it
+    made up."""
+    ctx = SpokenContext(
+        Call(call_id="call-a", db=db),
+        ["My AC is broken.", "48 Bergen Street in Brooklyn.", "I forgot."],
+    )
+    with pytest.raises(ToolError, match="never said ZIP 11201"):
+        await SummitAirAgent("").check_address(ctx, "48 Bergen Street", "Brooklyn", "11201")
+    assert ctx.userdata.checked_zip is None
+
+
+@pytest.mark.parametrize(
+    "town", ["Brooklyn", "brooklyn", "Manhattan", "New York", "NYC", "Astoria"]
+)
+async def test_a_covered_borough_books_without_a_zip(db, town):
+    ctx = SpokenContext(Call(call_id="call-a", db=db), ["48 Bergen Street in " + town])
+    agent = SummitAirAgent("")
+    result = await agent.check_address(ctx, "48 Bergen Street", town, "")
+    assert result.startswith("In the service area") and "no ZIP" in result
+    assert ctx.userdata.checked_zip == ""
+    await agent.check_availability(ctx, "2026-09-29", "any")
+    booked = await agent.book_appointment(
+        ctx, "2026-09-29-0800", "residential", "Maria Lopez", "+19145550100",
+        "48 Bergen Street, " + town, "", "no heat",
+    )  # fmt: skip
+    assert booked.startswith("Booked.")
+    assert store.booking_for(db, "call-a")["zip"] == ""
+
+
+async def test_a_town_outside_the_area_without_a_zip_is_not_booked(db):
+    ctx = SpokenContext(Call(call_id="call-a", db=db), ["14 Maple Avenue in Yonkers"])
+    result = await SummitAirAgent("").check_address(ctx, "14 Maple Avenue", "Yonkers", "")
+    assert "outside the service area" in result and "Don't offer times" in result
+    assert ctx.userdata.checked_zip is None
+
+
+async def test_booking_without_a_zip_needs_the_borough_check_first(db):
+    """A blank ZIP at booking time is not a way around check_address."""
+    agent, ctx = await checked_call(db)  # checked with ZIP 11225
+    with pytest.raises(ToolError, match="hasn't been checked"):
+        await agent.book_appointment(
+            ctx, "2026-09-29-0800", "residential", "Maria Lopez", "", "14 Maple Street, Brooklyn",
+            "", "no heat",
+        )  # fmt: skip
+
+
+async def test_a_zip_that_was_never_said_cannot_be_booked_either(db):
+    """The booking ZIP must be the checked one, so an invented ZIP can't enter at booking."""
+    ctx = SpokenContext(Call(call_id="call-a", db=db), ["48 Bergen Street in Brooklyn"])
+    agent = SummitAirAgent("")
+    await agent.check_address(ctx, "48 Bergen Street", "Brooklyn", "")
+    await agent.check_availability(ctx, "2026-09-29", "any")
+    with pytest.raises(ToolError, match="hasn't been checked"):
+        await agent.book_appointment(
+            ctx, "2026-09-29-0800", "residential", "Maria Lopez", "+19145550100",
+            "48 Bergen Street, Brooklyn", "11201", "no heat",
+        )  # fmt: skip
+
+
+def test_a_context_without_a_history_skips_the_zip_check(db):
+    """The offline tests' FakeContext has no session; the check needs one to run."""
+    assert receptionist.caller_digits(None) == ""
+
+
+# A corrected address is the same visit; a second address is not (overnight pass)
+
+
+@pytest.mark.parametrize(
+    ("held", "new", "same"),
+    [
+        ("14 Maple Street, Brooklyn", "14 Maple St. Apt 2", True),  # the same place, rewritten
+        ("14 Maple Street, Brooklyn", "40 Maple Street, Brooklyn", True),  # "forty, not fourteen"
+        ("48 Burger Street, Brooklyn", "48 Bergen Street, Brooklyn", True),  # a misheard street
+        ("14 Maple Street, Brooklyn", "310 Ocean Avenue, Brooklyn", False),  # a second address
+        ("14 Maple Street, Brooklyn", "14 Ocean Avenue, Brooklyn", True),  # same number, kept
+    ],
+)
+def test_a_correction_keeps_the_visit_and_a_second_address_does_not(held, new, same):
+    assert receptionist.same_visit({"address": held, "zip": "11225"}, new, "11225") is same
+
+
+def test_a_different_zip_is_always_a_second_address():
+    assert not receptionist.same_visit(
+        {"address": "14 Maple Street, Brooklyn", "zip": "11225"}, "14 Maple Street, Queens", "11375"
+    )
+
+
+async def test_a_corrected_house_number_after_booking_moves_the_same_booking(db):
+    """Paul's line: "wait, did you say fourteen? It's forty." The row must say 40, not a callback
+    while the technician drives to 14."""
+    agent, ctx = await checked_call(db)
+    ctx.userdata.turn = 1
+    await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    ctx.userdata.turn = 2
+    updated = await agent.book_appointment(
+        ctx, "2026-09-29-0800", "residential", "Maria Lopez", "", "40 Maple Street, Brooklyn",
+        "11225", "no heat",
+    )  # fmt: skip
+    assert updated.startswith("Updated")
+    assert store.booking_for(db, "call-a")["address"] == "40 Maple Street, Brooklyn"
+
+
+async def test_the_booking_turn_is_the_one_the_write_started_in(db, monkeypatch):
+    """The next caller turn can complete while the store write is still in its thread. The write
+    belongs to the turn it started in, so the caller's change in the next turn is not refused."""
+    agent, ctx = await checked_call(db)
+    call = ctx.userdata
+    real_book = store.book
+
+    def slow_book(path, **booking):
+        call.turn += 1  # the next turn arrives mid-write
+        return real_book(path, **booking)
+
+    monkeypatch.setattr(store, "book", slow_book)
+    call.turn = 1
+    await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+    assert call.booked_turn == 1 and call.turn == 2
+    monkeypatch.setattr(store, "book", real_book)
+    assert (await agent.book_appointment(ctx, "2026-09-29-1200", *BOOK_ARGS)).startswith("Moved")
+
+
+async def test_the_booking_confirmation_stays_interruptible(db):
+    """LiveKit drops a caller turn that completes while the agent can't be interrupted, without
+    running on_user_turn_completed, so an uninterruptible confirmation would lose "hold on, I
+    smell gas" said over it (agent_activity: "skipping reply to user input")."""
+
+    class Recording(FakeContext):
+        def disallow_interruptions(self):
+            raise AssertionError("the booking must not switch interruptions off")
+
+    ctx = Recording(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    agent = SummitAirAgent("")
+    await agent.check_address(ctx, "14 Maple Street", "Brooklyn", "11225")
+    await agent.check_availability(ctx, "2026-09-29", "any")
+    assert (await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)).startswith("Booked")
+
+
+def test_the_line_and_the_simulator_allow_the_same_number_of_tool_steps():
+    import agent as line
+    from evals import runner
+
+    assert receptionist.MAX_TOOL_STEPS == 5
+    assert "max_tool_steps=MAX_TOOL_STEPS" in (receptionist.ROOT / "src" / "agent.py").read_text()
+    assert runner.MAX_TOOL_STEPS == line.MAX_TOOL_STEPS == 5
+
+
+# An urgent task straight over "no, it's just me" (overnight pass)
+
+
+@pytest.mark.parametrize(
+    "said",
+    ["No, it's just me. I'm a healthy adult.", "Nobody, I'm fine.", "No.", "No one, just me."],
+)
+async def test_an_urgent_task_right_after_the_caller_denies_risk_is_refused(db, said):
+    """cold_no_risk_night, discovery run: the model paged on-call the turn after the caller said
+    it was just them."""
+    ctx = SpokenContext(
+        Call(call_id="call-a", db=db, caller_number="+19145550100"),
+        ["My furnace won't kick on and it's like 20 degrees outside.", said],
+    )
+    with pytest.raises(ToolError, match="nobody there is at risk"):
+        await SummitAirAgent("").create_dispatch_task(
+            ctx, "urgent", "no heat, healthy adult", "no heat"
+        )
+    assert store.tasks_for(db, "call-a") == []
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "It's dangerous for her, she can't take the cold.",
+        "No, but my neighbor's kid is here and he's sick.",
+        "48 Bergen Street, Brooklyn.",
+    ],
+)
+async def test_softer_urgency_the_rules_cannot_see_is_still_the_models_call(db, said):
+    ctx = SpokenContext(Call(call_id="call-a", db=db, caller_number="+19145550100"), [said])
+    result = await SummitAirAgent("").create_dispatch_task(ctx, "urgent", "no heat", "no heat")
+    assert result.startswith("Task 2001 created")
+
+
+def test_the_prompt_says_how_to_handle_a_missing_zip_and_a_split_address():
+    assert "ZIP left blank" in receptionist.PROMPT
+    assert "in pieces" in receptionist.PROMPT

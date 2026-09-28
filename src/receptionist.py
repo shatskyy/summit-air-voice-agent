@@ -145,6 +145,11 @@ AT_RISK = re.compile(
     r"\b(?:mother|mom|mum|father|dad|parents?|grandmother|grandma|grandfather|grandpa"
     r"|grandparents?|granny|elderly|seniors?)\b"
     r"|\b(?:6[5-9]|[7-9]\d|10\d|110)\W*years?\W*old\b"
+    # "I'm 82 and I live alone", "she's 84": an age said as a bare number after a person. Not a
+    # temperature, a percentage or a street ("it's 85 degrees", "I'm on 72nd Street").
+    r"|\b(?:i'?m|i am|she'?s|she is|he'?s|he is|they'?re|they are|is|am|are|turned|turning|age"
+    r"|aged)\W+(?:6[5-9]|[7-9]\d|10\d|110)\b(?!\W*(?:degrees|percent|%|dollars|minutes|years? ago"
+    r"|st\b|nd\b|rd\b|th\b))"
     r"|\b(?:babies|baby|infant|newborn)\b|\b\w+\W+months?\W+old\b"
     r"|\b(?:oxygen|asthma|copd|heart condition|pregnant|dialysis|bedridden|disabled"
     r"|medical condition)\b",
@@ -389,12 +394,77 @@ def street_key(address: str) -> list[str]:
     return re.findall(r"\d+(?:-\d+)?[a-z]*|[a-z]+", street)[:2]
 
 
+def same_visit(held: dict, address: str, zip_code: str) -> bool:
+    """Whether a booking call with this address changes the visit the call holds, rather than
+    adding a second one. The same place, however written, is the same visit. So is a correction
+    of one part of it in the same ZIP: "it's forty, not fourteen" or "Bergen, not Burger" keeps
+    the number or the street and changes the other. A different number on a different street is a
+    second address, which is a callback, so the first visit is never moved to it by mistake."""
+    if held["zip"] != zip_code:
+        return False
+    was, now = street_key(held["address"]), street_key(address)
+    return was == now or (len(was) == len(now) == 2 and (was[0] == now[0] or was[1] == now[1]))
+
+
 def in_coverage(zip_code: str) -> bool:
     return (
         len(zip_code) == 5
         and zip_code.isdigit()
         and any(zip_code.startswith(prefix) for prefix in CONFIG["coverage"]["zip_prefixes"])
     )
+
+
+TOWNS = {t.lower().replace(".", "") for t in CONFIG["coverage"]["towns"]}
+
+
+def town_covered(town: str) -> bool:
+    """Whether the town alone places an address in the service area: a borough, the city, or a
+    Queens post-office name (config coverage.towns). For a caller who doesn't know the ZIP."""
+    return town.strip().lower().replace(".", "") in TOWNS
+
+
+# Digits as speech-to-text writes them when the caller says them one at a time or in pairs:
+# "one one two oh one", "eleven two oh one", "ten six zero one".
+NUMBER_WORDS = {
+    "oh": "0", "o": "0", "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+    "eleven": "11", "twelve": "12", "thirteen": "13", "fourteen": "14", "fifteen": "15",
+    "sixteen": "16", "seventeen": "17", "eighteen": "18", "nineteen": "19", "twenty": "20",
+    "thirty": "30", "forty": "40", "fifty": "50", "sixty": "60", "seventy": "70", "eighty": "80",
+    "ninety": "90",
+}  # fmt: skip
+
+
+def caller_digits(items) -> str:
+    """Every digit the caller has said so far, in order, with number words spelled out. Empty when
+    there is no history to read (the offline tests' bare context)."""
+    if items is None:
+        return ""
+    out = []
+    for item in items:
+        if getattr(item, "type", None) != "message" or item.role != "user":
+            continue
+        for word in re.findall(r"[a-z]+|\d+", (item.text_content or "").lower()):
+            out.append(NUMBER_WORDS.get(word, word if word.isdigit() else ""))
+    return "".join(out)
+
+
+def history_of(context) -> list | None:
+    session = getattr(context, "session", None)
+    history = getattr(session, "history", None)
+    return getattr(history, "items", None)
+
+
+def risk_denied_last(items) -> bool:
+    """Whether the caller's latest turn says nobody is at risk and nothing more: "no, it's just
+    me", "nobody". "No, but my son is sick" is not a denial."""
+    for item in reversed(items or []):
+        if getattr(item, "type", None) == "message" and item.role == "user":
+            text = item.text_content or ""
+            if AT_RISK.search(text) or NOT_ONLY_NO.search(text):
+                return False
+            return bool(NOBODY.search(text)) or clear_no(text)
+    return False
 
 
 def init_store(db: Path) -> None:
@@ -791,23 +861,48 @@ class SummitAirAgent(Agent):
         if problem := street_problem(street):
             raise ToolError(problem)
         zip_code = re.sub(r"\D", "", zip_code)
-        if len(zip_code) != 5:
-            raise ToolError("Ask for the five-digit ZIP code, then check the address again.")
         if not town.strip():
             raise ToolError("Ask which town the address is in, then check the address again.")
-        if not in_coverage(zip_code):
-            return (
-                f"ZIP {zip_code} is outside the service area. Don't offer times or book. Read the "
-                "ZIP back once to make sure you heard it right. If it is right, say Summit Air "
-                f"covers {counties_spoken()} in New York City, and ask whether the address is in "
-                "one of them. If it isn't, offer a callback and ask if there is anything else."
-            )
         call = context.userdata
-        call.checked_zip = zip_code
-        checked = (
-            f"In the service area. Read it back once as {street}, {town}, ZIP {zip_code}, and wait "
-            "for a yes."
-        )
+        if not zip_code:
+            # No ZIP. A borough or a Queens town places the address on its own; anywhere else,
+            # the ZIP decides, so ask for it once and treat "don't know" as outside the area.
+            if not town_covered(town):
+                return (
+                    f"No ZIP, and {town} isn't {counties_spoken()}, so this is outside the "
+                    "service area. Don't offer times or book. Ask for the ZIP once in case the "
+                    "town was heard wrong; if they don't know it, offer a callback and ask if "
+                    "there is anything else."
+                )
+            call.checked_zip = ""
+            checked = (
+                f"In the service area ({town}), no ZIP needed. Read it back once as {street}, "
+                f"{town}, and wait for a yes. Book with the ZIP left blank."
+            )
+        else:
+            if len(zip_code) != 5:
+                raise ToolError("Ask for the five-digit ZIP code, then check the address again.")
+            # A ZIP the caller never said is one the model made up (Gate 1 call riWFX67: "I
+            # forgot", and the model checked and booked 11201 on its own).
+            if (said := caller_digits(history_of(context))) and zip_code not in said:
+                raise ToolError(
+                    f"The caller never said ZIP {zip_code} on this call, so don't use it. Ask "
+                    "them for their ZIP code. If they don't know it, check the address again "
+                    "with the ZIP left blank."
+                )
+            if not in_coverage(zip_code):
+                return (
+                    f"ZIP {zip_code} is outside the service area. Don't offer times or book. Read "
+                    "the ZIP back once to make sure you heard it right. If it is right, say Summit "
+                    f"Air covers {counties_spoken()} in New York City, and ask whether the address "
+                    "is in one of them. If it isn't, offer a callback and ask if there is anything "
+                    "else."
+                )
+            call.checked_zip = zip_code
+            checked = (
+                f"In the service area. Read it back once as {street}, {town}, ZIP {zip_code}, and "
+                "wait for a yes."
+            )
         # The next open windows come back with the address, so the turn after the caller's yes can
         # offer them without a second model round trip through check_availability (A7).
         slots = await asyncio.to_thread(store.open_slots, call.db, now().date(), "any", now())
@@ -915,32 +1010,33 @@ class SummitAirAgent(Agent):
                 "That slot was not offered on this call. Call check_availability and offer a window first."
             )
         zip_code = re.sub(r"\D", "", zip_code)
-        if not in_coverage(zip_code):
+        if zip_code and not in_coverage(zip_code):
             raise ToolError(
-                f"ZIP {zip_code or 'missing'} is outside the service area. Don't book. Confirm the ZIP, "
+                f"ZIP {zip_code} is outside the service area. Don't book. Confirm the ZIP, "
                 "and if it is outside the area, create a callback task."
             )
-        if zip_code != call.checked_zip:
+        if zip_code != call.checked_zip:  # a blank ZIP books only after a borough check
             raise ToolError(
                 "This address hasn't been checked on this call. Call check_address, read the "
                 "address back and hear a yes, then book."
             )
+        turn = call.turn  # read at entry: the next turn can arrive while the write is in flight
         async with call.book_lock:  # a turn's tool calls run concurrently; one write per turn
             held = await asyncio.to_thread(store.booking_for, call.db, call.call_id)
-            if held and call.booked_turn == call.turn:
+            if held and call.booked_turn == turn:
                 raise ToolError(
                     f"This turn already booked #{held['ref']} for {speak_window(held)}, and that "
                     "is what stands. Tell the caller that; don't book again unless they ask for "
                     "another change."
                 )
-            if held and (
-                held["zip"] != zip_code or street_key(held["address"]) != street_key(address)
-            ):
+            if held and not same_visit(held, address, zip_code):
                 raise ToolError(
                     f"This call already booked #{held['ref']} at {held['address']}. For a second "
                     "address, file a callback task."
                 )
-            context.disallow_interruptions()
+            # The confirmation stays interruptible. LiveKit drops a caller turn that completes
+            # while the agent can't be interrupted, without running on_user_turn_completed, so an
+            # uninterruptible confirmation would lose "hold on, I smell gas" said over it.
             booking = await asyncio.to_thread(
                 store.book,
                 call.db,
@@ -962,7 +1058,7 @@ class SummitAirAgent(Agent):
                     f"That window just filled up.{kept} Call check_availability again and offer "
                     "another."
                 )
-            call.booked_turn = call.turn
+            call.booked_turn = turn
         window = speak_window(booking)
         call.moved = call.moved or booking["change"] == "moved"
         ref = f'{booking["ref"]} (say "{speak_digits(booking["ref"])}")'
@@ -1015,6 +1111,14 @@ class SummitAirAgent(Agent):
                 f"Urgent task {call.urgent_task} already exists and on-call has it. The callback "
                 f"target is {speak_due(call.urgent_due, now())}. Tell the caller the target, and "
                 "never promise an arrival time."
+            )
+        # "No, it's just me" is routine at any hour. On a cold-night simulation the model paged
+        # on-call the turn after the caller said exactly that. The model may still escalate what
+        # the keyword rules can't see ("it's dangerous for her"), just not straight over a no.
+        if kind == "urgent" and not call.at_risk and risk_denied_last(history_of(context)):
+            raise ToolError(
+                "The caller just said nobody there is at risk, so this is routine: no urgent "
+                "task, no on-call, no after-hours visit. Book the next open window."
             )
         if kind == "emergency" and call.hazard_task is not None and call.false_alarm:
             await reopen_emergency(call)
@@ -1232,6 +1336,11 @@ PAGE_PROMISE = re.compile(
 # dictating an address or a number gets a long one, because callers pause between the parts.
 MAX_DELAY = 1.1
 DICTATION_MAX_DELAY = 2.5
+# Tool calls run one at a time (models.py), so a turn that files a task, checks the address and
+# books takes three steps where it took one. Past this many, LiveKit makes the model answer with
+# its tools switched off, which is where it could say "booked" with nothing written. The default
+# is 3; five covers the longest honest chain with one retry. The simulator uses the same value.
+MAX_TOOL_STEPS = 5
 DICTATION = re.compile(r"address|street|zip|number|reach you|phone", re.IGNORECASE)
 # "Is this number the best one to reach you?" and "Did I get the address right?" name an address or
 # a number but want a yes, and a short "Yeah." is exactly what the detector scores low, so a long cap

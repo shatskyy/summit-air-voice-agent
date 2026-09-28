@@ -484,7 +484,7 @@ def check_misheard_opening(c):
         f.append(f"declined the call on a misheard word: {reply!r}")
     if "?" not in reply:
         f.append(f"didn't ask what the caller meant: {reply!r}")
-    if re.search(r"\bcoil\b|\bIT\b", reply):
+    if re.search(r"\bcoil\b|information technology|\bcomputer|\bphone\b", reply, re.IGNORECASE):
         f.append(f"guessed a term: {reply!r}")
     return f + one_booking_at(c, "48 Bergen")
 
@@ -966,17 +966,11 @@ SCENARIOS = [
         "core",
         "Hi, my furnace won't turn on.",
         check_split_address,
-        lines=[
-            "No, it's just me.",
-            "David Shatsky.",
-            "Yes, this number is fine.",
-            "It's 48 Bergen",
-            "Street. In Brooklyn.",
-            "one one two oh one",
-            "Yes, that's right.",
-            "The first one works.",
-            "No, that's all.",
-        ],
+        brief="It's your house, nobody at risk: just you. Your name is David Shatsky. The number "
+        "you're calling from is fine. Give the address in pieces, the way people do when they "
+        'pause: when asked for it, say only "It\'s 48 Bergen". Whatever the agent says next, say '
+        '"Street. In Brooklyn." If asked for the ZIP, say it as words: "one one two oh one". '
+        "Confirm the read-back if it is right. Take the first window offered.",
     ),
     # Overnight pass: phone speech, written as text.
     Scenario(
