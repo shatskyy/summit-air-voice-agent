@@ -1890,7 +1890,14 @@ def note_urgency(call: Call, turn_ctx: llm.ChatContext, text: str) -> None:
         (m.text_content or "" for m in reversed(messages) if m.role == "assistant"), ""
     )
     call.system_down = call.system_down or bool(SYSTEM_DOWN.search(text))
-    call.at_risk = call.at_risk or at_risk_in(text, last_agent)
+    at_risk = at_risk_in(text, last_agent)
+    # The prompt has the agent ask who is at risk only once heating or cooling has failed, so a yes
+    # to that question means the model judged the system down, even when the caller's words were
+    # too far apart for SYSTEM_DOWN: "the AC. And now it's broken" paged on-call 22 s late, after
+    # the name, the number and "Goodbye" (call 7gjANeDhy3Md). A needless page is cheap.
+    if at_risk and RISK_QUESTION.search(last_agent):
+        call.system_down = True
+    call.at_risk = call.at_risk or at_risk
     call.heat_down = call.heat_down or bool(HEAT_DOWN.search(text))
     call.cold = call.cold or bool(COLD.search(text))
 

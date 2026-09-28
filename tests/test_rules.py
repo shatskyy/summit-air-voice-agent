@@ -2905,3 +2905,23 @@ async def test_a_day_range_is_capped_at_three_days(db):
         ctx, "2026-09-29", "morning", latest_date="2026-10-09"
     )
     assert offered.count("slot_id") == 3 and "October 2" not in offered
+
+
+def test_a_yes_to_the_risk_question_counts_the_system_as_down():
+    """Call 7gjANeDhy3Md: "My dog's chew through the AC. And now it's broken." was too spread out
+    for SYSTEM_DOWN, so code never paged and the model paged 22 s late, after "Goodbye"."""
+    call = Call(call_id="call-a")
+    history = llm.ChatContext()
+    history.add_message(
+        role="user", content="Hi. My dog's chew through the AC. And now it's broken."
+    )
+    history.add_message(
+        role="assistant",
+        content="Oh no, the AC is broken. Is anyone there who'd be at risk without cooling, like "
+        "an infant or someone with a health problem?",
+    )
+    receptionist.note_urgency(call, history, "Yes.")
+    assert receptionist.urgent_reason(call) == "no heat or cooling with someone at risk"
+    fine = Call(call_id="call-b")
+    receptionist.note_urgency(fine, history, "No, it's just me.")
+    assert receptionist.urgent_reason(fine) is None
