@@ -28,7 +28,7 @@ from livekit.agents import (
     tts,
 )
 from livekit.agents.voice.agent_session import SessionConnectOptions
-from livekit.plugins import deepgram, noise_cancellation, openai
+from livekit.plugins import deepgram, google, noise_cancellation, openai
 
 import store
 from models import make_llm
@@ -78,16 +78,42 @@ def backup_voice():
     return openai.TTS(model="gpt-4o-mini-tts", voice="coral")
 
 
+def voice_provider() -> str:
+    provider = os.getenv("TTS_PROVIDER", "deepgram").lower()
+    if provider not in {"deepgram", "gemini"}:
+        raise ValueError("TTS_PROVIDER must be deepgram or gemini")
+    return provider
+
+
+def gemini_voice():
+    if not os.getenv("GOOGLE_API_KEY"):
+        raise RuntimeError("GOOGLE_API_KEY is required when TTS_PROVIDER=gemini")
+    return google.beta.GeminiTTS(
+        model=os.getenv("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview"),
+        voice_name=os.getenv("GEMINI_TTS_VOICE", "Kore"),
+        vertexai=False,
+        instructions=(
+            "Speak as a calm, friendly HVAC receptionist, at a natural conversational "
+            "pace with an American accent. Read exactly the supplied text. "
+            "Do not add, omit or change words."
+        ),
+    )
+
+
 def speech():
-    """Deepgram listens and speaks on its own free credit. There is no fallback onto the LiveKit
-    Inference credit: a missing key stops the worker at startup (missing_keys)."""
+    """Deepgram transcribes; speech uses the selected provider and direct-provider backups."""
     if not os.getenv("DEEPGRAM_API_KEY"):
         raise RuntimeError("DEEPGRAM_API_KEY is not set")
+    provider = voice_provider()
+    primary = gemini_voice() if provider == "gemini" else None
+    voices = [deepgram.TTS(model=TTS_VOICE), backup_voice()]
+    if primary is not None:
+        voices.insert(0, primary)
+    # On the Gemini path, try the next voice after one failed attempt, without retry delays.
+    speaking = tts.FallbackAdapter(voices, max_retry_per_tts=0 if provider == "gemini" else 2)
     return (
         deepgram.STT(model="nova-3", keyterm=CONFIG["keyterms"], smart_format=True),
-        # The backup voice takes over if Deepgram can't be reached. It can't rescue a sentence
-        # that drops partway (call 6): the adapter never replays audio already heard.
-        tts.FallbackAdapter([deepgram.TTS(model=TTS_VOICE), backup_voice()]),
+        speaking,
     )
 
 
@@ -117,7 +143,8 @@ REQUIRED_KEYS = (
 
 
 def missing_keys() -> list[str]:
-    return [key for key in REQUIRED_KEYS if not os.getenv(key)]
+    required = (*REQUIRED_KEYS, "GOOGLE_API_KEY") if voice_provider() == "gemini" else REQUIRED_KEYS
+    return [key for key in required if not os.getenv(key)]
 
 
 def turn_detector() -> inference.TurnDetector:

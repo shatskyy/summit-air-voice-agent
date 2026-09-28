@@ -8,6 +8,7 @@ dependencies = [
     "aiohttp>=3.14.3",
     "livekit-agents~=1.8",
     "livekit-plugins-deepgram~=1.8",
+    "livekit-plugins-google~=1.8",
     "livekit-plugins-noise-cancellation~=0.3",
     "livekit-plugins-openai~=1.8",
     "python-dotenv",

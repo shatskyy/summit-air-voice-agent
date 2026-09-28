@@ -1624,6 +1624,8 @@ def test_speech_never_falls_back_to_the_livekit_credit(monkeypatch):
 def test_the_worker_names_every_missing_key(monkeypatch):
     import agent
 
+    monkeypatch.setenv("TTS_PROVIDER", "deepgram")
+
     for key in agent.REQUIRED_KEYS:
         monkeypatch.setenv(key, "x")
     assert agent.missing_keys() == []
