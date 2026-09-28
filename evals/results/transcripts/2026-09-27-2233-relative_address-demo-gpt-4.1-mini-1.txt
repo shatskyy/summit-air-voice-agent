@@ -1,0 +1,27 @@
+# relative_address / demo / openai/gpt-4.1-mini / run 1
+FAIL: the sister's number is not on the booking: '914-555-0100', ''
+style: {'bundled': 3, 'reasked_type': 0, 'lists': 0, 'words': 18.4}
+cost: $0.0050
+
+AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?
+CALLER: Hi, I'm calling about my sister's apartment. Her AC is leaking water all over the floor.
+AGENT : Got it. Is this in Manhattan, Brooklyn, or Queens? And do you know the address there?
+CALLER: It's in Brooklyn. The address is 310 Ocean Avenue, Apartment 4B.
+  tool  check_address({"street": "310 Ocean Avenue, Apartment 4B", "town": "Brooklyn", "zip_code": ""})
+  ->    In the service area (Brooklyn), no ZIP needed. Read it back once as 310 Ocean Avenue, Apartment 4B, Brooklyn, and wait for a yes. Book with the ZIP left blank. Don't offer times in the read-back. After the yes, unless the caller wants a particular day or part of the day, offer these next open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200).
+AGENT : That's 310 Ocean Avenue, Apartment 4B, Brooklyn, correct?
+That's 310 Ocean Avenue, Apartment 4B, Brooklyn, right?
+CALLER: Yes, that's correct.
+AGENT : Thanks. Would your sister like a morning or afternoon visit on Wednesday, September 30? Or should I just offer either?
+CALLER: Please offer the first available time on Wednesday, September 30.
+  tool  book_appointment({"slot_id": "2026-09-30-0800", "customer_type": "residential", "name": "Your sister", "callback_number": "914-555-0100", "address": "310 Ocean Avenue, Apartment 4B, Brooklyn", "zip_code": "", "issue": "AC leaking water all over the floor", "priority": false, "note": null, "business_name": null, "site_contact": null})
+  ->    Booked. Reference 1001 (say "one oh oh one"): Wednesday, September 30, between 8 AM and noon at 310 Ocean Avenue, Apartment 4B, Brooklyn. Tell the caller the day, window, address and the reference as spelled.
+AGENT : Your sister is booked for Wednesday, September 30, between 8 AM and noon at 310 Ocean Avenue, Apartment 4B, Brooklyn. Your reference number is one oh oh one. Can I help with anything else?
+CALLER: No, that's all for now. Thank you!
+  tool  end_call({})
+  ->    
+AGENT : Thanks for calling Summit Air. Goodbye.
+  [outcome] booked
+
+bookings: [{'ref': 1001, 'call_id': 'eval-relative_address-demo-1', 'slot_id': '2026-09-30-0800', 'customer_type': 'residential', 'priority': 0, 'name': 'Your sister', 'phone': '914-555-0100', 'address': '310 Ocean Avenue, Apartment 4B, Brooklyn', 'zip': '', 'issue': 'AC leaking water all over the floor', 'note': '', 'created_at': '2026-09-28 02:34:09'}]
+tasks: []

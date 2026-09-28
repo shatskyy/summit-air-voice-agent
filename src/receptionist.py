@@ -13,6 +13,7 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
@@ -145,11 +146,15 @@ AT_RISK = re.compile(
     r"\b(?:mother|mom|mum|father|dad|parents?|grandmother|grandma|grandfather|grandpa"
     r"|grandparents?|granny|elderly|seniors?)\b"
     r"|\b(?:6[5-9]|[7-9]\d|10\d|110)\W*years?\W*old\b"
-    # "I'm 82 and I live alone", "she's 84": an age said as a bare number after a person. Not a
-    # temperature, a percentage or a street ("it's 85 degrees", "I'm on 72nd Street").
-    r"|\b(?:i'?m|i am|she'?s|she is|he'?s|he is|they'?re|they are|is|am|are|turned|turning|age"
-    r"|aged)\W+(?:6[5-9]|[7-9]\d|10\d|110)\b(?!\W*(?:degrees|percent|%|dollars|minutes|years? ago"
-    r"|st\b|nd\b|rd\b|th\b))"
+    # "I'm 82 and I live alone", "she's 84", "my wife is 79": an age said as a bare number right
+    # after a person. Only a pronoun or a relation anchors it: "address is 72 Bergen", "it is 88
+    # in here" and "the thermostat is 66" are not people (a fresh-context review caught the first
+    # cut, which pages on-call for "address is 72 Bergen Street").
+    r"|\b(?:i'?m|i am|she'?s|she is|he'?s|he is|(?:wife|husband|aunt|uncle|mother|mom|father|dad"
+    r"|grandmother|grandfather|grandma|grandpa|sister|brother|neighbor|tenant|roommate|partner)"
+    r"\W+(?:is|who'?s|who is|turned|just turned))\W+(?:6[5-9]|[7-9]\d|10\d|110)\b"
+    r"(?!\W*(?:degrees|percent|%|dollars|minutes|blocks|miles|years? ago|st\b|nd\b|rd\b|th\b"
+    r"|[a-z]+ (?:street|st|avenue|ave|road|rd|place|lane|drive|boulevard|blvd)\b))"
     r"|\b(?:babies|baby|infant|newborn)\b|\b\w+\W+months?\W+old\b"
     r"|\b(?:oxygen|asthma|copd|heart condition|pregnant|dialysis|bedridden|disabled"
     r"|medical condition)\b",
@@ -187,6 +192,7 @@ class Call:
     db: Path = DEFAULT_DB
     offered: dict[str, str] = field(default_factory=dict)  # slot id -> how it was spoken
     checked_zip: str | None = None  # the in-area ZIP check_address passed on this call
+    checked_street: list[str] = field(default_factory=list)  # street_key of that address
     hazard_task: int | None = None
     hazard_due: datetime | None = None  # the emergency task's callback target, for a repeat attempt
     paged: bool = False  # an urgent or emergency task was filed, so on-call has been paged
@@ -417,7 +423,15 @@ def same_visit(held: dict, address: str, zip_code: str) -> bool:
     if held["zip"] != zip_code:
         return False
     was, now = street_key(held["address"]), street_key(address)
-    return was == now or (len(was) == len(now) == 2 and (was[0] == now[0] or was[1] == now[1]))
+    if was == now:
+        return True
+    if len(was) != 2 or len(now) != 2:
+        return False
+    if was[1] == now[1]:  # the same street, a corrected house number
+        return True
+    # The same house number on a street that sounds alike: "Burger" for "Bergen". "48 Dean" for
+    # "48 Bergen" is a different property.
+    return was[0] == now[0] and SequenceMatcher(None, was[1], now[1]).ratio() >= 0.6
 
 
 def in_coverage(zip_code: str) -> bool:
@@ -432,9 +446,11 @@ TOWNS = {t.lower().replace(".", "") for t in CONFIG["coverage"]["towns"]}
 
 
 def town_covered(town: str) -> bool:
-    """Whether the town alone places an address in the service area: a borough, the city, or a
-    Queens post-office name (config coverage.towns). For a caller who doesn't know the ZIP."""
-    return town.strip().lower().replace(".", "") in TOWNS
+    """Whether the town alone places an address in the service area: a borough, the city, a
+    neighborhood or a Queens post-office name (config coverage.towns), with a trailing state
+    dropped ("Brooklyn, NY"). For a caller who doesn't know the ZIP."""
+    cleaned = re.sub(r"[,\s]+(?:ny|n\.y\.|new york)$", "", town.strip().lower().replace(".", ""))
+    return cleaned.strip() in TOWNS
 
 
 # Digits as speech-to-text writes them when the caller says them one at a time or in pairs:
@@ -449,17 +465,48 @@ NUMBER_WORDS = {
 }  # fmt: skip
 
 
+TENS = {"twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"}
+UNITS = {"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"}
+
+
+def spoken_numbers(text: str) -> list[str]:
+    """The numbers in a caller's words, as digit strings: "48 Bergen, one one two oh one" gives
+    ["48", "1", "1", "2", "0", "1"]. "twenty one" is 21 and "two hundred one" is 201, since a ZIP
+    is said in pairs and hundreds as often as digit by digit ("eleven two twenty-one")."""
+    words = re.findall(r"[a-z]+|\d+", text.lower())
+    out: list[str] = []
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if w.isdigit():
+            out.append(w)
+        elif w in TENS and i + 1 < len(words) and words[i + 1] in UNITS:
+            out.append(str(int(NUMBER_WORDS[w]) + int(NUMBER_WORDS[words[i + 1]])))
+            i += 1
+        elif w == "hundred" and out and i + 1 < len(words) and words[i + 1] in NUMBER_WORDS:
+            n = int(out.pop()) * 100 + int(NUMBER_WORDS[words[i + 1]])
+            out.append(str(n))
+            i += 1
+        elif w == "hundred" and out:
+            out.append(str(int(out.pop()) * 100))
+        elif w in NUMBER_WORDS:
+            out.append(NUMBER_WORDS[w])
+        i += 1
+    return out
+
+
 def caller_digits(items) -> str:
     """Every digit the caller has said so far, in order, with number words spelled out. Empty when
-    there is no history to read (the offline tests' bare context)."""
+    there is no history to read (the offline tests' bare context). A ZIP is checked as a run of
+    this string, so a ZIP hidden inside a phone number passes; that is the old behavior, not a
+    new hole."""
     if items is None:
         return ""
     out = []
     for item in items:
         if getattr(item, "type", None) != "message" or item.role != "user":
             continue
-        for word in re.findall(r"[a-z]+|\d+", (item.text_content or "").lower()):
-            out.append(NUMBER_WORDS.get(word, word if word.isdigit() else ""))
+        out += spoken_numbers(item.text_content or "")
     return "".join(out)
 
 
@@ -479,15 +526,48 @@ def zip_asked(items) -> bool:
     )
 
 
+# What a plain denial of risk is made of, and nothing else: "No, it's just me, I'm fine." A turn
+# with any other word in it ("No, she just had a stroke") is the model's to judge.
+DENIAL_WORDS = {
+    "no", "nope", "nah", "nobody", "none", "one", "not", "really", "just", "me", "us", "myself",
+    "it", "its", "is", "im", "i", "am", "a", "an", "fine", "healthy", "adult", "adults", "here",
+    "home", "at", "risk", "there", "theres", "thats", "that", "all", "only", "ok", "okay", "thanks",
+    "thank", "you", "nothing", "like", "of", "the", "sort", "kind", "we", "were", "are", "both",
+    "good", "young", "and", "my", "wife", "husband", "dog", "cat",
+}  # fmt: skip
+
+
 def risk_denied_last(items) -> bool:
-    """Whether the caller's latest turn says nobody is at risk and nothing more: "no, it's just
-    me", "nobody". "No, but my son is sick" is not a denial."""
+    """Whether the caller's latest turn is a plain denial of risk and nothing more: "no, it's just
+    me", "nobody, I'm fine". "No, she just had a stroke" or "no, but my son is sick" is not."""
     for item in reversed(items or []):
         if getattr(item, "type", None) == "message" and item.role == "user":
             text = item.text_content or ""
-            if AT_RISK.search(text) or NOT_ONLY_NO.search(text):
+            words = re.findall(r"[a-z]+", text.lower().replace("'", ""))
+            if not words or AT_RISK.search(text):
                 return False
-            return bool(NOBODY.search(text)) or clear_no(text)
+            return words[0] in {"no", "nope", "nah", "nobody", "none", "just"} and all(
+                w in DENIAL_WORDS for w in words
+            )
+    return False
+
+
+def number_settled(items) -> bool:
+    """Whether the callback number has come up on this call: the agent asked about it or the
+    caller spoke to it ("this number is fine"). A booking without that step skipped what Summit
+    Air needs to reach the caller, which the model did on a sister's-apartment simulation."""
+    for item in items or []:
+        if getattr(item, "type", None) != "message":
+            continue
+        text = item.text_content or ""
+        if item.role == "assistant" and re.search(
+            r"\bnumber\b|reach (?:you|them|someone)", text, re.IGNORECASE
+        ):
+            return True
+        if item.role == "user" and re.search(
+            r"\bnumber\b|calling from|reach me|\d{3}\W*\d{3}\W*\d{4}", text, re.IGNORECASE
+        ):
+            return True
     return False
 
 
@@ -906,6 +986,7 @@ class SummitAirAgent(Agent):
                     "there is anything else."
                 )
             call.checked_zip = ""
+            call.checked_street = street_key(street)
             checked = (
                 f"In the service area ({town}), no ZIP needed. Read it back once as {street}, "
                 f"{town}, and wait for a yes. Book with the ZIP left blank."
@@ -930,6 +1011,7 @@ class SummitAirAgent(Agent):
                     "else."
                 )
             call.checked_zip = zip_code
+            call.checked_street = street_key(street)
             checked = (
                 f"In the service area. Read it back once as {street}, {town}, ZIP {zip_code}, and "
                 "wait for a yes."
@@ -1046,10 +1128,19 @@ class SummitAirAgent(Agent):
                 f"ZIP {zip_code} is outside the service area. Don't book. Confirm the ZIP, "
                 "and if it is outside the area, create a callback task."
             )
-        if zip_code != call.checked_zip:  # a blank ZIP books only after a borough check
+        # The booked address is the checked one: the ZIP matches, and the house number and street
+        # match, so a blank ZIP can't carry an unchecked town and a correction goes through the
+        # read-back first.
+        if zip_code != call.checked_zip or street_key(address) != call.checked_street:
             raise ToolError(
                 "This address hasn't been checked on this call. Call check_address, read the "
                 "address back and hear a yes, then book."
+            )
+        if (items := history_of(context)) is not None and not number_settled(items):
+            raise ToolError(
+                "The callback number hasn't come up. Confirm the number they're calling from is "
+                "the best one to reach them, or for someone else's home ask which number reaches "
+                "someone there, then book."
             )
         turn = call.turn  # read at entry: the next turn can arrive while the write is in flight
         async with call.book_lock:  # a turn's tool calls run concurrently; one write per turn

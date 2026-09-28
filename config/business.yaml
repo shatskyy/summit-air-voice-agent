@@ -20,13 +20,23 @@ coverage:
   # Queens post-office names people put on an envelope. An address in one of these books without
   # a ZIP; anywhere else needs the ZIP to be checked.
   towns:
-    [Manhattan, New York, New York City, NYC, Brooklyn, Queens, Astoria, Long Island City,
-     Sunnyside, Woodside, Jackson Heights, Elmhurst, Corona, Flushing, College Point, Whitestone,
-     Bayside, Little Neck, Douglaston, Fresh Meadows, Forest Hills, Rego Park, Kew Gardens,
-     Richmond Hill, Woodhaven, Ozone Park, Howard Beach, Jamaica, Hollis, Queens Village,
-     Springfield Gardens, Rosedale, Far Rockaway, Rockaway Park, Arverne, Ridgewood, Glendale,
-     Maspeth, Middle Village, Bellerose, Floral Park, Cambria Heights, Laurelton, Saint Albans,
-     St. Albans, East Elmhurst, Briarwood, Oakland Gardens]
+    [Manhattan, New York, New York City, NYC, Brooklyn, Queens,
+     # Queens post-office names, each inside the ZIP prefixes above (Floral Park and Bellerose
+     # straddle the Nassau line, so they need the ZIP)
+     Astoria, Long Island City, LIC, Sunnyside, Woodside, Jackson Heights, Elmhurst, East Elmhurst,
+     Corona, Flushing, College Point, Whitestone, Bayside, Little Neck, Douglaston, Glen Oaks,
+     Fresh Meadows, Oakland Gardens, Forest Hills, Rego Park, Kew Gardens, Kew Gardens Hills,
+     Briarwood, Richmond Hill, Woodhaven, Ozone Park, Howard Beach, Jamaica, Hollis, Queens Village,
+     Cambria Heights, Laurelton, Springfield Gardens, Rosedale, Saint Albans, St. Albans,
+     Far Rockaway, Rockaway Park, Arverne, Ridgewood, Glendale, Maspeth, Middle Village,
+     # neighborhoods a caller may give as the town
+     Harlem, Washington Heights, Inwood, Upper West Side, Upper East Side, Midtown, Chelsea,
+     Tribeca, SoHo, East Village, West Village, Lower East Side, Financial District,
+     Williamsburg, Greenpoint, Bushwick, Bed-Stuy, Bedford-Stuyvesant, Park Slope, Crown Heights,
+     Flatbush, Bay Ridge, Sunset Park, Red Hook, Carroll Gardens, Cobble Hill, Brooklyn Heights,
+     Fort Greene, Clinton Hill, Prospect Heights, Sheepshead Bay, Bensonhurst, Canarsie,
+     Coney Island, Brighton Beach, Dyker Heights, Borough Park, Windsor Terrace, Kensington,
+     Midwood, East Flatbush, Bushwick, Ridgewood]
 
 hours:
   office: { days: [mon, tue, wed, thu, fri], start: "08:00", end: "17:00" }

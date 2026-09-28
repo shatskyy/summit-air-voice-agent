@@ -992,6 +992,8 @@ def test_a_working_system_is_not_called_down(said):
         "she's 84, and it's 55 degrees in her apartment",
         "my aunt lives here, she is 79",
         "I am 90",
+        "my wife is 79",
+        "my mother just turned 70",
     ],
 )
 def test_someone_at_risk_is_recognized(said):
@@ -1011,6 +1013,12 @@ def test_someone_at_risk_is_recognized(said):
         ("it's 85 degrees in here", ""),
         ("he's 90 percent sure it's the thermostat", ""),
         ("I'm on 72nd Street", ""),
+        ("Address is 72 Bergen Street.", ""),
+        ("it is 88 in here", ""),
+        ("the thermostat is 66", ""),
+        ("we are 80 blocks away", ""),
+        ("the fee is 89? that's a lot", ""),
+        ("I'm 72 Bergen Street, Brooklyn", ""),
     ],
 )
 def test_no_one_at_risk_is_not_flagged(said, last_agent):
@@ -1183,7 +1191,8 @@ async def test_a_second_issue_at_the_same_slot_is_reported_as_updated(db):
 async def test_a_second_address_on_one_call_is_refused(db, street, zip_code):
     agent, ctx = await checked_call(db)
     await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
-    ctx.userdata.checked_zip = zip_code
+    ctx.userdata.checked_zip = zip_code  # as if check_address had run on the new address
+    ctx.userdata.checked_street = receptionist.street_key(street)
     ctx.userdata.turn += 1  # the caller's next turn
     with pytest.raises(ToolError, match="already booked #1001 at 14 Maple Street, Brooklyn"):
         await agent.book_appointment(
@@ -1852,6 +1861,7 @@ class SpokenContext(FakeContext):
 
 
 ZIP_ASKED = "AGENT: And what's the ZIP code there?"
+NUMBER_ASKED = "AGENT: Is the number you're calling from the best one to reach you?"
 
 
 @pytest.mark.parametrize(
@@ -1863,6 +1873,12 @@ ZIP_ASKED = "AGENT: And what's the ZIP code there?"
         "one twelve zero one",
         "ten thousand... no, 11201",
         "Brooklyn 11,201",
+        "one-one-two-oh-one",
+        "eleven-two-oh-one",
+        "1 1 2 0 1",
+        "11 201",
+        "ZIP's 11201",
+        "eleven two hundred one",
     ],
 )
 async def test_a_zip_the_caller_said_passes(db, said):
@@ -1889,7 +1905,7 @@ async def test_a_zip_the_caller_never_said_is_refused(db):
 async def test_a_covered_borough_books_without_a_zip(db, town):
     ctx = SpokenContext(
         Call(call_id="call-a", db=db),
-        ["48 Bergen Street in " + town, ZIP_ASKED, "I don't know it, sorry."],
+        ["48 Bergen Street in " + town, ZIP_ASKED, "I don't know it, sorry.", NUMBER_ASKED, "Yes."],
     )
     agent = SummitAirAgent("")
     result = await agent.check_address(ctx, "48 Bergen Street", town, "")
@@ -1926,7 +1942,8 @@ async def test_booking_without_a_zip_needs_the_borough_check_first(db):
 async def test_a_zip_that_was_never_said_cannot_be_booked_either(db):
     """The booking ZIP must be the checked one, so an invented ZIP can't enter at booking."""
     ctx = SpokenContext(
-        Call(call_id="call-a", db=db), ["48 Bergen Street in Brooklyn", ZIP_ASKED, "Don't know."]
+        Call(call_id="call-a", db=db),
+        ["48 Bergen Street in Brooklyn", ZIP_ASKED, "Don't know.", NUMBER_ASKED, "Yes."],
     )
     agent = SummitAirAgent("")
     await agent.check_address(ctx, "48 Bergen Street", "Brooklyn", "")
@@ -1953,7 +1970,9 @@ def test_a_context_without_a_history_skips_the_zip_check(db):
         ("14 Maple Street, Brooklyn", "40 Maple Street, Brooklyn", True),  # "forty, not fourteen"
         ("48 Burger Street, Brooklyn", "48 Bergen Street, Brooklyn", True),  # a misheard street
         ("14 Maple Street, Brooklyn", "310 Ocean Avenue, Brooklyn", False),  # a second address
-        ("14 Maple Street, Brooklyn", "14 Ocean Avenue, Brooklyn", True),  # same number, kept
+        ("14 Maple Street, Brooklyn", "14 Ocean Avenue, Brooklyn", False),  # a second address
+        ("48 Bergen Street, Brooklyn", "48 Dean Street, Brooklyn", False),  # a second address
+        ("48 Bergen Street, Brooklyn", "48 Bergan Street, Brooklyn", True),  # a spelling
     ],
 )
 def test_a_correction_keeps_the_visit_and_a_second_address_does_not(held, new, same):
@@ -1973,6 +1992,7 @@ async def test_a_corrected_house_number_after_booking_moves_the_same_booking(db)
     ctx.userdata.turn = 1
     await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
     ctx.userdata.turn = 2
+    await agent.check_address(ctx, "40 Maple Street", "Brooklyn", "11225")  # read back again
     updated = await agent.book_appointment(
         ctx, "2026-09-29-0800", "residential", "Maria Lopez", "", "40 Maple Street, Brooklyn",
         "11225", "no heat",
@@ -2052,6 +2072,10 @@ async def test_an_urgent_task_right_after_the_caller_denies_risk_is_refused(db, 
         "It's dangerous for her, she can't take the cold.",
         "No, but my neighbor's kid is here and he's sick.",
         "48 Bergen Street, Brooklyn.",
+        "No, she just had a stroke.",
+        "No one old. My wife is on chemo.",
+        "No, he has a pacemaker.",
+        "No, just me, I'm diabetic.",
     ],
 )
 async def test_softer_urgency_the_rules_cannot_see_is_still_the_models_call(db, said):
@@ -2084,3 +2108,82 @@ def test_a_relation_is_not_a_name(name):
 @pytest.mark.parametrize("name", ["Ana", "David Shatsky", "Maria Lopez", "D. Shatsky", "Mrs. Chen"])
 def test_a_real_name_still_is_one(name):
     assert receptionist.is_real_name(name)
+
+
+@pytest.mark.parametrize(
+    ("said", "digits"),
+    [
+        ("eleven two twenty-one", "11221"),
+        ("ten oh twenty-five", "10025"),
+        ("eleven three seventy-five", "11375"),
+        ("one one two oh one", "11201"),
+        ("48 Bergen, one twelve zero one", "4811201"),
+    ],
+)
+def test_number_words_are_read_the_way_zips_are_said(said, digits):
+    assert "".join(receptionist.spoken_numbers(said)) == digits
+
+
+@pytest.mark.parametrize(
+    ("town", "covered"),
+    [
+        ("Brooklyn, NY", True),
+        ("Queens, New York", True),
+        ("New York, NY", True),
+        ("Williamsburg", True),
+        ("LIC", True),
+        ("Kew Gardens Hills", True),
+        ("Floral Park", False),  # straddles the Nassau line: the ZIP decides
+        ("Yonkers", False),
+        ("Staten Island", False),
+    ],
+)
+def test_the_towns_a_caller_may_give_without_a_zip(town, covered):
+    assert receptionist.town_covered(town) is covered
+
+
+async def test_a_blank_zip_cannot_carry_an_unchecked_address_into_the_booking(db):
+    """After a borough check of 48 Bergen Street, a booking at 12 Elm Street, Yonkers with the ZIP
+    blank is not the checked address."""
+    ctx = SpokenContext(
+        Call(call_id="call-a", db=db),
+        ["48 Bergen Street in Brooklyn", ZIP_ASKED, "Don't know.", NUMBER_ASKED, "Yes."],
+    )
+    agent = SummitAirAgent("")
+    await agent.check_address(ctx, "48 Bergen Street", "Brooklyn", "")
+    await agent.check_availability(ctx, "2026-09-29", "any")
+    with pytest.raises(ToolError, match="hasn't been checked"):
+        await agent.book_appointment(
+            ctx, "2026-09-29-0800", "residential", "Maria Lopez", "+19145550100",
+            "12 Elm Street, Yonkers", "", "no heat",
+        )  # fmt: skip
+
+
+async def test_booking_waits_until_the_number_has_come_up(db):
+    """relative_address, 1 of 3: the model booked a sister's apartment on the caller's own number
+    without asking which number reaches someone there, or confirming any number at all."""
+    ctx = SpokenContext(
+        Call(call_id="call-a", db=db, caller_number="+19145550100"),
+        ["310 Ocean Avenue, Brooklyn, 11226", "Yes, that's right."],
+    )
+    agent = SummitAirAgent("")
+    await agent.check_address(ctx, "310 Ocean Avenue", "Brooklyn", "11226")
+    await agent.check_availability(ctx, "2026-09-29", "any")
+    args = ("residential", "David Shatsky", "", "310 Ocean Avenue, Brooklyn", "11226", "AC leak")
+    with pytest.raises(ToolError, match="callback number hasn't come up"):
+        await agent.book_appointment(ctx, "2026-09-29-0800", *args)
+    ctx.session.history.add_message(role="assistant", content="Which number reaches someone there?")
+    ctx.session.history.add_message(role="user", content="Her number is 718-555-0199.")
+    booked = await agent.book_appointment(
+        ctx, "2026-09-29-0800", *args[:2], "718-555-0199", *args[3:]
+    )
+    assert booked.startswith("Booked")
+
+
+@pytest.mark.parametrize(
+    "said",
+    ["The number I'm calling from is fine.", "Reach me at 718-555-0199.", "Call 7185550199."],
+)
+async def test_a_caller_who_volunteers_the_number_has_settled_it(db, said):
+    ctx = SpokenContext(Call(call_id="call-a", db=db, caller_number="+19145550100"), [said])
+    assert receptionist.number_settled(ctx.session.history.items)

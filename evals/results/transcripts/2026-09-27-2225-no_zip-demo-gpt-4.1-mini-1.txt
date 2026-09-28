@@ -1,0 +1,26 @@
+# no_zip / demo / openai/gpt-4.1-mini / run 1
+FAIL: 0 bookings, expected 1
+style: {'bundled': 0, 'reasked_type': 0, 'lists': 0, 'words': 17.2}
+cost: $0.0041
+
+AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?
+CALLER: Hi, my furnace won't turn on.
+AGENT : Got it. Is anyone there who'd be at risk in the cold, like someone older, a baby, or someone with a health problem?
+CALLER: No, it's just me.
+AGENT : Understood. What’s the address where the furnace needs service?
+CALLER: It's 48 Bergen Street in Brooklyn.
+AGENT : Thanks. Can you give me the ZIP code for that address?
+CALLER: I honestly don't know it off the top of my head.
+AGENT : The technician needs the ZIP code to find your location. Could you please check it and share it with me?
+CALLER: I really don't know it. Sorry.
+  tool  create_dispatch_task({"kind": "callback", "reason": "no heat, address incomplete", "summary": "no heat furnace, caller does not know ZIP code at 48 Bergen Street, Brooklyn", "name": null, "callback_number": "9145550100", "address": "48 Bergen Street, Brooklyn"})
+  ->    Task 2001 created. Dispatch has the callback. The callback target is 2:35 PM. Tell the caller the target, and never promise an arrival time.
+AGENT : I can't proceed without the ZIP code, so I've asked a person from our dispatch to call you back by 2:35 PM to help with your furnace. Can I help you with anything else?
+CALLER: No, that's all. Thanks for your help.
+  tool  end_call({})
+  ->    
+AGENT : Thanks for calling Summit Air. Goodbye.
+  [outcome] callback
+
+bookings: []
+tasks: [{'ref': 2001, 'call_id': 'eval-no_zip-demo-1', 'kind': 'callback', 'reason': 'no heat, address incomplete', 'summary': 'no heat furnace, caller does not know ZIP code at 48 Bergen Street, Brooklyn', 'name': '', 'phone': '9145550100', 'address': '48 Bergen Street, Brooklyn', 'due_at': '2026-09-29T14:35-04:00', 'status': 'open', 'created_at': '2026-09-28 02:26:05'}]

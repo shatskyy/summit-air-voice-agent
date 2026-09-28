@@ -1,0 +1,508 @@
+{
+  "meta": {
+    "started": "2026-09-27T22:37:17-04:00",
+    "stamp": "2026-09-27-223717",
+    "commit": "c106fd6",
+    "models": [
+      "openai/gpt-4.1-mini"
+    ],
+    "runs": "3 run(s) per scenario and clock",
+    "scenarios": [
+      "relative_address",
+      "split_address"
+    ],
+    "compare": "",
+    "estimate": 0.0333
+  },
+  "results": [
+    {
+      "scenario": "split_address",
+      "title": "R3. The address over two turns, the ZIP as words",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 13.2
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 47367,
+          "cached": 44800,
+          "output": 367,
+          "requests": 12,
+          "cost": 0.006094
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 3113,
+          "cached": 0,
+          "output": 46,
+          "requests": 8,
+          "cost": 0.001319
+        }
+      },
+      "cost": 0.007413,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hi, my furnace won't turn on.",
+        "AGENT : Is anyone there at risk in the cold, like someone older, a baby, or with health issues?",
+        "CALLER: No, it's just me.",
+        "AGENT : Got it. What's the address where the furnace is?",
+        "CALLER: It's 48 Bergen.",
+        "AGENT : Thanks. What town is that in?",
+        "CALLER: Street. In Brooklyn.",
+        "AGENT : Thanks. Could you please provide the ZIP code for that Brooklyn address?",
+        "CALLER: It's one one two oh one.",
+        "  tool  check_address({\"street\": \"48 Bergen Street\", \"town\": \"Brooklyn\", \"zip_code\": \"11201\"})",
+        "  ->    In the service area. Read it back once as 48 Bergen Street, Brooklyn, ZIP 11201, and wait for a yes. Don't offer times in the read-back. After the yes, unless the caller wants a particular day or part of the day, offer these next open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200).",
+        "AGENT : I have 48 Bergen Street, Brooklyn, ZIP 11201. Is that right?",
+        "CALLER: Yes, that's right.",
+        "AGENT : We have openings Wednesday, September 30, 8 AM to noon, or noon to 4 PM. Which do you prefer?",
+        "CALLER: I'll take the first window, please.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"\", \"callback_number\": \"914-555-0100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"furnace won't turn on\", \"priority\": false, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    No name yet. Ask the caller for their name, then book. Don't use a placeholder.",
+        "AGENT : Could I have your name to book the visit?",
+        "CALLER: David Shatsky.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"David Shatsky\", \"callback_number\": \"914-555-0100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"furnace won't turn on\", \"priority\": false, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001 (say \"one oh oh one\"): Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. Tell the caller the day, window, address and the reference as spelled.",
+        "AGENT : David, you're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. Your reference number is one oh oh one. Anything else I can do?",
+        "CALLER: No, thank you.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] booked"
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-split_address-demo-1",
+          "slot_id": "2026-09-30-0800",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "David Shatsky",
+          "phone": "914-555-0100",
+          "address": "48 Bergen Street, Brooklyn",
+          "zip": "11201",
+          "issue": "furnace won't turn on",
+          "note": "",
+          "created_at": "2026-09-28 02:37:28"
+        }
+      ],
+      "tasks": []
+    },
+    {
+      "scenario": "split_address",
+      "title": "R3. The address over two turns, the ZIP as words",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 2,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 1,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 17.3
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 47447,
+          "cached": 41344,
+          "output": 354,
+          "requests": 12,
+          "cost": 0.007142
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 3957,
+          "cached": 0,
+          "output": 61,
+          "requests": 9,
+          "cost": 0.00168
+        }
+      },
+      "cost": 0.008822,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hi, my furnace won't turn on.",
+        "AGENT : Got it. Is anyone at risk in the cold, like someone older, a baby, or with a health problem?",
+        "CALLER: No, it's just me.",
+        "AGENT : Thanks. What is the address where the furnace is?",
+        "CALLER: It's 48 Bergen.",
+        "AGENT : Could you please tell me the town or city for 48 Bergen?",
+        "CALLER: Street. In Brooklyn.",
+        "AGENT : Okay, please provide the ZIP code for 48 Bergen Street in Brooklyn or let me know if you don't know it.",
+        "CALLER: It's one one two oh one.",
+        "  tool  check_address({\"street\": \"48 Bergen Street\", \"town\": \"Brooklyn\", \"zip_code\": \"11201\"})",
+        "  ->    In the service area. Read it back once as 48 Bergen Street, Brooklyn, ZIP 11201, and wait for a yes. Don't offer times in the read-back. After the yes, unless the caller wants a particular day or part of the day, offer these next open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200).",
+        "AGENT : The address I have is 48 Bergen Street, Brooklyn, ZIP 11201. Is that correct?\nWhat day or part of the day works best for a visit? If not sure, I can offer the next available windows.",
+        "CALLER: Yes, that is correct. I'll take the next available window.",
+        "AGENT : The next windows are Wednesday, September 30, 8 AM to noon, or Wednesday, September 30, noon to 4 PM. Which do you prefer?",
+        "CALLER: Eight AM to noon works for me.",
+        "AGENT : What's your name, please?",
+        "CALLER: David Shatsky.",
+        "AGENT : Is the number 914-555-0100 the best one to reach you?",
+        "CALLER: Yes, this is the number.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"David Shatsky\", \"callback_number\": \"914-555-0100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"furnace won't turn on\", \"priority\": false, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001 (say \"one oh oh one\"): Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. Tell the caller the day, window, address and the reference as spelled.",
+        "AGENT : David, you're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. Your reference number is one oh oh one. Is there anything else I can help with?",
+        "CALLER: No, thank you.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] booked"
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-split_address-demo-2",
+          "slot_id": "2026-09-30-0800",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "David Shatsky",
+          "phone": "914-555-0100",
+          "address": "48 Bergen Street, Brooklyn",
+          "zip": "11201",
+          "issue": "furnace won't turn on",
+          "note": "",
+          "created_at": "2026-09-28 02:37:28"
+        }
+      ],
+      "tasks": []
+    },
+    {
+      "scenario": "split_address",
+      "title": "R3. The address over two turns, the ZIP as words",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 3,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 1,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 14.7
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 47243,
+          "cached": 43008,
+          "output": 320,
+          "requests": 12,
+          "cost": 0.006507
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 3801,
+          "cached": 0,
+          "output": 52,
+          "requests": 9,
+          "cost": 0.001604
+        }
+      },
+      "cost": 0.008111,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hi, my furnace won't turn on.",
+        "AGENT : Is there anyone at home who might be at risk in this cold, like an older person, a baby, or someone with a health issue?",
+        "CALLER: No, it's just me.",
+        "AGENT : Got it. What's the address where the furnace is?\nCould you please provide the address where the furnace is located?",
+        "CALLER: It's 48 Bergen.",
+        "AGENT : Thanks. What town is 48 Bergen in?",
+        "CALLER: Street. In Brooklyn.",
+        "AGENT : Thanks for that. Could you provide the ZIP code for this Brooklyn address?",
+        "CALLER: One one two oh one.",
+        "  tool  check_address({\"street\": \"48 Bergen Street\", \"town\": \"Brooklyn\", \"zip_code\": \"11201\"})",
+        "  ->    In the service area. Read it back once as 48 Bergen Street, Brooklyn, ZIP 11201, and wait for a yes. Don't offer times in the read-back. After the yes, unless the caller wants a particular day or part of the day, offer these next open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200).",
+        "AGENT : The address is 48 Bergen Street, Brooklyn, ZIP 11201. Is that right?",
+        "CALLER: That's right.",
+        "AGENT : We have openings Wednesday, September 30, between 8 AM and noon or noon and 4 PM. Which works?",
+        "CALLER: The morning one, please.",
+        "AGENT : May I have your name for the booking?",
+        "CALLER: David Shatsky. That's me.",
+        "AGENT : Is the best number to reach you 914-555-0100?",
+        "CALLER: Yes, that's the number.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"David Shatsky\", \"callback_number\": \"914-555-0100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"furnace won't turn on\", \"priority\": false, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001 (say \"one oh oh one\"): Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. Tell the caller the day, window, address and the reference as spelled.",
+        "AGENT : David, you're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. Your reference number is one oh oh one. Anything else I can do?",
+        "CALLER: No, thanks for your help.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] booked"
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-split_address-demo-3",
+          "slot_id": "2026-09-30-0800",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "David Shatsky",
+          "phone": "914-555-0100",
+          "address": "48 Bergen Street, Brooklyn",
+          "zip": "11201",
+          "issue": "furnace won't turn on",
+          "note": "",
+          "created_at": "2026-09-28 02:37:28"
+        }
+      ],
+      "tasks": []
+    },
+    {
+      "scenario": "relative_address",
+      "title": "A6. A sister's apartment",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 18.1
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 39918,
+          "cached": 36992,
+          "output": 325,
+          "requests": 10,
+          "cost": 0.00539
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 2863,
+          "cached": 0,
+          "output": 96,
+          "requests": 7,
+          "cost": 0.001299
+        }
+      },
+      "cost": 0.006689,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hi, I'm calling about my sister's apartment. Her AC is leaking water all over the floor.",
+        "AGENT : Got it. What is the address of your sister's apartment?",
+        "CALLER: The address is 310 Ocean Avenue, Apartment 4B, Brooklyn, 11226.",
+        "  tool  check_address({\"street\": \"310 Ocean Avenue, Apartment 4B\", \"town\": \"Brooklyn\", \"zip_code\": \"11226\"})",
+        "  ->    In the service area. Read it back once as 310 Ocean Avenue, Apartment 4B, Brooklyn, ZIP 11226, and wait for a yes. Don't offer times in the read-back. After the yes, unless the caller wants a particular day or part of the day, offer these next open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200).",
+        "AGENT : That's 310 Ocean Avenue, Apartment 4B, Brooklyn, 11226, right?",
+        "CALLER: Yes, that's right. Her name is Ana Shatsky.",
+        "AGENT : Thanks, Ana's sister. What number can we reach you at?",
+        "CALLER: You can reach Ana at 718-555-0199.",
+        "AGENT : Thanks. Does Ana have no cooling due to the leak or anything else wrong with the AC?\nThanks. Does Ana have no cooling due to the leak or anything else wrong with the AC?",
+        "CALLER: She has no cooling because of the leak. The AC needs to be fixed.",
+        "AGENT : Is anyone there at risk from no cooling, like someone older, a baby, or someone with a health problem?",
+        "CALLER: No, nobody there is at risk.",
+        "AGENT : We can book a visit Wednesday September 30 between 8 AM and noon, or between noon and 4 PM. Which works?",
+        "CALLER: The first window, Wednesday September 30, between 8 AM and noon works.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"Ana Shatsky\", \"callback_number\": \"718-555-0199\", \"address\": \"310 Ocean Avenue, Apartment 4B, Brooklyn\", \"zip_code\": \"11226\", \"issue\": \"AC leaking water, no cooling\", \"priority\": false, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001 (say \"one oh oh one\"): Wednesday, September 30, between 8 AM and noon at 310 Ocean Avenue, Apartment 4B, Brooklyn. Tell the caller the day, window, address and the reference as spelled.",
+        "AGENT : Ana, you're booked for Wednesday, September 30 between 8 AM and noon at 310 Ocean Avenue, Apartment 4B, Brooklyn. Your reference number is one oh oh one. Is there anything else I can do for you?",
+        "CALLER: No, that's all. Thank you very much.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] booked"
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-relative_address-demo-1",
+          "slot_id": "2026-09-30-0800",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "Ana Shatsky",
+          "phone": "718-555-0199",
+          "address": "310 Ocean Avenue, Apartment 4B, Brooklyn",
+          "zip": "11226",
+          "issue": "AC leaking water, no cooling",
+          "note": "",
+          "created_at": "2026-09-28 02:37:39"
+        }
+      ],
+      "tasks": []
+    },
+    {
+      "scenario": "relative_address",
+      "title": "A6. A sister's apartment",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 2,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 14.4
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 44228,
+          "cached": 41344,
+          "output": 322,
+          "requests": 11,
+          "cost": 0.005803
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 2739,
+          "cached": 0,
+          "output": 77,
+          "requests": 7,
+          "cost": 0.001219
+        }
+      },
+      "cost": 0.007022,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hi, I'm calling about my sister's apartment. Her AC is leaking water all over the floor.",
+        "AGENT : Got it. What is the address of your sister's apartment?",
+        "CALLER: It's 310 Ocean Avenue, Apartment 4B, Brooklyn, 11226.",
+        "  tool  check_address({\"street\": \"310 Ocean Avenue, Apartment 4B\", \"town\": \"Brooklyn\", \"zip_code\": \"11226\"})",
+        "  ->    In the service area. Read it back once as 310 Ocean Avenue, Apartment 4B, Brooklyn, ZIP 11226, and wait for a yes. Don't offer times in the read-back. After the yes, unless the caller wants a particular day or part of the day, offer these next open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200).",
+        "AGENT : That's 310 Ocean Avenue, Apartment 4B, Brooklyn, ZIP 11226. Is that right?",
+        "CALLER: Yes, that's right.",
+        "AGENT : Is anyone at risk there from the AC problem, like someone older, a baby, or with a health issue?",
+        "CALLER: No, nobody there is at risk.",
+        "  tool  check_availability({\"earliest_date\": \"2026-09-29\", \"part_of_day\": null})",
+        "  ->    Open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200)",
+        "AGENT : We can come Wednesday, September 30, between 8 AM and noon, or between noon and 4 PM. Which works?",
+        "CALLER: The morning slot, between 8 AM and noon, works for us.",
+        "AGENT : May I have your name for the booking?",
+        "CALLER: My name is David Shatsky.",
+        "AGENT : Is 914-555-0100 the best number to reach you at?",
+        "CALLER: Actually, you can reach Ana there at 718-555-0199.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"David Shatsky\", \"callback_number\": \"718-555-0199\", \"address\": \"310 Ocean Avenue, Apartment 4B, Brooklyn\", \"zip_code\": \"11226\", \"issue\": \"AC leaking water\", \"priority\": false, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001 (say \"one oh oh one\"): Wednesday, September 30, between 8 AM and noon at 310 Ocean Avenue, Apartment 4B, Brooklyn. Tell the caller the day, window, address and the reference as spelled.",
+        "AGENT : David, you're booked for Wednesday, September 30, between 8 AM and noon at 310 Ocean Avenue, Apartment 4B, Brooklyn. Your reference number is one oh oh one. Anything else you need today?",
+        "CALLER: No, that's all. Thank you.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] booked"
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-relative_address-demo-2",
+          "slot_id": "2026-09-30-0800",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "David Shatsky",
+          "phone": "718-555-0199",
+          "address": "310 Ocean Avenue, Apartment 4B, Brooklyn",
+          "zip": "11226",
+          "issue": "AC leaking water",
+          "note": "",
+          "created_at": "2026-09-28 02:37:40"
+        }
+      ],
+      "tasks": []
+    },
+    {
+      "scenario": "relative_address",
+      "title": "A6. A sister's apartment",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 3,
+      "passed": false,
+      "failures": [
+        "the sister's number is not on the booking: '914-555-0100', ''"
+      ],
+      "error": "",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 13.0
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 35760,
+          "cached": 28032,
+          "output": 324,
+          "requests": 9,
+          "cost": 0.006413
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 1709,
+          "cached": 0,
+          "output": 40,
+          "requests": 5,
+          "cost": 0.000748
+        }
+      },
+      "cost": 0.007161,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hi, I'm calling about my sister's apartment. Her AC is leaking water all over the floor.",
+        "AGENT : Understood. What is the address of your sister's apartment?",
+        "CALLER: It's 310 Ocean Avenue, Apartment 4B, Brooklyn, 11226.",
+        "  tool  check_address({\"street\": \"310 Ocean Avenue, Apartment 4B\", \"town\": \"Brooklyn\", \"zip_code\": \"11226\"})",
+        "  ->    In the service area. Read it back once as 310 Ocean Avenue, Apartment 4B, Brooklyn, ZIP 11226, and wait for a yes. Don't offer times in the read-back. After the yes, unless the caller wants a particular day or part of the day, offer these next open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200).",
+        "AGENT : The address is 310 Ocean Avenue, Apartment 4B, Brooklyn, 11226. Is that right?",
+        "CALLER: Yes, that's correct.",
+        "AGENT : Would you prefer an appointment Wednesday morning or Wednesday afternoon?",
+        "CALLER: Wednesday morning, please.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"\", \"callback_number\": \"914-555-0100\", \"address\": \"310 Ocean Avenue, Apartment 4B, Brooklyn\", \"zip_code\": \"11226\", \"issue\": \"AC leaking water\", \"priority\": null, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    No name yet. Ask the caller for their name, then book. Don't use a placeholder.",
+        "AGENT : May I have your name for the booking, please?",
+        "CALLER: David Shatsky.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"David Shatsky\", \"callback_number\": \"914-555-0100\", \"address\": \"310 Ocean Avenue, Apartment 4B, Brooklyn\", \"zip_code\": \"11226\", \"issue\": \"AC leaking water\", \"priority\": null, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001 (say \"one oh oh one\"): Wednesday, September 30, between 8 AM and noon at 310 Ocean Avenue, Apartment 4B, Brooklyn. Tell the caller the day, window, address and the reference as spelled.",
+        "AGENT : David, you're booked for Wednesday, September 30, between 8 AM and noon at 310 Ocean Avenue, Apartment 4B, Brooklyn. Your reference number is one oh oh one. Is there anything else?",
+        "CALLER: No, that's all. Thank you.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] booked"
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-relative_address-demo-3",
+          "slot_id": "2026-09-30-0800",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "David Shatsky",
+          "phone": "914-555-0100",
+          "address": "310 Ocean Avenue, Apartment 4B, Brooklyn",
+          "zip": "11226",
+          "issue": "AC leaking water",
+          "note": "",
+          "created_at": "2026-09-28 02:37:38"
+        }
+      ],
+      "tasks": [],
+      "transcript_file": "results/transcripts/2026-09-27-223717-relative_address-demo-gpt-4.1-mini-3.txt"
+    }
+  ]
+}

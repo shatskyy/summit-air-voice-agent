@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 1.87099,
+  "total": 2.346462,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -251,6 +251,66 @@
       "estimate": 0.0373,
       "cost": 0.048422,
       "results": "evals/results/2026-09-27-2223-a8e8380.json"
+    },
+    {
+      "at": "2026-09-27T22:27:14-04:00",
+      "commit": "9e92cee",
+      "kind": "eval",
+      "label": "discovery: 12 new scenarios + stricter new_install/member, before fixes",
+      "conversations": 17,
+      "estimate": 0.0911,
+      "cost": 0.114426,
+      "results": "evals/results/2026-09-27-2225-9e92cee-dirty.json"
+    },
+    {
+      "at": "2026-09-27T22:33:53-04:00",
+      "commit": "5ef7a37",
+      "kind": "eval",
+      "label": "fix2 x3 on the four discovery failures",
+      "conversations": 12,
+      "estimate": 0.0651,
+      "cost": 0.092337,
+      "results": "evals/results/2026-09-27-2233-5ef7a37.json"
+    },
+    {
+      "at": "2026-09-27T22:34:38-04:00",
+      "commit": "87b1062",
+      "kind": "eval",
+      "label": "fix2 x1 on the scenarios the ZIP check and same_visit touch",
+      "conversations": 8,
+      "estimate": 0.044,
+      "cost": 0.066276,
+      "results": "evals/results/2026-09-27-2233-5ef7a37.json"
+    },
+    {
+      "at": "2026-09-27T22:37:42-04:00",
+      "commit": "c106fd6",
+      "kind": "eval",
+      "label": "fix2b: zip asked first, relations not names, x3",
+      "conversations": 6,
+      "estimate": 0.0333,
+      "cost": 0.045218,
+      "results": "evals/results/2026-09-27-223717-c106fd6.json"
+    },
+    {
+      "at": "2026-09-27T22:39:02-04:00",
+      "commit": "c106fd6",
+      "kind": "eval",
+      "label": "prompt pass: style subset x1",
+      "conversations": 16,
+      "estimate": 0.0894,
+      "cost": 0.138111,
+      "results": "evals/results/2026-09-27-223745-c106fd6.json"
+    },
+    {
+      "at": "2026-09-27T22:41:02-04:00",
+      "commit": "e27c29b",
+      "kind": "eval",
+      "label": "relative_address x3 at the Stage 4 commit, for comparison (run from a worktree; results file not kept)",
+      "conversations": 3,
+      "estimate": 0.0162,
+      "cost": 0.019104,
+      "results": ""
     }
   ]
 }
