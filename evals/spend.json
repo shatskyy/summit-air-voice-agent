@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 1.467331,
+  "total": 1.789044,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -191,6 +191,26 @@
       "estimate": 0.1866,
       "cost": 0.193803,
       "results": "evals/results/2026-09-27-2114-884cd81-dirty.json"
+    },
+    {
+      "at": "2026-09-27T21:52:04-04:00",
+      "commit": "6cd8ef5",
+      "kind": "eval",
+      "label": "Stage 4 final (after)",
+      "conversations": 57,
+      "estimate": 0.3144,
+      "cost": 0.277173,
+      "results": "evals/results/2026-09-27-2149-6cd8ef5.json"
+    },
+    {
+      "at": "2026-09-27T21:52:49-04:00",
+      "commit": "6cd8ef5",
+      "kind": "pytest-llm",
+      "label": "openai/gpt-4.1-mini, openai/gpt-4.1",
+      "conversations": 0,
+      "estimate": 0.3,
+      "cost": 0.04454,
+      "results": ""
     }
   ]
 }

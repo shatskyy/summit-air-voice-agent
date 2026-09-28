@@ -7,13 +7,18 @@ changed.
 | ADR | Decision | Status |
 |---|---|---|
 | [001](#adr-001-livekit-agents-one-always-on-worker) | LiveKit Agents, one always-on worker | Accepted, host revised 2026-09-23 |
-| [002](#adr-002-cascaded-speech-pipeline) | Cascaded speech pipeline | Accepted, components revised 2026-09-23 |
+| [002](#adr-002-cascaded-speech-pipeline) | Cascaded speech pipeline | Accepted, models revised 2026-09-27 |
 | [003](#adr-003-confirm-only-after-a-durable-write) | Confirm only after a durable write | Accepted, mechanism simplified 2026-09-23 |
-| [004](#adr-004-emergencies-are-detected-in-code) | Emergencies are detected in code | Accepted |
+| [004](#adr-004-emergencies-are-detected-in-code) | Emergencies are detected in code | Accepted, revised 2026-09-27 |
 | [005](#adr-005-live-transfer-deferred) | Live transfer through the Twilio trunk | Deferred 2026-09-23 |
 | [006](#adr-006-business-rules-in-configuration-not-in-the-prompt) | Business rules in configuration | Accepted |
 | [007](#adr-007-postgres-as-the-booking-store-superseded) | Postgres as the booking store | Superseded by 008 |
 | [008](#adr-008-sqlite-on-the-workers-host) | SQLite on the worker's host | Accepted 2026-09-23 |
+| [009](#adr-009-urgent-is-detected-in-code) | Urgent is detected in code | Accepted 2026-09-27 |
+| [010](#adr-010-one-visit-per-call) | One visit per call | Accepted 2026-09-27 |
+| [011](#adr-011-the-failure-ladder-and-the-shared-key) | The failure ladder, and the shared key | Accepted 2026-09-27 |
+| [012](#adr-012-evals-fixed-clocks-database-checks-a-spend-ledger) | Evals: fixed clocks, database checks, a spend ledger | Accepted 2026-09-27 |
+| [013](#adr-013-hosting-launchd-and-a-watchdog) | Hosting: launchd and a watchdog | Accepted 2026-09-27 |
 
 ## ADR-001: LiveKit Agents, one always-on worker
 
@@ -44,10 +49,12 @@ to managed hosting with a warm instance.
 
 ## ADR-002: Cascaded speech pipeline
 
-**Status:** Accepted. Components revised 2026-09-23.
+**Status:** Accepted. Components revised 2026-09-23; models revised 2026-09-27.
 
 **Decision.** Speech to text, then a language model, then text to speech, rather than a
-speech-to-speech model.
+speech-to-speech model. Today: Deepgram Nova-3 listens, GPT-4.1 mini answers on OpenAI's API with
+GPT-4.1 as its fallback, and Deepgram Aura-2 speaks with OpenAI's gpt-4o-mini-tts as the backup
+voice. Nothing runs on LiveKit Inference except the hosted turn detector.
 
 **Why.** The riskiest thing this agent does is capture a street address, ZIP code and callback number
 correctly over telephone audio. A cascaded pipeline produces a transcript at every turn, supports
@@ -56,7 +63,8 @@ before anything is booked. It also guarantees ordering: the model cannot say "yo
 the booking tool has returned.
 
 **Cost.** Speech-to-speech models currently feel more natural at turn-taking. This build compensates
-with a semantic turn detector that waits up to 2 s when a sentence sounds unfinished.
+with a semantic turn detector that waits when a sentence sounds unfinished: up to 1.1 s, or 2.5 s
+after the agent asks for an address or a number.
 
 **Revision, 2026-09-24: the hosted turn detector, not the local one.** Replies on call 5 took about
 3.1 s end to end. Replaying that call's turns straight to each model put the first full sentence at
@@ -84,6 +92,18 @@ credit, which covers only about 20 to 30 calls with everything on it. That riske
 dead during the review. Moving speech to Deepgram leaves the credit to the model. Both original
 choices remain as the fallback when no Deepgram key is set. The original model fallback, GPT-4.1,
 was replaced by the two candidates backing each other up.
+
+**Revision, 2026-09-27: OpenAI models on OpenAI's API, GPT-4.1 as the fallback.** Gemma 4 31B and
+GPT-4.1 mini both ran through LiveKit Inference, which bills every model against one account-wide
+credit. The simulated calls spent it on 2026-09-27, and at zero every model on it stops at once,
+the fallback included. The models moved to OpenAI directly on the builder's key. Gemma isn't served
+there, so GPT-4.1 mini leads: it passed the same model tests, and it is the model the simulated calls
+and every phone call from 18:32 on 2026-09-27 ran on. GPT-4.1 is the fallback because it is the stronger model on
+the same key and API, with the same tool-calling behavior, so a slow or failed attempt can be
+retried without a new provider. An attempt gets 2.5 s before the fallback takes over (ADR-011).
+`make_llm` refuses any model that isn't OpenAI's, so nothing can drift back onto the credit. The
+backup voice moved from Inworld (on the same credit) to OpenAI's gpt-4o-mini-tts for the same
+reason. The cost is ADR-011's shared key: one outage takes out both models and the backup voice.
 
 **Considered: Gemini Live as a speech-to-speech alternative.** It is inexpensive and handles
 turn-taking natively. It was not adopted because its tools are non-blocking by default, so it can
@@ -157,7 +177,10 @@ furnace that "won't fire up"), one emergency task per call, the held page (cance
 timed out, released on hang-up) and the closing line with the hang-up after playout. Simulated
 calls `gas`, `no_gas_negation` and `dusty_smell` check the task, its status, the page and the
 hang-up. On the phone the old version (page at once, model reply after the script) was proven on
-calls 6 to 9; this version has its first phone test at Gate 2.
+calls 6 to 9. This version was proven on the Gate 2 calls of 2026-09-27: "I think gas is leaking
+from my stove", then "Yes", got the script, the closing line and a hang-up 0.17 s after it played,
+with one emergency task (2012); "no, I don't smell gas" got no script. The `false_alarm` path (a
+clear no after the script) is proven in simulation only.
 
 ## ADR-005: Live transfer, deferred
 
@@ -218,3 +241,118 @@ so SQLite's file lock serializes the writes. That is what makes the capacity che
 statement is standard `INSERT ... ON CONFLICT ... RETURNING`, which Postgres also runs. The capacity
 check would need a row lock or a counter with a check constraint, because under Postgres's default
 isolation two concurrent inserts can both pass the count.
+
+## ADR-009: Urgent is detected in code
+
+**Status:** Accepted 2026-09-27
+
+**Decision.** Every caller turn updates two flags on the call: `system_down` (no heat, heat out, a
+furnace or boiler not working, freezing, no AC, too hot) and `at_risk` (a parent or grandparent,
+"elderly" or "senior", an age from 65 up, a baby or infant, oxygen, asthma, COPD, a heart condition, pregnancy, dialysis, and a
+plain yes to the agent's at-risk question; "nobody" or "just me" doesn't count). When both are set,
+code files the urgent task on that turn, pages on-call, and tells the model the task number and the
+callback target to say. Any later booking is forced to priority. A keyword check on what the agent
+says (`keep_promise`) stays as the last layer: if the agent tells a caller on-call is coming and no
+task exists, code files one.
+
+**Why.** An 80-year-old without heat is the case where a missed step costs the most, and the model
+missed it: GPT-4.1 mini asked for a name first, or said "I am paging the on-call technician now"
+without calling the tool, in 1 of 4 simulated elderly calls. Filing on the turn the facts arrive
+also catches a risk named late, during the address readback.
+
+**Cost.** A word list. It misses phrasing it doesn't know ("she's frail") and the model is still the
+backstop for those. A false urgent is cheap next to a missed one.
+
+**Evidence.** Simulated `elderly_no_heat`, `infant_no_heat`, `ac_oxygen` and `risk_during_readback`,
+on both clocks, 16 of 16 in the final run. On the phone, Gate 2 call 1: "My heat went out and my
+mother is 80" filed urgent task 2011 on the first turn, and the target was said before the name.
+
+**Would reverse it.** False urgents that cost on-call real sleep, which would argue for a classifier.
+
+## ADR-010: One visit per call
+
+**Status:** Accepted 2026-09-27
+
+**Decision.** A call holds at most one booking. `book_appointment` returns "Booked", "Moved from X to
+Y" or "Updated", so the agent knows which happened. A second booking at a different street or ZIP is
+refused ("For a second address, file a callback task"), and two problems at one address are one
+visit with both issues listed.
+
+**Why.** A retry or a changed mind should move a visit, not create a second one, and a technician
+should arrive knowing about both the leak and the tune-up.
+
+**Cost.** A caller with two properties gets a callback for the second. And a gap found in
+simulation, not fixed: if the model sends two `book_appointment` calls in one turn, the second write
+wins, so the store can end on a different window than the caller heard (`change_window`, 1 of 6
+simulated runs). The fix is to refuse a second booking call in the same turn.
+
+## ADR-011: The failure ladder, and the shared key
+
+**Status:** Accepted 2026-09-27
+
+**Decision.** Three rungs. Each model attempt gets 2.5 s before GPT-4.1 takes over, with no session
+retries on top. Deepgram's voice falls over to OpenAI's. When an error still reaches the session as
+unrecoverable, code acts on the first one, once: a fixed line ("I'm sorry, I'm having trouble on my
+end. Someone from Summit Air will call you back at this number by {target}."), a callback task with
+the transcript so far (urgent if the system is down and someone is at risk), and the hang-up once the
+line has played. If the voice is what failed, the task is filed and the call ended. At startup the
+worker refuses to run without the OpenAI or Deepgram key, so it can never fall back onto the LiveKit
+credit; launchd restarts it and the watchdog pages.
+
+**Why.** LiveKit's defaults retry three times, 2 s apart, and then keep the call open through three
+unrecoverable errors, which leaves a caller in silence for up to about 24 s. Silence reads as a dead
+line; a stated callback doesn't.
+
+**Cost.** Both models and the backup voice run on one OpenAI key, so an outage or an empty balance
+takes all three out at once, and the ladder's line and callback are the only rescue. Speech to text
+has no backup: wrapping Deepgram in a fallback adapter drops its word-aligned transcripts on every
+normal call, so the backup was left out.
+
+**Evidence.** Offline tests with a model that raises check the line, the task and the hang-up. No
+phone call has exercised it.
+
+**Would reverse it.** A second provider's key for the fallback model, which removes the shared-key
+limit at the price of a second prompt-behavior profile to test.
+
+## ADR-012: Evals: fixed clocks, database checks, a spend ledger
+
+**Status:** Accepted 2026-09-27
+
+**Decision.** `uv run python -m evals` plays each scenario against the real prompt, tools and store,
+with the caller played by GPT-4.1 mini from a brief or by scripted lines. The clock is fixed:
+`demo` is Tuesday 2026-09-29 12:35 PM ET with the office open, `night` is Monday 2026-09-28 9 PM
+with it closed, and time-sensitive scenarios run on both. Checks are Python functions over the
+bookings, the tasks and the transcript. There is no model judge. Every run is priced from one table
+and appended to `evals/spend.json`, and a run is refused if it could take the ledger past $3.00 or
+the OpenAI balance under $1.50.
+
+**Why.** Callback targets, the after-hours offer and the urgent path all depend on the clock, so an
+unpinned run tests whatever time it happens to be. A database check can't be talked into a pass: the
+urgent task exists before the booking or it doesn't. The ledger exists because the live phone line
+spends from the same key, and a simulation run that emptied it would take the line down.
+
+**Cost.** Text simulations say nothing about audio, recognition, latency or barge-in; only phone
+calls do. Scripted callers never drift, but model-played ones vary run to run, so one pass is weak
+evidence and single misses get rechecked at both the new and the old commit before anything is
+reverted.
+
+## ADR-013: Hosting: launchd and a watchdog
+
+**Status:** Accepted 2026-09-27
+
+**Decision.** The worker runs as `start` under a launchd job that restarts it if it exits, with one
+process kept warm and a load threshold high enough that it never refuses a call for CPU. A second
+launchd job runs `scripts/watchdog.py` every 5 minutes: it dispatches the agent into a throwaway
+`health-...` room, waits up to 15 s for the worker to write a heartbeat row, checks the Mac is on AC
+power, and pages only when a state changes, plus one "all good" each morning.
+
+**Why.** `dev` mode reloads on every file save and drops live calls. A process check proves a
+process exists; a health-check dispatch proves the worker takes a job and can write to the store.
+The default load threshold (0.7) marked the only worker unavailable six times on 2026-09-27 while
+simulations ran on the same Mac, and with one worker a refused call is silence.
+
+**Cost.** One home machine is the host: power, network or a closed lid takes the line down, and the
+watchdog runs on the same machine, so it can't page if the Mac itself is gone.
+
+**Evidence.** Drills in [scenarios.md](scenarios.md#operations): a killed worker restarted and
+registered in 4 s; the watchdog reported down with the worker stopped and up once it was back.

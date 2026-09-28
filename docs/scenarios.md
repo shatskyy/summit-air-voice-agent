@@ -67,6 +67,62 @@ Gemma 4 31B, Sunday afternoon with the office closed.
 | 2026-09-27 16:06 | `RM_6WiUX8kkMmL9` | Rerun of call 7: gas mid-address | Speech-to-text heard "I smell gas in the kitchen" as "I just want gas in the kitchen", so the keyword backstop never fired and the fix under test never ran. The model caught it: it gave the prompt's safety line and filed emergency task 2006 on the next turn (about 15 s after the mention), with a 4:22 PM target. The name was filed blank rather than "Unknown". The opening "My furnace stopped working" was also heard as "My phone stopped working" | Model catch: pass. Backstop: not exercised. Recognition: fail |
 | 2026-09-27 16:11 | `RM_abnXb9F2qb4b` | Rerun of call 7, said clearly | "Forty eight Severn Lane, Chapp... hold on, I smell gas in the kitchen." The backstop wrote emergency task 2007 with the caller's words and spoke the safety script. The saved call record keeps the gas sentence in order, and the model saw it (its own emergency call named the gas smell). "Yes, it's strong" got a second `create_dispatch_task`, refused with "Emergency task 2007 already exists", then the prompt's leave-the-house line, which fits a confirmed hazard. Defect: that refusal carries no callback target, so the caller never heard one. "Severn" was heard as "Southern" | Transcript fix, one task, backstop: pass. Callback target: fail |
 
+### Before Phase 2 (2026-09-27, 18:32 to 18:37)
+
+The build before any Phase 2 change: GPT-4.1 mini on OpenAI, the Westchester territory, the worker
+in `dev` mode, Sunday evening with the office closed. Each defect here became a Phase 2 item.
+
+| Time | Room | Requirement | What happened | Result |
+|---|---|---|---|---|
+| 18:32 | `RM_wD6Mg8DGZbEN` | Routine booking | "My furnace stopped working", nobody at risk. The address came through as "487 Lane Chappaqua, 10514", was read back that way, and booking 1003 was written to "487 Lane": speech-to-text dropped the street name and nothing checked for one. The name was heard as "Chatsky". Replies 1.1 to 2.3 s | Booking: pass. Address: fail (led to the street-name check) |
+| 18:34 | `RM_GygbaQURKpRt` | "No heat, my mother is 80" | The first reply said "Please leave the house if you smell gas" on a call that never mentioned gas, and the caller said so. The model promised an on-call callback without filing it, so the promise backstop filed urgent task 2008; the model's own attempt later was refused as a duplicate. The target (6:50 PM) was said only at the end, after the name, number and address | Urgent task: pass, by the backstop. Target up front: fail. Gas talk: fail (led to urgent in code) |
+| 18:36 | `RM_RfmJnjF4vidc` | none | Greeting only; the caller hung up | Nothing to grade |
+| 18:36 | `RM_M5dTYG3RNVcr` | Gas | "I think gas is leaking from my stove": the safety script, and emergency task 2009. "Yes" got a model reply, "Please leave the house immediately", with no callback target, and the call stayed open | Script, one task: pass. Target and close: fail (led to the fixed closing line) |
+| 18:36 | `RM_99KwosnzKQvD` | Stray word | Speech-to-text heard "Stop." over the greeting and the model ended the call | Fail (led to end_call waiting for "anything else?" or a goodbye) |
+| 18:37 | `RM_kWhhCAm2Mu2d` | Spanish | "Hola." got a half-Spanish reply, callback task 2010, and "I have arranged for someone to call you back who can speak Spanish", a promise nobody can keep | Callback: pass. Spanish-speaker promise: fail (led to the fixed Spanish line) |
+
+### Gate 1 (Stage 1, `519ea65`, 2026-09-27 19:43)
+
+The worker under launchd `start` with the hosted turn detector pinned.
+
+| Time | Room | Requirement | What happened | Result |
+|---|---|---|---|---|
+| 19:43 | `RM_mAnQRRApSbuw` | Routine booking at 48 Bergen Street, Brooklyn, with a warm process | Greeting 1.6 s after dispatch, hosted `turn-detector-v1` confirmed in the log, median reply 1.28 s (max 2.62 s), booking 1004 matches what was said. Defects: a plain "Hello?" got "What problem are you having with your heating or cooling?"; the number was read back as "+1650..." digits; two agent questions were cut off by a short "Alright." and "You said that" | Pass (graded by David) |
+
+### Gate 2 (Stage 2, `ebe1ae2`, 2026-09-27 20:39 to 20:42)
+
+| Time | Room | Requirement | What happened | Result |
+|---|---|---|---|---|
+| 20:39 | `RM_NLwxgZ2gkgHy` | "My heat went out and my mother is 80" | Code filed urgent task 2011 on the first turn; the 8:54 PM target was said before the name was asked; the number was read as a phone number | Pass |
+| 20:39 | `RM_zDnXV7JaJPUD` | "My furnace won't turn on, and no, I don't smell gas" | No safety script; the at-risk question, then the name. The caller ended the call before a booking | Pass |
+| 20:40 | `RM_RHT2GQirTeYY` | Gas, then "Yes" | The safety script, then the fixed closing line with the 8:55 PM target, then code hung up 0.17 s after it played. One emergency task, 2012 | Pass |
+| 20:40 | `RM_YmRKBLv5DYUv` | "My AC is leaking, and I need my furnace tune-up" | The caller gave a name and address and said "Bye" before any window, so the model filed callback task 2013 naming both issues and no booking was made. "Bergen" was heard as "Burger", and "home or business?" was asked | Not tested: one visit with both issues is proven in simulation only |
+| 20:41 | `RM_vCN4TiNpMid9` | "487 Lane, Brooklyn, 11201" | `check_address` sent it back, and the agent asked for the street name | Pass |
+
+All five graded by David: passed as is.
+
+### Stage 2 calls meant for Gate 3 (2026-09-27, 21:28 to 21:36)
+
+These were meant as the Gate 3 calls, but Stage 3 wasn't deployed yet, so they ran on Stage 2
+(`ebe1ae2`) and are graded as Stage 2 calls. None of them tests a Stage 3 behavior.
+
+| Time | Room | Intended test | What happened on Stage 2 | Result |
+|---|---|---|---|---|
+| 21:28 | `RM_ECBeuGQNHepp` | Hang up after "my AC stopped working" | Heard as "My c stopped working"; the caller hung up. Stage 2 has no abandoned-call callback, so no task was filed | As expected for Stage 2 |
+| 21:30 | `RM_7u3MoMaNngTu` | The same | Heard as "My IT stopped working"; the caller hung up. No task | As expected for Stage 2 |
+| 21:30 | `RM_CfrYAV3D5TCg` | "Is this Joe's Pizza?" | "No, this is Summit Air, a heating and cooling company. How can I assist you with heating or cooling today?": a correct answer, but it kept the caller on instead of a one-line exit. Stage 3's fixed wrong-number line came after this call | Partial |
+| 21:31 | `RM_CCbLcA43mpsM` | Refuse the address twice | Asked once more with the reason ("to see if we serve your area and to book the visit"), then offered a callback; task 2014, no third ask. Two agent questions were cut off by the caller starting to speak | Pass, on Stage 2's prompt |
+| 21:33 | `RM_cGzMnusBBsGv` | "Hola, ¿habla español?" | "Hola. I'm", then the call ended before any reply | Nothing to grade |
+| 21:33 | `RM_abBBmR7xmiA9` | "Hello?", then a new install | Opened with "I want a new HVAC" rather than "Hello?", so the neutral opening wasn't tested. A free estimate visit was booked (1005, "replacement estimate") with no fee quoted, and the reference was said as "one oh oh five". Defects: "Who should the technician ask for when they arrive? And can I have your name?", a business question bundled with a second one on a home call; the at-risk question came last, on an estimate; the caller said the number was read wrong | Estimate booking: pass. Wording: fail |
+
+### Gate 3 (Stage 3, `63af8a6`): waived
+
+Waived by David on 2026-09-27; the six Gate 3 calls were not made. So these are proven only in
+simulation and offline tests, and no phone call has exercised them: the abandoned-call callback, the
+wrong-number exit, the refused address as the prompt now handles it, the fixed Spanish line, the
+dispatch push, the new-install estimate from a neutral opening, the failure ladder, and the windows
+offered with the address. Stage 3 was on the line from 21:38 to the end of Stage 4 with no calls.
+
 **Host.** Closing the lid at 23:13 put the Mac into clamshell sleep within seconds, although the
 worker was running under `caffeinate -s` on power. `caffeinate` holds off idle sleep, not a closed
 lid, so for the review window the laptop stays open and plugged in.
@@ -91,6 +147,25 @@ call-1 replay. Gemma leads, since its first sentence arrives at 0.33 s median ag
 in the morning, and 3 of 5 twice that night on `26935d8`. Its two night failures: it didn't call
 `check_availability` when asked for tomorrow morning, and it didn't file the urgent task for an
 80-year-old without heat. It only answers if Gemma fails mid-call.
+
+**Final run 2026-09-27 22:00, on `6cd8ef5` (the Stage 3 behavior), both models, real clock
+(Sunday night, office closed):** 6 of 10. GPT-4.1 passed 4 of 5; GPT-4.1 mini 2 of 5. Both models
+now run on OpenAI directly, GPT-4.1 mini leading. The failures, reported and not fixed under the
+behavior freeze:
+
+- GPT-4.1 mini, "never claims a booking": for "My furnace won't start", with nobody at risk
+  mentioned, it said the on-call technician was notified with a 10:07 PM target. On a closed office
+  that is over-escalation, and a real finding.
+- GPT-4.1 mini, "a caller who wants a person": the callback task and target were right, then it
+  asked "What can we help you with in the meantime?". A real wording slip.
+- GPT-4.1 mini, "offers the windows": it called `check_availability` and offered windows, then asked
+  for the address rather than whether they work. The judge's wording predates checking the address
+  before booking.
+- GPT-4.1, "elderly without heat is flagged": code filed the urgent task on that turn (ADR-009), so
+  the model didn't call the tool the test looks for. A stale expectation.
+
+The simulated calls (`uv run python -m evals`, [ADR-012](decisions.md#adr-012-evals-fixed-clocks-database-checks-a-spend-ledger))
+replace these as the main check; their results are in [`evals/REPORT.md`](../evals/REPORT.md).
 
 ## Operations
 

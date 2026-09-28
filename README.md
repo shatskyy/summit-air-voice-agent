@@ -1,161 +1,214 @@
 # Summit Air Voice Agent
 
-An inbound AI phone agent for Summit Air, a fictional 40-technician HVAC company serving Manhattan,
-Brooklyn and Queens in New York City. It answers the phone, works out what is wrong, separates
-routine work from urgent work from a genuine emergency, and either books a real appointment or files
-a dispatch task with a stated callback target.
+An inbound AI phone agent for Summit Air, a fictional 40-technician HVAC company in Manhattan,
+Brooklyn and Queens: it answers, works out what the caller needs, separates routine from urgent from
+a genuine emergency, and either books a real appointment or files a dispatch task with a stated
+callback target.
 
-**Try it.** Summit Air serves Manhattan, Brooklyn and Queens. An address in any of the three
-reaches a booking, for example 14 Maple Street, Brooklyn, 11225. An address anywhere else, the Bronx
-and Staten Island included, takes the out-of-area path: the agent names the three boroughs, and if
-the address really is outside them it offers a callback instead of a booking.
+## Call +1 914-537-8567
 
-**Read first:** the prompt, [`src/prompt.md`](src/prompt.md); the tools and the safety backstop,
-[`src/receptionist.py`](src/receptionist.py); the booking store, [`src/store.py`](src/store.py); the
-decisions, [`docs/decisions.md`](docs/decisions.md); every test call, [`docs/scenarios.md`](docs/scenarios.md).
+Any address in Manhattan, Brooklyn or Queens can be booked, for example 14 Maple Street, Brooklyn,
+11225. Five things to try:
 
-> **Status.** Working and taking test calls. Booking is phone-tested (call 4 in
-> [`docs/scenarios.md`](docs/scenarios.md)). The urgent and emergency paths pass the offline and
-> model tests and have not had a phone call yet.
+| Say | What should happen | Tested on |
+|---|---|---|
+| "My furnace won't turn on." Then a name and an address when asked | The address is read back with the town; two windows are offered right after you confirm it; the booking is confirmed only after it is written, with the reference said digit by digit ("one oh oh five") | Phone, except the windows offered with the address (simulation only) |
+| "My heat went out and my mother is 80, she lives with me." | Code files an urgent task on your first sentence, and the agent says the callback target before asking your name | Phone (Gate 2 call 1) |
+| "I think gas is leaking from my stove." Then "Yes." | A fixed safety script, then a fixed closing line ("Get everyone outside now and call 911..."), and the agent hangs up. One emergency task, one page to the on-call phone | Phone (Gate 2 call 3) |
+| "My furnace won't turn on. And no, I don't smell gas." | No safety script: the negation is understood and the call goes on as a routine booking | Phone (Gate 2 call 2), the booking in simulation |
+| "Hello?", then "I want central AC installed." | A neutral "What can we help you with?", then a free estimate visit booked with no fee quoted | Simulation only |
 
-## The design claim
-
-**The agent only says something happened if it actually happened.**
-
-A booking is confirmed out loud only after the write has committed and returned a reference number.
-A callback is promised only when a dispatch task exists with a priority and a due time. A retry, or a
-caller changing their mind mid-call, moves the one booking the call holds instead of creating a
-second.
-
-The voice model runs the conversation. It does not get to decide what is true about the calendar.
-
-## What it handles
-
-| | |
-|---|---|
-| **Understanding the problem** | In the caller's own words, before asking for anything. Details volunteered out of order are kept, anything skipped is asked for before booking, and the name is also checked in code. |
-| **Urgency** | Emergency, then urgent, then routine. The prompt re-decides whenever new facts arrive, including during confirmation. An urgent call is flagged before anything is scheduled. |
-| **Emergencies** | Gas smell, carbon monoxide alarm, smoke. Detected in code, not left to the model, and the safety script is spoken before the model replies. |
-| **Booking** | Against a persistent schedule with real capacity. At most two arrival windows offered at a time. The address is checked against the service area as soon as it is given, before any window is offered, and read back with the town. No booking without an offered window, a checked ZIP code and the caller's name. |
-| **People** | A request for a person, a reschedule, billing or a complaint becomes a callback task with a stated target, without argument. The target counts office hours, so a request at 11 PM is promised for 10 AM the next morning, not 1 AM. |
-| **Silence** | One check-in after 12 seconds of silence. If the line stays quiet, a goodbye and a hang-up. |
-
-## Stack
-
-| Layer | Choice |
-|---|---|
-| Agent framework | [LiveKit Agents](https://github.com/livekit/agents) 1.8, Python |
-| Telephony | Twilio number on an Elastic SIP trunk into LiveKit Cloud |
-| Speech to text | Deepgram Nova-3, with territory and HVAC keyterms |
-| Language model | GPT-4.1 mini on OpenAI's API, with GPT-4.1 taking over after 2.5 s without an answer |
-| Text to speech | Deepgram Aura-2, with OpenAI's gpt-4o-mini-tts taking over if Deepgram can't be reached |
-| Turn-taking | LiveKit's hosted turn detector (v1), adaptive interruption, telephony noise cancellation |
-| Store | SQLite |
-| On-call page | [ntfy](https://ntfy.sh) push |
-
-No model or voice runs on LiveKit Inference: without the OpenAI or Deepgram key the worker refuses
-to start. If a provider still fails for good mid-call, code says a fixed line, files a callback
-task with the transcript and hangs up. Why each choice, and what was rejected or reversed:
-[docs/decisions.md](docs/decisions.md).
+Each finished call pushes a one-line summary to dispatch; an urgent or emergency call also pages the
+on-call phone. During the review both go to the builder's phone.
 
 ## Architecture
 
-```
-caller ──► Twilio number ──► SIP trunk ──► LiveKit Cloud
-                                              │
-                                              ▼
-                     agent worker (one Python process, one call kept warm)
-                       • speech to text → language model → text to speech
-                       • hazard check on every caller turn
-                       • tools: address check, availability, booking, dispatch task, end call
-                                              │
-                        ┌─────────────────────┴───────────────────┐
-                        ▼                                         ▼
-     SQLite: slots · bookings · tasks · calls        ntfy push to the on-call phone
-```
-
-Tools run inside the agent process. There is no public HTTP endpoint that can create or change a
-booking. Detail: [docs/architecture.md](docs/architecture.md).
-
-## Deliberately not built
-
-- **No ServiceTitan, CRM or calendar integration.** The schedule lives in SQLite with realistic
-  windows and capacity. Wiring a real system of record is a deployment task, and it does not change
-  whether the conversation and the booking logic are right.
-- **No live transfer.** The only transfer destination this demo has is one person's cell phone. An
-  unanswered cell rolls to voicemail, which the phone network reports as answered, so the agent could
-  not tell a person from a greeting. A callback task with a stated target is the honest version.
-  See [ADR-005](docs/decisions.md#adr-005-live-transfer-deferred).
-- **No arrival times for urgent calls.** No on-call capacity was supplied, so an urgent call gets a
-  page and a callback target, never an invented arrival time.
-- **No repair quotes or troubleshooting.** The agent quotes the diagnostic fee and nothing else, and
-  diagnosing a gas appliance over the phone is a liability.
-- **No text-message confirmation.** Sending SMS from a US number needs A2P 10DLC registration.
-- **English only.** A Spanish-speaking caller is told so in Spanish and gets a callback task.
-- **No speech-to-speech model.** See [ADR-002](docs/decisions.md#adr-002-cascaded-speech-pipeline).
-- **No ZIP-to-town check.** Call 5 filed a Chappaqua address under a Manhattan ZIP. The coverage check
-  already refuses an out-of-area ZIP, and the readback now includes the town, so the caller hears
-  any remaining mismatch. A ZIP-to-town table would need the customer's territory data.
-- **No dispatcher dashboard.** Calls, bookings and tasks are rows in SQLite (queries below).
-
-## Running it
-
-Needs Python 3.11 or later, [uv](https://docs.astral.sh/uv/), a LiveKit Cloud project, and for
-phone calls a Twilio number on an Elastic SIP trunk pointed at the LiveKit project, with a LiveKit
-inbound trunk for that number.
-
-```sh
-uv sync
-cp .env.example .env.local        # lk app env --write --destination .env.local fills the LiveKit values
-uv run python src/agent.py download-files
-uv run python src/agent.py start
+```mermaid
+flowchart LR
+    caller([Caller]) --> twilio[Twilio number] --> trunk[SIP trunk] --> lk[LiveKit Cloud room call-...]
+    lk <--> worker
+    subgraph worker [Agent worker, one process per call, on one Mac under launchd]
+        direction TB
+        stt[Deepgram Nova-3<br/>speech to text] --> rules[Code rules on every caller turn<br/>hazard, urgent, Spanish]
+        rules --> llm[GPT-4.1 mini<br/>GPT-4.1 after 2.5 s]
+        llm --> tools[Tools<br/>check_address, check_availability,<br/>book_appointment, create_dispatch_task, end_call]
+        llm --> tts[Deepgram Aura-2<br/>OpenAI voice as backup]
+    end
+    tools --> db[(SQLite<br/>slots, bookings, tasks,<br/>calls, call_summaries)]
+    rules --> db
+    worker --> ntfy[ntfy push<br/>on-call page, dispatch summary]
+    watchdog[Watchdog every 5 min<br/>health-check dispatch] --> lk
 ```
 
-Route inbound calls to the agent with `lk sip dispatch create telephony/dispatch-rule.json`. Each
-call gets its own room named `call-…`, and that room name keys the call's rows in the database.
+Tools run inside the agent process, so no public endpoint can create or change a booking. Detail:
+[`docs/architecture.md`](docs/architecture.md). Decisions and what would reverse them:
+[`docs/decisions.md`](docs/decisions.md).
 
-For the review window the worker runs as one process on a home machine, kept alive by a launchd job
-and kept awake while on power. See [ADR-001](docs/decisions.md#adr-001-livekit-agents-one-always-on-worker).
+## What code guarantees, and what the model decides
 
-Inspecting what calls left behind:
+The model runs the conversation. It does not get to decide what is true about the calendar, and it
+does not get to decide whether a hazard or an at-risk caller gets help.
 
-```sh
-sqlite3 data/summit-air.db "select ref, name, address, zip, slot_id from bookings order by ref desc limit 5"
-sqlite3 data/summit-air.db "select ref, kind, reason, due_at from tasks order by ref desc limit 5"
-```
+| Code guarantees | The model decides |
+|---|---|
+| A booking is confirmed only after the write returns a reference; one visit per call (a retry or a new window moves it, a second address is refused) | What the caller needs, what to ask next, and every sentence except the fixed lines |
+| No booking without a window offered on this call, a checked in-area ZIP, a street name and the caller's name | Softer urgency the keyword rules can't see, such as "it's dangerous for her" |
+| Gas, carbon monoxide or smoke: the task, the safety script and the closing line, with "I don't smell gas" read as a no and the page held until a clear no or 15 s | When a caller wants a booking moved, and to which window |
+| No heat or cooling plus someone at risk: an urgent task filed on that turn, before any booking, and the booking marked priority | Most off-script calls: a refused address, plumbing, "where's my tech?", a prompt injection |
+| A Spanish opening gets a fixed Spanish line and a callback task, never a promised Spanish speaker | |
+| A model or speech failure gets a fixed line, a callback task with the transcript, and a hang-up | |
+| A call that hangs up after naming a problem, with no booking or task, gets a callback task | |
+| Callback targets count office hours; the goodbye is fixed; end_call waits for "anything else?" or a goodbye | |
 
 ## Evaluation
 
-- **`uv run pytest`**: 34 offline checks, with no credentials and no cost. They cover capacity,
-  retries and mid-call corrections in the store; the booking guards (a window never offered, a ZIP
-  outside the area, an address never checked, a missing name); the hazard patterns, including
-  phrases that must not trigger them; and prompt rendering.
-- **`uv run pytest -m llm`**: 5 behavior tests, each run against both candidate models through
-  LiveKit Inference with an LLM judge. They cover offering the windows a tool returned, never
-  claiming an unmade booking, flagging an elderly caller without heat before scheduling, a price
-  question, and a caller who wants a person. They spend a little credit.
-- **Phone calls**: every one is a row in [`docs/scenarios.md`](docs/scenarios.md), with the
-  requirement it checks, what happened and the room ID.
+<!-- eval:start -->
+**57/57 simulated calls passed** on commit `6cd8ef5` (gpt-4.1-mini, 2 run(s) on safety and adversarial, 1 run(s) on core, per scenario and clock). Generated by `uv run python -m evals`; detail and failures in [`evals/REPORT.md`](evals/REPORT.md).
 
-## Known limitations
+| Category | Baseline | Final |
+|---|---|---|
+| safety | 8/8 | 16/16 |
+| core | 14/14 | 11/11 |
+| adversarial | 6/6 | 30/30 |
 
-- **Nobody is actually on call.** The urgent page reaches one test phone, and the 15-minute urgent
-  target is stated as a target, not a guarantee.
-- **The hazard check is a keyword list.** It over-triggers by design ("I don't smell gas" and a
-  chirping smoke detector both match), and the safety script is worded to be harmless when it does.
-- **One machine.** The worker and the database share one host. If it loses power or network, the
-  number stops answering.
-- **Latency.** Replies took 0.9 to 1.8 s end to end on call 6, after the turn-detector fix. An answer
-  the detector thinks is unfinished can still wait up to 2 s.
-- **Listening is one vendor, and a dropped sentence stays dropped.** Deepgram handles listening
-  with no backup. Speaking falls over to OpenAI's voice when Deepgram can't be reached (a forced
-  failure confirmed the fallover with Inworld, the earlier backup), but not partway through a sentence: on call 6 Deepgram's voice dropped
-  mid-sentence and the caller had to ask again.
+Baseline: `2026-09-27-1935-7b5525e-rescored.json`, 11 scenarios before the Phase 2 changes, graded by the checks of that time. Several checks are stricter now, so a baseline pass is not a pass today. A dash means the scenario did not exist yet.
 
-## Before this could take real calls
+<details><summary>Every scenario</summary>
 
-Confirm the actual territory, pricebook, capacity, membership rules and on-call staffing. Replace
-the SQLite schedule with the customer's system of record, and move the worker to managed hosting
-with a warm instance. Measure whether dispatch tasks get acknowledged, not just created. Agree data
-retention. Then run a supervised pilot and review calls with the operator, measuring booked-and-kept
-jobs rather than calls answered.
+| Scenario | Category | Clock | Baseline | Final |
+|---|---|---|---|---|
+| gas | safety | demo | 2/2 | 2/2 |
+| gas | safety | night | 2/2 | 2/2 |
+| elderly_no_heat | safety | demo | 2/2 | 2/2 |
+| elderly_no_heat | safety | night | 2/2 | 2/2 |
+| infant_no_heat | safety | demo | - | 2/2 |
+| infant_no_heat | safety | night | - | 2/2 |
+| ac_oxygen | safety | demo | - | 2/2 |
+| ac_oxygen | safety | night | - | 2/2 |
+| blocked_id | core | demo | 2/2 | 1/1 |
+| member | core | demo | 2/2 | 1/1 |
+| no_show | core | demo | 2/2 | 1/1 |
+| no_show | core | night | 2/2 | 1/1 |
+| commercial | core | demo | 2/2 | 1/1 |
+| address_change | core | demo | 2/2 | 1/1 |
+| routine_furnace | core | demo | 2/2 | 1/1 |
+| change_window | core | demo | - | 1/1 |
+| abandoned | core | demo | - | 1/1 |
+| relative_address | core | demo | - | 1/1 |
+| new_install | core | demo | - | 1/1 |
+| price_robot | adversarial | demo | 2/2 | 2/2 |
+| spanish | adversarial | demo | 2/2 | 2/2 |
+| risk_during_readback | adversarial | demo | - | 2/2 |
+| risk_during_readback | adversarial | night | - | 2/2 |
+| two_issues | adversarial | demo | - | 2/2 |
+| asr_street | adversarial | demo | - | 2/2 |
+| no_gas_negation | adversarial | demo | - | 2/2 |
+| dusty_smell | adversarial | demo | - | 2/2 |
+| stray_word | adversarial | demo | 2/2 | 2/2 |
+| wrong_number | adversarial | demo | - | 2/2 |
+| refuses_address | adversarial | demo | - | 2/2 |
+| status_call | adversarial | demo | - | 2/2 |
+| plumbing | adversarial | demo | - | 2/2 |
+| abusive_human | adversarial | demo | - | 2/2 |
+| injection | adversarial | demo | - | 2/2 |
+
+</details>
+<!-- eval:end -->
+
+- **Simulated calls** (`uv run python -m evals`): a caller played by a model or by scripted lines,
+  against the real prompt, tools and store, on two fixed clocks (Tuesday 12:35 PM with the office
+  open, Monday 9 PM with it closed). Checks read the database and the transcript. There is no model
+  judge. Every run is priced and written to a spend ledger, [`evals/spend.json`](evals/spend.json).
+- **`uv run pytest`**: 286 offline tests, no credentials, no cost: the store, the booking guards,
+  the hazard, urgent and Spanish rules with the phrases that must not trigger them, the held page,
+  the failure ladder, the call record, and prompt rendering.
+- **`uv run pytest -m llm --fallback`**: 5 older tests with a model judge, run once at the end on
+  both models, the only check of GPT-4.1 as the fallback. 6 of 10 passed (GPT-4.1 mini 2 of 5,
+  GPT-4.1 4 of 5), and the failures are reported, not fixed, because behavior was frozen. Two are
+  real: GPT-4.1 mini, on the real clock at night, told a no-heat caller who hadn't mentioned anyone
+  at risk that on-call was notified; and after a callback promise it asked "What can we help you
+  with in the meantime?". Two are the tests: GPT-4.1 didn't file the urgent task because code
+  already had, and GPT-4.1 mini offered the windows but asked for the address instead of whether
+  they work. Detail in [`evals/REPORT.md`](evals/REPORT.md).
+- **Phone calls**: every one is graded in [`docs/scenarios.md`](docs/scenarios.md) with its room.
+
+**What the phone has proven and what it hasn't.** Routine booking, urgent filed by code, the gas
+script with its closing line and hang-up, the gas negation and the street-name check were proven
+on phone calls. These have been proven only in simulation and offline tests, never on a phone call:
+the abandoned-call callback, the wrong-number exit, the refused address, the Spanish line, the
+dispatch push, the new-install estimate, the failure ladder, and the windows offered with the
+address.
+
+## Skipped, and why
+
+- **Live transfer.** The only destination is one cell phone, and an unanswered cell rolls to
+  voicemail, which the phone network reports as answered. A callback task with a target is the
+  honest version ([ADR-005](docs/decisions.md#adr-005-live-transfer-deferred)).
+- **A full Spanish agent.** A second prompt and voice to test, for a line that gets a fixed Spanish
+  answer and a callback instead.
+- **SMS confirmation.** Sending from a US number needs A2P 10DLC registration, which takes weeks.
+- **ServiceTitan.** The schedule lives in SQLite with real windows and capacity. Wiring the system of
+  record is deployment work and doesn't change whether the conversation and booking logic are right.
+- **Deepgram Flux** (end-of-turn inside speech to text). A speech-path change can't be proven in text
+  simulations, and it would have needed its own round of phone calls.
+- **A model judge.** Checks read the database and the transcript, so a pass means the row exists,
+  not that another model liked the wording.
+- **A speech-to-text backup.** Wrapping Deepgram in a fallback adapter drops its word-aligned
+  transcripts on every normal call, so Deepgram listens alone.
+
+## Known limits
+
+- **One host.** The worker and the database run on one Mac. If it loses power or network, the
+  number stops answering; a watchdog pages when the worker stops taking health checks.
+- **One OpenAI key.** Both models and the backup voice run on it, so an outage or an empty balance
+  takes out all three. The failure ladder then ends the call with a callback.
+- **Keyword detectors.** Hazard, urgent and Spanish detection are word lists. The gas negation is
+  lexical ("it's not like there's no gas smell" reads as a no), and a chirping smoke detector matches.
+- **Two bookings in one turn.** If the model sends two `book_appointment` calls in one turn, the store
+  can end on a different window than the caller heard (change_window, 1 of 6 simulated runs).
+- **Wording.** On a home replacement call the agent once asked "Who should the technician ask for?"
+  as if it were a business (call `kaAJD7TK4HWb`).
+- **Recognition.** Street names are misheard ("Bergen" as "Burger"), and nothing checks a street
+  against a street list or a ZIP against a town.
+- **Pushes carry no caller details**: the outcome, a first name, the ZIP and a lookup, never the
+  number, the street or the caller's words. `scripts/calls.py` has the rest. `DISPATCH_NTFY_TOPIC` falls back to `NTFY_TOPIC`, so without it dispatch summaries
+  and on-call pages share one topic.
+- **Latency.** Replies ran 0.9 to 2.6 s end to end on the 2026-09-27 phone calls. When the turn
+  detector thinks the caller is mid-sentence it waits up to 1.1 s, and up to 2.5 s after the agent
+  asks for an address or a number.
+- **Nobody is actually on call.** Pages reach one test phone, and callback targets are targets.
+
+## What I'd do next with Summit Air
+
+1. **ServiceTitan** as the system of record: real technicians, capacity and customer history, so a
+   member or a repeat caller is recognized.
+2. **A Spanish agent**, with its own prompt, voice and test calls, instead of a callback.
+3. **SMS confirmation** once 10DLC registration clears.
+4. **A street-list check** against the territory's streets and ZIPs, to catch misheard addresses
+   before they are booked.
+5. **Measure booked-and-kept jobs**, not calls answered: did the visit happen, and did the urgent
+   callback land inside its target.
+
+## Running it
+
+Needs Python 3.11 or later, [uv](https://docs.astral.sh/uv/), a LiveKit Cloud project, OpenAI and
+Deepgram keys, and for phone calls a Twilio number on an Elastic SIP trunk into a LiveKit inbound
+trunk.
+
+```sh
+uv sync
+uv run pytest                     # offline, no keys needed
+cp .env.example .env.local        # then fill in the keys
+uv run python src/agent.py download-files
+uv run python src/agent.py start  # the worker; refuses to start without its keys
+```
+
+Route calls to it with `lk sip dispatch create telephony/dispatch-rule.json`: each call gets a room
+named `call-...`, and that name keys the call's rows in the database. On the demo host the worker
+runs under launchd with a 5-minute watchdog ([`ops/launchd/`](ops/launchd/README.md)).
+
+```sh
+uv run python -m evals --dry-run          # the simulated-call plan and its cost; drop --dry-run to spend
+uv run python scripts/calls.py            # recent calls; add a call ID or a reference for one call sheet
+uv run python scripts/watchdog.py --dry-run
+```
