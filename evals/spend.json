@@ -1,6 +1,6 @@
 {
   "cap": 3.0,
-  "total": 0.316822,
+  "total": 0.356349,
   "runs": [
     {
       "at": "2026-09-27T19:35:08-04:00",
@@ -51,6 +51,16 @@
       "estimate": 0.0107,
       "cost": 0.018233,
       "results": "evals/results/2026-09-27-2011-3ae4b77-dirty.json"
+    },
+    {
+      "at": "2026-09-27T20:13:03-04:00",
+      "commit": "030c842",
+      "kind": "eval",
+      "label": "A3 street names",
+      "conversations": 6,
+      "estimate": 0.0328,
+      "cost": 0.039527,
+      "results": "evals/results/2026-09-27-2012-030c842-dirty.json"
     }
   ]
 }

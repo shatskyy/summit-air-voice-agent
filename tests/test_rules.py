@@ -1181,3 +1181,40 @@ async def test_the_same_street_written_differently_is_the_same_address(db):
 
 def test_the_prompt_books_two_problems_as_one_visit():
     assert "one visit" in receptionist.PROMPT
+
+
+# Street names (A3)
+
+
+@pytest.mark.parametrize(
+    "street",
+    ["1600 Broadway", "22 Avenue A", "350 5th Avenue", "37-12 81st St", "48 Bergen Street, Apt 2",
+     "12B West End Ave", "7 Saint Marks Place"],
+)  # fmt: skip
+async def test_a_real_street_passes_the_address_check(db, street):
+    ctx = FakeContext(Call(call_id="call-a", db=db))
+    result = await SummitAirAgent("").check_address(ctx, street, "Brooklyn", "11201")
+    assert result.startswith("In the service area")
+
+
+@pytest.mark.parametrize("street", ["487 Lane", "12 Street", "9 Ave", "5 Pkwy, Apt 3"])
+async def test_a_street_type_with_no_street_name_is_sent_back(db, street):
+    """Speech-to-text heard "48 Bergen Street" as "487 Lane" on a test call, and the model read it
+    back as an address."""
+    ctx = FakeContext(Call(call_id="call-a", db=db))
+    with pytest.raises(ToolError, match="Ask for the street name"):
+        await SummitAirAgent("").check_address(ctx, street, "Brooklyn", "11201")
+    assert ctx.userdata.checked_zip is None
+
+
+@pytest.mark.parametrize("street", ["Bergen Street", "Broadway", ""])
+async def test_a_street_without_a_house_number_is_sent_back(db, street):
+    ctx = FakeContext(Call(call_id="call-a", db=db))
+    with pytest.raises(ToolError, match="house number"):
+        await SummitAirAgent("").check_address(ctx, street, "Brooklyn", "11201")
+
+
+def test_the_booking_confirmation_uses_the_callers_first_name():
+    assert (
+        "[first name]" in receptionist.PROMPT.split("Only after book_appointment succeeds")[1][:80]
+    )

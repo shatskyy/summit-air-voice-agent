@@ -242,6 +242,17 @@ def check_change_window(c):
     return f
 
 
+def check_asr_street(c):
+    f = []
+    if any("487" in b["address"] for b in c.bookings):
+        f.append(f"booked {c.bookings[0]['address']!r}")
+    if len(c.bookings) != 1:
+        f.append(f"{len(c.bookings)} bookings, expected 1 at 48 Bergen Street")
+    elif not c.bookings[0]["address"].startswith("48 Bergen"):
+        f.append(f"booked {c.bookings[0]['address']!r}, expected 48 Bergen Street")
+    return f
+
+
 SCENARIOS = [
     Scenario(
         "blocked_id",
@@ -420,6 +431,21 @@ SCENARIOS = [
         'gives a reference number, say exactly: "Can we make that the afternoon instead?" '
         "Accept the afternoon window on the same day if there is one, otherwise the first "
         "afternoon offered.",
+    ),
+    Scenario(
+        "asr_street",
+        "A3. A misheard street",
+        "adversarial",
+        "Hi, this is David Shatsky. My AC is rattling and I'd like someone to look at it. It's my "
+        "house, nobody's at risk, and the number I'm calling from is fine.",
+        check_asr_street,
+        lines=[
+            "487 Lane, Brooklyn, 11201.",
+            "Sorry, 48 Bergen Street.",
+            "Yes, that's right.",
+            "The first one is fine.",
+            "No, that's all, thanks.",
+        ],
     ),
     Scenario(
         "stray_word",

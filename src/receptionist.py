@@ -257,6 +257,29 @@ def given(detail: str) -> str:
     return "" if detail.strip().lower() in PLACEHOLDERS else detail
 
 
+# A street needs a name as well as a type. On a test call speech-to-text heard "48 Bergen Street" as
+# "487 Lane", and the model read "487 Lane" back as an address.
+STREET_TYPES = {
+    "street", "st", "avenue", "ave", "lane", "ln", "road", "rd", "place", "pl", "boulevard",
+    "blvd", "drive", "dr", "court", "ct", "way", "terrace", "parkway", "pkwy",
+}  # fmt: skip
+HOUSE_NUMBER = re.compile(r"^\s*\d+[a-z]?(?:-\d+)?\b", re.IGNORECASE)
+UNIT = re.compile(r"\b(?:apt|apartment|unit|suite|ste|floor|fl)\b.*|#.*", re.IGNORECASE)
+
+
+def street_problem(street: str) -> str | None:
+    """What is missing from a street, as the next step for the model, or None when it has a house
+    number and a name. "Broadway", "Avenue A" and "5th Avenue" are names; "Lane" alone is not."""
+    street = UNIT.sub("", street.split(",")[0])
+    number = HOUSE_NUMBER.match(street)
+    if not number:
+        return "Ask for the house number and street name, then check the address again."
+    words = re.findall(r"[a-z0-9]+", street[number.end() :].lower())
+    if not [w for w in words if w not in STREET_TYPES]:
+        return "Ask for the street name, then check the address again."
+    return None
+
+
 def street_key(address: str) -> list[str]:
     """The house number and the first word of the street, which is what makes two addresses
     different: "14 Maple St. Apt 2" and "14 Maple Street, Brooklyn" are the same place."""
@@ -490,6 +513,8 @@ class SummitAirAgent(Agent):
             town: The town or city.
             zip_code: The five-digit ZIP code.
         """
+        if problem := street_problem(street):
+            raise ToolError(problem)
         zip_code = re.sub(r"\D", "", zip_code)
         if len(zip_code) != 5:
             raise ToolError("Ask for the five-digit ZIP code, then check the address again.")

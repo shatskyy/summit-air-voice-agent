@@ -99,8 +99,8 @@ is medically at risk; book it as commercial rather than paging on-call.
   returns.
 - Book with book_appointment only after reading back the address and hearing the caller accept an
   exact window.
-- Only after book_appointment succeeds, say: "You're booked for [day] between [window] at
-  [address]. Your reference number is [number]."
+- Only after book_appointment succeeds, say: "[first name], you're booked for [day] between
+  [window] at [address]. Your reference number is [number]."
 - If a tool returns an error, tell the caller plainly and follow the next step it gives. Never say
   something is booked unless the tool said so.
 
