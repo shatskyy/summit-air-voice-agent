@@ -86,18 +86,45 @@ def voice_provider() -> str:
     return provider
 
 
-def gemini_voice():
+# The Gemini voices, best first. Each Gemini TTS model has its own 10-requests-a-minute limit on
+# the paid Tier 1 key, and one phone call peaked at 7 on 3.1 alone (2026-09-28), so a sentence a
+# model refuses goes to the next Gemini model before it goes to Deepgram's different voice. Order
+# from probes on 2026-09-28: 3.8 Flash ranks highest on independent voice arenas and started audio in
+# 1.0 to 1.1 s; 3.8 Flash Lite in 0.4 to 0.6 s; 3.1 Flash, the first voice on the line, in 0.7 to
+# 1.0 s. The 2.5 Flash and Pro voices took 2.8 to 4.7 s to first audio, too slow for a phone call.
+GEMINI_TTS_MODELS = (
+    "gemini-3.8-flash-tts",
+    "gemini-3.8-flash-lite-tts",
+    "gemini-3.1-flash-tts-preview",
+)
+# The plugin sends the style prompt in front of the text ('prompt:\n"text"'). Both 3.8 models read
+# that prompt aloud as if it were the text (Flash Lite 2 of 2 probes, Flash 1 of 2), and read the
+# bare text exactly (6 of 6), so only 3.1 gets it.
+STYLE_PROMPT = (
+    "Speak as a calm, friendly HVAC receptionist, at a natural conversational "
+    "pace with an American accent. Read exactly the supplied text. "
+    "Do not add, omit or change words."
+)
+STYLE_PROMPT_MODELS = {"gemini-3.1-flash-tts-preview"}
+
+
+def gemini_models() -> list[str]:
+    """GEMINI_TTS_MODELS, comma-separated, or the default order above."""
+    raw = os.getenv("GEMINI_TTS_MODELS", "")
+    return [m.strip() for m in raw.split(",") if m.strip()] or list(GEMINI_TTS_MODELS)
+
+
+def gemini_voice(model: str | None = None):
+    """One Gemini voice. With no model: GEMINI_TTS_MODEL (scripts/check_voice.py), else the first
+    of gemini_models()."""
     if not os.getenv("GOOGLE_API_KEY"):
         raise RuntimeError("GOOGLE_API_KEY is required when TTS_PROVIDER=gemini")
+    model = model or os.getenv("GEMINI_TTS_MODEL") or gemini_models()[0]
     return google.beta.GeminiTTS(
-        model=os.getenv("GEMINI_TTS_MODEL", "gemini-3.1-flash-tts-preview"),
+        model=model,
         voice_name=os.getenv("GEMINI_TTS_VOICE", "Kore"),
         vertexai=False,
-        instructions=(
-            "Speak as a calm, friendly HVAC receptionist, at a natural conversational "
-            "pace with an American accent. Read exactly the supplied text. "
-            "Do not add, omit or change words."
-        ),
+        instructions=STYLE_PROMPT if model in STYLE_PROMPT_MODELS else None,
     )
 
 
@@ -106,11 +133,11 @@ def speech():
     if not os.getenv("DEEPGRAM_API_KEY"):
         raise RuntimeError("DEEPGRAM_API_KEY is not set")
     provider = voice_provider()
-    primary = gemini_voice() if provider == "gemini" else None
     voices = [deepgram.TTS(model=TTS_VOICE), backup_voice()]
-    if primary is not None:
-        voices.insert(0, primary)
-    # On the Gemini path, try the next voice after one failed attempt, without retry delays.
+    if provider == "gemini":
+        voices = [gemini_voice(model) for model in gemini_models()] + voices
+    # On the Gemini path, try the next voice after one failed attempt, without retry delays: a
+    # rate-limited model answers at once, and the next Gemini model takes the sentence.
     speaking = tts.FallbackAdapter(voices, max_retry_per_tts=0 if provider == "gemini" else 2)
     return (
         deepgram.STT(model="nova-3", keyterm=CONFIG["keyterms"], smart_format=True),

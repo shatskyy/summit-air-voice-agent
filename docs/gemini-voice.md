@@ -10,9 +10,29 @@ this change does not silently switch a running deployment. Set these in `.env.lo
 ```dotenv
 TTS_PROVIDER=gemini
 GOOGLE_API_KEY=your-key
-GEMINI_TTS_MODEL=gemini-3.1-flash-tts-preview
 GEMINI_TTS_VOICE=Kore
+# optional; this is the default order
+GEMINI_TTS_MODELS=gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts,gemini-3.1-flash-tts-preview
 ```
+
+**Three Gemini models, best first (2026-09-28).** On the paid Tier 1 key each Gemini TTS model is
+limited to 10 requests a minute, every spoken sentence is one request, and one phone call peaked at
+7 on 3.1 alone. So a sentence a model refuses goes to the next Gemini model, in the same Kore voice,
+before it goes to Deepgram's different voice. Probes that morning, with each result transcribed:
+
+| Model | First audio | Read the text exactly |
+|---|---|---|
+| `gemini-3.8-flash-tts` | 1.0 to 1.1 s | 3 of 3 bare; 1 of 2 with the style prompt |
+| `gemini-3.8-flash-lite-tts` | 0.4 to 0.6 s | 3 of 3 bare; 0 of 2 with the style prompt |
+| `gemini-3.1-flash-tts-preview` | 0.7 to 1.0 s | 2 of 2 with the style prompt |
+| `gemini-2.5-flash-preview-tts` | 2.8 to 3.3 s | yes; left out, too slow |
+| `gemini-2.5-pro-preview-tts` | 4.7 s | yes; left out, too slow |
+
+3.8 Flash leads because it ranks highest on independent voice arenas. The plugin puts the style
+prompt in front of the text, and the 3.8 models read that prompt aloud ("Speak as a calm, friendly
+HVAC receptionist..."), so only 3.1 gets it. `GEMINI_TTS_MODEL` now only picks the model
+`scripts/check_voice.py` probes. Neither 3.8 model had answered a phone call when this was
+written.
 
 Keys come from [Google AI Studio](https://aistudio.google.com/apikey). The key must have access and
 quota for the selected TTS model. Never commit `.env.local`.
