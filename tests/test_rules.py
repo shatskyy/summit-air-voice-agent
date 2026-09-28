@@ -2057,7 +2057,11 @@ async def test_an_urgent_task_right_after_the_caller_denies_risk_is_refused(db, 
     it was just them."""
     ctx = SpokenContext(
         Call(call_id="call-a", db=db, caller_number="+19145550100"),
-        ["My furnace won't kick on and it's like 20 degrees outside.", said],
+        [
+            "My furnace won't kick on and it's like 20 degrees outside.",
+            "AGENT: Is anyone there who'd be at risk in the cold, like someone older or a baby?",
+            said,
+        ],
     )
     with pytest.raises(ToolError, match="nobody there is at risk"):
         await SummitAirAgent("").create_dispatch_task(
@@ -2189,100 +2193,119 @@ async def test_a_caller_who_volunteers_the_number_has_settled_it(db, said):
     assert receptionist.number_settled(ctx.session.history.items)
 
 
-# A booking confirmation with no booking behind it never reaches the voice (overnight pass)
+# A booking confirmation with no booking behind it (overnight pass)
 
 
-def fake_stream(*pieces):
-    async def stream(agent, chat_ctx, tools, model_settings):
-        for piece in pieces:
-            if isinstance(piece, str):
-                yield llm.ChatChunk(id="x", delta=llm.ChoiceDelta(role="assistant", content=piece))
-            else:
-                yield piece
-
-    return stream
-
-
-async def spoken(agent, monkeypatch, *pieces):
-    monkeypatch.setattr(receptionist.Agent.default, "llm_node", staticmethod(fake_stream(*pieces)))
-    out = []
-    async for chunk in agent.llm_node(llm.ChatContext(), [], None):
-        out.append(chunk)
-    return out
-
-
-def talking_agent(db, monkeypatch, **call_fields):
-    line = UrgentLine(Call(call_id="call-a", db=db, caller_number="+19145550100", **call_fields))
-    return urgent_agent(line, monkeypatch, []), line.userdata
-
-
-async def test_a_fabricated_confirmation_is_cut_before_the_voice(db, monkeypatch):
+async def test_a_confirmation_with_no_booking_gets_a_correction_note(db, monkeypatch):
     """cold_no_risk_night on the demo clock, 2026-09-27 22:43: "Which works?" then, in the same
     reply, "David, you're booked for Wednesday... Your reference number is one two three four",
-    with nothing booked."""
-    agent, call = talking_agent(db, monkeypatch)
-    out = await spoken(
-        agent, monkeypatch,
-        "We have Wednesday, September 30, 8 AM to noon, or noon to 4 PM. ",
-        "Which works? David, you're booked for Wednesday, September 30, between 8 AM and noon. ",
-        "Your reference number is one two three four. Is there anything else?",
-    )  # fmt: skip
-    text = "".join(c for c in out if isinstance(c, str))
-    assert "Which works?" in text and "booked" not in text and "reference" not in text
-    assert "anything else" not in text  # nothing after the cut is spoken
-    assert call.cut_confirmations == 1
+    with nothing booked. The model is told, so its next reply corrects it."""
+    line = UrgentLine(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    agent = urgent_agent(line, monkeypatch, [])
+    said = "Which works? David, you're booked for Wednesday. Your reference number is one two three four."
+    assert await receptionist.flag_fabricated_confirmation(agent, line.userdata, said)
+    assert line.userdata.fabricated_confirmations == 1
     assert any(
-        i.type == "message" and i.role == "system" and "not spoken" in (i.text_content or "")
+        i.type == "message" and i.role == "system" and "not booked yet" in (i.text_content or "")
         for i in agent.chat_ctx.items
     )
 
 
-async def test_a_real_confirmation_passes_once_the_visit_is_written(db, monkeypatch):
-    agent, call = talking_agent(db, monkeypatch, has_booking=True)
-    out = await spoken(
-        agent, monkeypatch,
-        "David, you're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen ",
-        "Street. Your reference number is one oh oh one. Is there anything else?",
-    )  # fmt: skip
-    text = "".join(c for c in out if isinstance(c, str))
-    assert "one oh oh one" in text and "anything else?" in text
-    assert call.cut_confirmations == 0
+async def test_a_real_confirmation_is_left_alone(db, monkeypatch):
+    line = UrgentLine(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    agent = urgent_agent(line, monkeypatch, [])
+    store.book(db, **booking("call-a", "2026-09-29-0800"))
+    said = "Maria, you're booked for Tuesday, September 29. Your reference number is one oh oh one."
+    assert not await receptionist.flag_fabricated_confirmation(agent, line.userdata, said)
+    assert line.userdata.fabricated_confirmations == 0
 
 
 @pytest.mark.parametrize(
     "said",
     [
+        "You're all set. Our target is to call you back by 10 AM tomorrow.",
+        "Sorry, Wednesday morning is booked, but Thursday 8 AM to noon is open.",
+        "Since you're scheduled for today between 8 and noon, I've asked dispatch to call you.",
         "Which window would you like booked?",
         "It's not booked yet; which window works?",
-        "Once you pick a window you're booked.",
         "Just to confirm, 48 Bergen Street, Brooklyn, right?",
-        "Is anyone there who'd be at risk in the cold?",
-        "Our target is to call you back by 2:35 PM.",
     ],
 )
-async def test_questions_conditions_and_other_lines_are_not_cut(db, monkeypatch, said):
-    agent, call = talking_agent(db, monkeypatch)
-    out = await spoken(agent, monkeypatch, said)
-    assert "".join(c for c in out if isinstance(c, str)).strip() == said
-    assert call.cut_confirmations == 0
+def test_honest_lines_are_not_called_fabricated(said):
+    assert not receptionist.FABRICATED.search(said)
 
 
-async def test_tool_calls_pass_through_the_filter(db, monkeypatch):
-    agent, _ = talking_agent(db, monkeypatch)
-    call_chunk = llm.ChatChunk(
-        id="x",
-        delta=llm.ChoiceDelta(
-            role="assistant",
-            tool_calls=[llm.FunctionToolCall(name="check_address", arguments="{}", call_id="c1")],
-        ),
+@pytest.mark.parametrize(
+    "said",
+    [
+        "David, you're booked for Wednesday, September 30, between 8 AM and noon.",
+        "You're now booked for Thursday morning.",
+        "I have you down for Tuesday between noon and 4.",
+        "Your confirmation number is one two three four.",
+        "You've been booked in for Wednesday.",
+    ],
+)
+def test_the_confirmation_phrases_are_recognized(said):
+    assert receptionist.FABRICATED.search(said)
+
+
+# The third review's cases (overnight pass)
+
+
+@pytest.mark.parametrize(
+    "town", ["Park Slope, Brooklyn", "Upper West Side, Manhattan", "Manhattan, New York City"]
+)
+def test_a_neighborhood_with_its_borough_is_covered(town):
+    assert receptionist.town_covered(town)
+
+
+async def test_a_bare_no_to_the_zip_question_is_not_a_denial_of_risk(db):
+    ctx = SpokenContext(
+        Call(call_id="call-a", db=db, caller_number="+19145550100"),
+        ["My heat is out and my husband is on chemo.", "AGENT: Do you know the ZIP code?", "No."],
     )
-    out = await spoken(agent, monkeypatch, "Got it. ", call_chunk)
-    assert (
-        out[-1] is call_chunk and "".join(c for c in out if isinstance(c, str)).strip() == "Got it."
+    result = await SummitAirAgent("").create_dispatch_task(ctx, "urgent", "no heat, chemo", "x")
+    assert result.startswith("Task 2001 created")
+
+
+async def test_a_bare_no_to_the_risk_question_is_one(db):
+    ctx = SpokenContext(
+        Call(call_id="call-a", db=db, caller_number="+19145550100"),
+        ["My heat is out.", "AGENT: Is anyone there who'd be at risk in the cold?", "No."],
     )
+    with pytest.raises(ToolError, match="nobody there is at risk"):
+        await SummitAirAgent("").create_dispatch_task(ctx, "urgent", "no heat", "x")
 
 
-async def test_the_last_sentence_is_spoken_when_the_stream_ends_without_a_space(db, monkeypatch):
-    agent, _ = talking_agent(db, monkeypatch)
-    out = await spoken(agent, monkeypatch, "What's the address there?")
-    assert "".join(c for c in out if isinstance(c, str)) == "What's the address there?"
+@pytest.mark.parametrize("said", ["My husband's 81.", "My neighbor's 90 and alone."])
+def test_an_age_after_a_possessive_relation_counts(said):
+    assert receptionist.at_risk_in(said, "")
+
+
+@pytest.mark.parametrize(
+    ("held", "new", "same"),
+    [
+        ("150 West 72nd Street, Manhattan", "150 West 73rd Street, Manhattan", False),
+        ("12 Avenue A, Manhattan", "12 Avenue C, Manhattan", False),
+        ("48 Bergen Street, Apt 2, Brooklyn", "48 Bergen St, Brooklyn", True),
+    ],
+)
+def test_street_names_with_two_words_are_told_apart(held, new, same):
+    assert receptionist.same_visit({"address": held, "zip": "10023"}, new, "10023") is same
+
+
+def test_a_unit_first_address_still_keys_on_the_street():
+    assert receptionist.street_key("Apartment 3B, 48 Bergen Street, Brooklyn") == ["48", "bergen"]
+
+
+def test_double_one_is_two_ones():
+    assert "".join(receptionist.spoken_numbers("double one two oh one")) == "11201"
+
+
+def test_the_house_number_question_does_not_settle_the_callback_number(db):
+    ctx = SpokenContext(Call(call_id="call-a", db=db), ["AGENT: What's the house number?"])
+    assert not receptionist.number_settled(ctx.session.history.items)
+    ctx = SpokenContext(
+        Call(call_id="call-a", db=db), ["AGENT: Can we call you back at 914-555-0100?", "Yes."]
+    )
+    assert receptionist.number_settled(ctx.session.history.items)

@@ -24,6 +24,7 @@ from receptionist import (
     MAX_TOOL_STEPS,
     Call,
     SummitAirAgent,
+    flag_fabricated_confirmation,
     init_store,
     keep_promise,
     release_held_page,
@@ -173,14 +174,18 @@ async def play(scenario: Scenario, clock_name: str, model: str, run: int) -> dic
         )
         await session.start(agent)
         promises: list[asyncio.Task] = []
-        session.on(
-            "conversation_item_added",
-            lambda e: (
-                getattr(e.item, "role", None) == "assistant"
-                and e.item.text_content
-                and promises.append(asyncio.create_task(keep_promise(call, e.item.text_content)))
-            ),
-        )
+        corrections: list[asyncio.Task] = []
+
+        def check_said(e):
+            if getattr(e.item, "role", None) == "assistant" and e.item.text_content:
+                promises.append(asyncio.create_task(keep_promise(call, e.item.text_content)))
+                corrections.append(
+                    asyncio.create_task(
+                        flag_fabricated_confirmation(agent, call, e.item.text_content)
+                    )
+                )
+
+        session.on("conversation_item_added", check_said)
         await settle(session)  # the greeting, before the caller speaks
         say, lines = scenario.opening, list(scenario.lines)
         try:
@@ -200,6 +205,7 @@ async def play(scenario: Scenario, clock_name: str, model: str, run: int) -> dic
         except Exception as e:  # noqa: BLE001 - a crash is a finding; keep the transcript
             error = f"{type(e).__name__}: {e}"
         kept_promise = any(await asyncio.gather(*promises))
+        corrected = sum(await asyncio.gather(*corrections))
         held = call.held_page
         await release_held_page(call)  # the caller has hung up, as on a call
         await asyncio.sleep(0.05)  # let a hang-up queued after playout run
@@ -207,6 +213,8 @@ async def play(scenario: Scenario, clock_name: str, model: str, run: int) -> dic
         transcript = history_lines(session)
         if kept_promise:
             transcript.append("  [backstop] filed the urgent task the agent promised")
+        if corrected:
+            transcript.append(f"  [backstop] {corrected} booking confirmation(s) with no booking")
         if held is not None:
             transcript.append(f"  [page] {'cancelled' if held.cancelled else 'went out'}")
         if hung_up:

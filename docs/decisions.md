@@ -441,32 +441,36 @@ sister's apartment on the caller's own number without asking which number reache
 agent), `split_address` after the ask-first rule, and `address_change`, `asr_street`, `blocked_id`,
 `commercial`, `routine_furnace` unchanged with the check in place.
 
-## ADR-016: A confirmation with no booking behind it is cut before the voice
+## ADR-016: A confirmation with no booking behind it is caught and corrected
 
 **Status:** Accepted 2026-09-28
 
-**Decision.** The model's reply streams through `SummitAirAgent.llm_node` one sentence at a time.
-A sentence that confirms a booking (booked, scheduled, all set, a reference number) while the
-call holds no booking is dropped, with the rest of that reply, and the model is told the sentence
-was never spoken and to book with the tool. Questions, conditions and negations ("which window
-would you like booked?", "it's not booked yet") are not confirmations. Tool calls pass straight
-through. The call record counts the cuts.
+**Decision.** After each reply, code checks the agent's own words against the store: if it said
+"you're booked for", "I have you down for", "your reference number is" or "your confirmation
+number is" and the call holds no booking, the model gets a system note saying nothing is booked,
+to say so plainly in its next reply and to book with the tool. The call record counts these. It
+is the `keep_promise` shape (ADR-009): after the fact, precise about the phrase, never silencing.
 
 **Why.** On a simulated cold-night call the model asked "Which works?" and, in the same reply,
 said "David, you're booked for Wednesday... Your reference number is one two three four", with no
 tool call and nothing in the store. It then asked "anything else?", so the end-call guard let the
 call end. Confirming only what persisted (ADR-003) had a tool-side half, the write before the
 reference; this is the speech-side half. The prompt already forbade it and the model did it
-anyway, once in about 450 simulated conversations, which on a phone line is once a week.
+anyway, once in about 450 simulated conversations.
 
-**Cost.** A regex over the agent's own words, so an honest sentence that matches it on a call
-with no booking would be cut too; the tests hold the honest lines that must pass (read-backs,
-callback targets, the windows offer). Holding text to a sentence end adds no latency, since the
-voice already waits for one. A caller who talks over the reply gets an interrupted, not a
-fabricated, sentence.
+**What was tried and reverted the same night.** A first cut filtered the reply sentence by
+sentence in `llm_node` before it reached the voice. A fresh-context review showed, offline, that
+it silenced honest lines ("You're all set. Our target is to call you back by 10 AM", after any
+callback task, became dead air), dropped a `book_appointment` call that arrived with the
+confirmation, and still missed most paraphrases. Silence and a lost booking are worse than one
+false sentence followed by a correction, so the filter went and the note stayed.
 
-**Evidence.** Six offline tests with a faked model stream, the four-scenario sim through the real
-stream, and the final eval, where every conversation goes through the filter.
+**Cost.** The caller hears the false sentence once, then the correction. A fabricated "moved" is
+not caught, since the store does hold a booking. The phrase list is short on purpose: "you're
+scheduled for" is an honest line on a status call, so it is not in it.
 
-**Would reverse it.** A model that never does this, or a structured-output confirmation step that
-can only be produced from a tool result.
+**Evidence.** Offline tests with the honest lines that must pass and the phrases that must be
+caught; the final eval, where every conversation runs the check.
+
+**Would reverse it.** A model that never does this, or a confirmation spoken by code from the
+tool result, the way the greeting and the emergency closing line already are.

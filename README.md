@@ -51,7 +51,7 @@ does not get to decide whether a hazard or an at-risk caller gets help.
 
 | Code guarantees | The model decides |
 |---|---|
-| A booking is confirmed only after the write returns a reference, and a sentence that confirms a booking, or names a reference, while nothing is booked is cut before it reaches the voice; one visit per call (a retry or a new window moves it, a corrected number or street updates it, a second address is refused); one booking write per caller turn, and the model is asked for one tool call at a time | What the caller needs, what to ask next, and every sentence except the fixed lines |
+| A booking is confirmed only after the write returns a reference, and a reply that confirms a booking, or names a reference, while nothing is booked gets the model a correction note for its next reply; one visit per call (a retry or a new window moves it, a corrected number or street updates it, a second address is refused); one booking write per caller turn, and the model is asked for one tool call at a time | What the caller needs, what to ask next, and every sentence except the fixed lines |
 | No booking without a window offered on this call, the checked address (a street name, and a ZIP the caller actually said, or none for a borough address once they were asked), the caller's name (not "your sister"), and the callback number having come up | Softer urgency the keyword rules can't see, such as "it's dangerous for her" or "no, she just had a stroke" |
 | Gas, carbon monoxide or smoke: the task, the safety script and the closing line, with "I don't smell gas" read as a no and the page held until a clear no or 15 s | When a caller wants a booking moved, and to which window |
 | No heat or cooling plus someone at risk ("my mother is 80", "I'm 82 and I live alone", "my son has asthma"): an urgent task filed on that turn, before any booking, and the booking marked priority; and no urgent task straight over "no, it's just me" | Most off-script calls: a refused address, plumbing, "where's my tech?", a prompt injection |
@@ -140,7 +140,7 @@ the abandoned-call callback, the wrong-number exit, the refused address, the Spa
 dispatch push, the new-install estimate, the failure ladder, the windows offered with the
 address, and everything from the overnight pass of 2026-09-28 (one tool call per turn, the
 booking-per-turn lock, the ZIP the caller never said, the borough without a ZIP, the number step,
-the denial guard, the interruptible confirmation).
+the denial guard, the interruptible confirmation, the correction note after a confirmation with no booking).
 
 ## Skipped, and why
 

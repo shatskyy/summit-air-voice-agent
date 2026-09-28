@@ -23,7 +23,7 @@ What the system does today. Where it differs from the first design, the reason i
 | Layer | Owns | Does not own |
 |---|---|---|
 | Conversation (model) | Understanding the caller, asking for what is missing, judging softer urgency, phrasing | Availability, capacity, whether a booking exists |
-| Turn rules (code) | Gas, carbon monoxide and smoke (the script, the held page, the closing line); no heat or cooling with someone at risk (the urgent task); a Spanish opening (the Spanish line and a callback); the model's own reply, sentence by sentence, with a booking confirmation dropped when nothing is booked ([ADR-016](decisions.md#adr-016-a-confirmation-with-no-booking-behind-it-is-cut-before-the-voice)) | Urgency phrased in words the lists don't hold |
+| Turn rules (code) | Gas, carbon monoxide and smoke (the script, the held page, the closing line); no heat or cooling with someone at risk (the urgent task); a Spanish opening (the Spanish line and a callback); the model's own reply, checked against the store after the fact, with a correction note when it confirmed a booking that isn't there ([ADR-016](decisions.md#adr-016-a-confirmation-with-no-booking-behind-it-is-caught-and-corrected)) | Urgency phrased in words the lists don't hold |
 | Tools (code) | Checking the address, offering windows, validating and writing bookings, filing dispatch tasks, paging, ending the call | What the caller heard |
 | End of call (code) | The call summary, a callback for a call abandoned mid-problem, the dispatch push | Whether a person reads it |
 | Store (SQLite) | The authoritative record of slots, bookings, tasks, calls, call summaries and heartbeats | Whether a person acted on a task |

@@ -42,6 +42,7 @@ from receptionist import (
     FailureLadder,
     SilenceWatch,
     SummitAirAgent,
+    flag_fabricated_confirmation,
     init_store,
     keep_promise,
     now,
@@ -245,12 +246,19 @@ async def entrypoint(ctx: JobContext) -> None:
     session.on("conversation_item_added", lambda event: log_turn_latency(call, event))
 
     def check_promise(event: ConversationItemAddedEvent) -> None:
+        """What the agent just said, checked against the store: a page it promised without filing,
+        a booking it confirmed without writing."""
         item = event.item
         if getattr(item, "role", None) == "assistant" and item.text_content:
-            task = asyncio.create_task(keep_promise(call, item.text_content))
-            background.add(task)
-            task.add_done_callback(background.discard)
+            for check in (
+                keep_promise(call, item.text_content),
+                flag_fabricated_confirmation(agent, call, item.text_content),
+            ):
+                task = asyncio.create_task(check)
+                background.add(task)
+                task.add_done_callback(background.discard)
 
+    agent = SummitAirAgent(render_instructions(now(), call.caller_number))
     background: set[asyncio.Task] = set()
     session.on("conversation_item_added", check_promise)
 
@@ -274,7 +282,7 @@ async def entrypoint(ctx: JobContext) -> None:
     session.on("user_state_changed", silence.on_user_state)
 
     await session.start(
-        agent=SummitAirAgent(render_instructions(now(), call.caller_number)),
+        agent=agent,
         room=ctx.room,
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(

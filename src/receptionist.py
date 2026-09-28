@@ -152,7 +152,7 @@ AT_RISK = re.compile(
     # cut, which pages on-call for "address is 72 Bergen Street").
     r"|\b(?:i'?m|i am|she'?s|she is|he'?s|he is|(?:wife|husband|aunt|uncle|mother|mom|father|dad"
     r"|grandmother|grandfather|grandma|grandpa|sister|brother|neighbor|tenant|roommate|partner)"
-    r"\W+(?:is|who'?s|who is|turned|just turned))\W+(?:6[5-9]|[7-9]\d|10\d|110)\b"
+    r"(?:'s|\W+(?:is|who'?s|who is|turned|just turned)))\W+(?:6[5-9]|[7-9]\d|10\d|110)\b"
     r"(?!\W*(?:degrees|percent|%|dollars|minutes|blocks|miles|years? ago|st\b|nd\b|rd\b|th\b"
     r"|[a-z]+ (?:street|st|avenue|ave|road|rd|place|lane|drive|boulevard|blvd)\b))"
     r"|\b(?:babies|baby|infant|newborn)\b|\b\w+\W+months?\W+old\b"
@@ -222,8 +222,7 @@ class Call:
     turn: int = 0  # caller turns completed so far
     booked_turn: int = -1  # the turn whose booking write went through
     book_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    has_booking: bool = False  # book_appointment has written this call's visit
-    cut_confirmations: int = 0  # booking confirmations cut before the voice (spoken_sentences)
+    fabricated_confirmations: int = 0  # "you're booked for" said with nothing in the store
 
 
 def now() -> datetime:
@@ -410,10 +409,13 @@ def street_problem(street: str) -> str | None:
 
 
 def street_key(address: str) -> list[str]:
-    """The house number and the first word of the street, which is what makes two addresses
-    different: "14 Maple St. Apt 2" and "14 Maple Street, Brooklyn" are the same place."""
-    street = address.split(",")[0].lower()
-    return re.findall(r"\d+(?:-\d+)?[a-z]*|[a-z]+", street)[:2]
+    """The house number and the street's name words, without the unit or the street type, which
+    is what makes two addresses different: "14 Maple St. Apt 2" and "14 Maple Street, Brooklyn"
+    are the same place, "150 West 72nd" and "150 West 73rd" are not."""
+    parts = [UNIT.sub("", part).strip() for part in address.lower().split(",")]
+    street = next((p for p in parts if HOUSE_NUMBER.match(p)), parts[0] if parts else "")
+    words = re.findall(r"\d+(?:-\d+)?[a-z]*|[a-z]+", street)
+    return words[:1] + [w for w in words[1:] if w not in STREET_TYPES][:2]
 
 
 def same_visit(held: dict, address: str, zip_code: str) -> bool:
@@ -427,13 +429,17 @@ def same_visit(held: dict, address: str, zip_code: str) -> bool:
     was, now = street_key(held["address"]), street_key(address)
     if was == now:
         return True
-    if len(was) != 2 or len(now) != 2:
+    if len(was) < 2 or len(now) < 2:
         return False
-    if was[1] == now[1]:  # the same street, a corrected house number
+    if was[1:] == now[1:]:  # the same street, a corrected house number
         return True
     # The same house number on a street that sounds alike: "Burger" for "Bergen". "48 Dean" for
     # "48 Bergen" is a different property.
-    return was[0] == now[0] and SequenceMatcher(None, was[1], now[1]).ratio() >= 0.6
+    return (
+        was[0] == now[0]
+        and len(was) == len(now) == 2
+        and SequenceMatcher(None, was[1], now[1]).ratio() >= 0.6
+    )
 
 
 def in_coverage(zip_code: str) -> bool:
@@ -451,8 +457,15 @@ def town_covered(town: str) -> bool:
     """Whether the town alone places an address in the service area: a borough, the city, a
     neighborhood or a Queens post-office name (config coverage.towns), with a trailing state
     dropped ("Brooklyn, NY"). For a caller who doesn't know the ZIP."""
-    cleaned = re.sub(r"[,\s]+(?:ny|n\.y\.|new york)$", "", town.strip().lower().replace(".", ""))
-    return cleaned.strip() in TOWNS
+    cleaned = town.strip().lower().replace(".", "")
+    while True:
+        shorter = re.sub(
+            r"[,\s]+(?:ny|new york|new york city|nyc|brooklyn|manhattan|queens)$", "", cleaned
+        ).strip()
+        if shorter == cleaned:
+            break
+        cleaned = shorter
+    return cleaned in TOWNS
 
 
 # Digits as speech-to-text writes them when the caller says them one at a time or in pairs:
@@ -482,6 +495,9 @@ def spoken_numbers(text: str) -> list[str]:
         w = words[i]
         if w.isdigit():
             out.append(w)
+        elif w in ("double", "triple") and i + 1 < len(words) and words[i + 1] in NUMBER_WORDS:
+            out += [NUMBER_WORDS[words[i + 1]]] * (2 if w == "double" else 3)
+            i += 1
         elif w in TENS and i + 1 < len(words) and words[i + 1] in UNITS:
             out.append(str(int(NUMBER_WORDS[w]) + int(NUMBER_WORDS[words[i + 1]])))
             i += 1
@@ -541,13 +557,20 @@ DENIAL_WORDS = {
 
 def risk_denied_last(items) -> bool:
     """Whether the caller's latest turn is a plain denial of risk and nothing more: "no, it's just
-    me", "nobody, I'm fine". "No, she just had a stroke" or "no, but my son is sick" is not."""
-    for item in reversed(items or []):
-        if getattr(item, "type", None) == "message" and item.role == "user":
+    me", "nobody, I'm fine". "No, she just had a stroke" or "no, but my son is sick" is not, and a
+    bare "No." counts only as the answer to the agent's at-risk question."""
+    messages = [i for i in items or [] if getattr(i, "type", None) == "message"]
+    last_agent = next(
+        (m.text_content or "" for m in reversed(messages) if m.role == "assistant"), ""
+    )
+    for item in reversed(messages):
+        if item.role == "user":
             text = item.text_content or ""
             words = re.findall(r"[a-z]+", text.lower().replace("'", ""))
             if not words or AT_RISK.search(text):
                 return False
+            if not NOBODY.search(text) and not RISK_QUESTION.search(last_agent):
+                return False  # a plain no to some other question
             return words[0] in {"no", "nope", "nah", "nobody", "none", "just"} and all(
                 w in DENIAL_WORDS for w in words
             )
@@ -563,7 +586,10 @@ def number_settled(items) -> bool:
             continue
         text = item.text_content or ""
         if item.role == "assistant" and re.search(
-            r"\bnumber\b|reach (?:you|them|someone)", text, re.IGNORECASE
+            r"(?<!house )(?<!street )(?<!reference )(?<!confirmation )\bnumber\b"
+            r"|reach (?:you|them|someone)|call you (?:back )?at",
+            text,
+            re.IGNORECASE,
         ):
             return True
         if item.role == "user" and re.search(
@@ -795,39 +821,6 @@ class GuardedEndCall(EndCallTool):
         return await super()._end_call(ctx)
 
 
-# A booking confirmation in the agent's own words. With no booking in the store it is fabricated:
-# on one simulated call the model asked "Which works?" and went on, in the same breath, "David,
-# you're booked for Wednesday... Your reference number is one two three four", with no tool call.
-FAKE_CONFIRMATION = re.compile(
-    r"\b(?:you'?re|you are|he'?s|she'?s|they'?re|it'?s|that'?s|is|are|has been|have been|i'?ve got"
-    r" you|got you|i have you)\W+(?:all\W+)?(?:booked|scheduled)\b"
-    r"|\ball set\b|\b(?:appointment|visit|technician) (?:is|has been) (?:confirmed|booked|scheduled)\b"
-    r"|\breference (?:number|is)\b|\byour reference\b|\bbooked (?:you|it|that|him|her|them) (?:for|in)\b",
-    re.IGNORECASE,
-)
-# A question, a condition or a negation is not a confirmation: "Which window would you like
-# booked?", "it's not booked yet", "once you pick one you're booked".
-NOT_A_CONFIRMATION = re.compile(
-    r"\?|\b(?:not|isn'?t|aren'?t|haven'?t|hasn'?t|yet|once|after|before|can'?t|cannot|won'?t|until"
-    r"|if|when|would|could|unless)\b",
-    re.IGNORECASE,
-)
-SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
-CUT_NOTE = (
-    "Your last reply told the caller the visit was booked, with a reference. That sentence was not "
-    "spoken to them, because nothing is booked on this call. Book with book_appointment once the "
-    "caller accepts a window, and confirm only what that tool returns."
-)
-
-
-def fabricated_confirmation(call: Call, sentence: str) -> bool:
-    return (
-        not call.has_booking
-        and bool(FAKE_CONFIRMATION.search(sentence))
-        and not NOT_A_CONFIRMATION.search(sentence)
-    )
-
-
 class SummitAirAgent(Agent):
     def __init__(self, instructions: str) -> None:
         super().__init__(
@@ -847,49 +840,6 @@ class SummitAirAgent(Agent):
 
     async def on_enter(self) -> None:
         self.session.say(GREETING)
-
-    async def llm_node(self, chat_ctx, tools, model_settings):
-        """The model's reply, one sentence at a time, with a booking confirmation that has no
-        booking behind it cut before it reaches the voice. Tool calls pass straight through. The
-        voice already waits for a whole sentence before it speaks, so holding the text until each
-        sentence ends costs nothing."""
-        call: Call = self.session.userdata
-        pending = ""
-        cut = False
-        async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
-            if cut:
-                continue  # drain the stream: nothing after a fabricated confirmation is spoken
-            if isinstance(chunk, str):
-                text = chunk
-            elif isinstance(chunk, llm.ChatChunk) and chunk.delta and chunk.delta.content:
-                text = chunk.delta.content
-                if chunk.delta.tool_calls:  # text and a tool call in one chunk: split them
-                    yield chunk.model_copy(
-                        update={"delta": chunk.delta.model_copy(update={"content": None})}
-                    )
-            else:
-                yield chunk  # a tool call, usage, or a flush
-                continue
-            pending += text
-            *done, pending = SENTENCE_END.split(pending)
-            for sentence in done:
-                if fabricated_confirmation(call, sentence):
-                    cut = True
-                    break
-                yield sentence + " "
-            if cut:
-                await self.cut_confirmation(call, pending)
-                pending = ""
-        if pending and not cut:
-            if fabricated_confirmation(call, pending):
-                await self.cut_confirmation(call, "")
-            else:
-                yield pending
-
-    async def cut_confirmation(self, call: Call, rest: str) -> None:
-        call.cut_confirmations += 1
-        logger.warning("cut a booking confirmation with no booking behind it")
-        await self.add_note(llm.ChatContext(), CUT_NOTE)
 
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
@@ -1259,7 +1209,6 @@ class SummitAirAgent(Agent):
                     "another."
                 )
             call.booked_turn = turn
-            call.has_booking = True
         window = speak_window(booking)
         call.moved = call.moved or booking["change"] == "moved"
         ref = f'{booking["ref"]} (say "{speak_digits(booking["ref"])}")'
@@ -1574,6 +1523,45 @@ async def keep_promise(call: Call, text: str) -> bool:
             "Summit Air urgent, not recorded",
             push_text(call, "on-call callback the agent promised; the caller's number is in calls"),
         )
+    return True
+
+
+# The booking confirmation the prompt dictates, "[first name], you're booked for [day]", and its
+# close relatives. On one simulated call the model asked "Which works?" and went on, in the same
+# reply, "David, you're booked for Wednesday... Your reference number is one two three four",
+# with no tool call and nothing in the store. A first cut filtered the reply sentence by sentence
+# before the voice; a fresh-context review showed it silencing honest lines ("You're all set. Our
+# target is to call you back by 10 AM") and dropping the tool call that would have made the
+# confirmation true, so this is the keep_promise shape instead: after the fact, never silencing,
+# and precise about the phrase.
+FABRICATED = re.compile(
+    r"\b(?:you'?re|you are|you'?ve been|you have been|i'?ve got you|i have you) (?:now |all |officially )?"
+    r"(?:booked|down) (?:for|in|on)\b|\breference number is\b|\bconfirmation number is\b",
+    re.IGNORECASE,
+)
+CORRECTION_NOTE = (
+    "Your last reply told the caller the visit was booked, but nothing is booked on this call and "
+    "no reference exists. In your next reply say plainly that it is not booked yet, then book it "
+    "with book_appointment once they accept a window, and confirm only what that tool returns."
+)
+
+
+async def flag_fabricated_confirmation(agent: Agent, call: Call, text: str) -> bool:
+    """A spoken booking confirmation with no booking in the store: tell the model so its next
+    reply corrects it. True means one was found. The store is read, not a flag, since a booking
+    can land after the tool was cancelled by an interruption."""
+    if not FABRICATED.search(text):
+        return False
+    if await asyncio.to_thread(store.booking_for, call.db, call.call_id):
+        return False
+    call.fabricated_confirmations += 1
+    logger.warning("the agent confirmed a booking that does not exist; telling it to correct")
+    try:
+        kept = agent.chat_ctx.copy()
+        kept.add_message(role="system", content=CORRECTION_NOTE)
+        await agent.update_chat_ctx(kept)
+    except Exception:
+        logger.exception("the correction note was not added")
     return True
 
 
