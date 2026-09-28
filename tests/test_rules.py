@@ -2967,3 +2967,97 @@ async def test_interrupted_write_keeps_lock_until_database_finishes(db, monkeypa
     with pytest.raises(ToolError, match="already booked"):
         await retry
     assert store.booking_for(db, ctx.userdata.call_id)["slot_id"] == "2026-09-29-0800"
+
+
+# The 2:28 PM call: an estimate that turned into a broken AC, and a "No" that didn't hold
+
+
+async def test_a_system_that_fails_after_windows_were_offered_is_reoffered_as_a_repair(
+    db, monkeypatch
+):
+    pages = []
+    line = UrgentLine(Call(call_id="call-a", db=db, caller_number="+19145550100"))
+    agent = urgent_agent(line, monkeypatch, pages)
+    call = line.userdata
+    ctx = FakeContext(call)
+    await agent.check_address(ctx, "14 Maple Street", "Brooklyn", "11225")
+    await agent.check_availability(ctx, "2026-10-02", "afternoon")
+    turn_ctx = llm.ChatContext()
+    said = "Oh, hold on. My AC just completely broke, and it's really hot in here."
+    await agent.on_user_turn_completed(turn_ctx, llm.ChatMessage(role="user", content=[said]))
+    notes = [i.text_content for i in turn_ctx.items if i.type == "message" and i.role == "system"]
+    assert any("now a repair" in n for n in notes)
+    assert call.reoffer_for_repair and call.urgent_task is None
+    with pytest.raises(ToolError, match="earliest open window"):
+        await agent.book_appointment(ctx, "2026-10-02-1200", *BOOK_ARGS)
+    await agent.check_availability(ctx, "2026-09-29", "any")
+    assert not call.reoffer_for_repair
+    await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
+
+
+async def test_a_system_down_from_the_start_needs_no_reoffer(db, monkeypatch):
+    line = UrgentLine(Call(call_id="call-a", db=db))
+    agent = urgent_agent(line, monkeypatch, [])
+    await agent.on_user_turn_completed(
+        llm.ChatContext(), llm.ChatMessage(role="user", content=["My AC broke."])
+    )
+    assert not line.userdata.reoffer_for_repair
+
+
+async def test_a_denial_of_risk_holds_when_the_caller_later_pushes_for_urgent(db, monkeypatch):
+    pages = []
+    line = UrgentLine(Call(call_id="call-a", db=db))
+    agent = urgent_agent(line, monkeypatch, pages)
+    for said in ["My AC broke.", "No, it's just me.", "It needs urgent fixing."]:
+        await agent.on_user_turn_completed(
+            llm.ChatContext(), llm.ChatMessage(role="user", content=[said])
+        )
+    call = line.userdata
+    assert call.risk_denied
+    with pytest.raises(ToolError, match="routine even if they want it fast"):
+        await agent.create_dispatch_task(FakeContext(call), "urgent", "AC broke", "hot inside")
+    assert pages == [] and call.urgent_task is None
+
+
+async def test_naming_someone_at_risk_after_a_denial_still_pages(db, monkeypatch):
+    pages = []
+    line = UrgentLine(Call(call_id="call-a", db=db))
+    agent = urgent_agent(line, monkeypatch, pages)
+    for said in ["My AC broke.", "No, it's just me.", "Actually my grandmother is here, she's 90."]:
+        await agent.on_user_turn_completed(
+            llm.ChatContext(), llm.ChatMessage(role="user", content=[said])
+        )
+    assert not line.userdata.risk_denied and line.userdata.urgent_task == 2001
+
+
+async def test_a_promise_after_a_denial_files_an_office_callback_not_a_page(db, monkeypatch):
+    pages = []
+
+    async def fake_page(title, message):
+        pages.append(title)
+
+    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    call = Call(call_id="call-a", db=db, risk_denied=True)
+    said = "I've flagged this as urgent for our on-call technician. Our target is to call you back."
+    assert await keep_promise(call, said) is True
+    assert await keep_promise(call, said) is False  # once per call
+    with store.connect(db) as conn:
+        kinds = [r[0] for r in conn.execute("select kind from tasks")]
+    assert kinds == ["callback"] and pages == [] and not call.paged
+
+
+async def test_several_named_days_get_one_window_each(db):
+    ctx = FakeContext(Call(call_id="call-a", db=db))
+    offered = await SummitAirAgent("").check_availability(
+        ctx, "2026-09-30", "any", latest_date="2026-10-02"
+    )
+    assert [d in offered for d in ("September 30", "October 1", "October 2")] == [True] * 3
+    assert offered.count("slot_id") == 3
+
+
+async def test_a_day_range_is_capped_at_three_days(db):
+    ctx = FakeContext(Call(call_id="call-a", db=db))
+    offered = await SummitAirAgent("").check_availability(
+        ctx, "2026-09-29", "morning", latest_date="2026-10-09"
+    )
+    assert offered.count("slot_id") == 3 and "October 2" not in offered

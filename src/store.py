@@ -156,6 +156,23 @@ def open_slots(
         return [dict(r) for r in conn.execute(sql, params)]
 
 
+def first_slot_each_day(
+    path: Path, earliest: date, latest: date, part_of_day: str, now: datetime
+) -> list[dict]:
+    """The first open window on each day from earliest to latest, for a caller who named several
+    days: on the 2:28 PM call "Wednesday, Thursday, or Friday" took three turns, one day each."""
+    found = []
+    day = earliest
+    while day <= latest:
+        found += [
+            s
+            for s in open_slots(path, day, part_of_day, now, limit=1)
+            if s["day"] == day.isoformat()
+        ]
+        day += timedelta(days=1)
+    return found
+
+
 CALL_BOOKING = """
     select b.*, s.day, s.start, s.end from bookings b join slots s on s.id = b.slot_id
     where b.call_id = ?

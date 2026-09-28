@@ -260,6 +260,14 @@ class Call:
     # book_appointment said the confirmation itself (ADR-019), so the model's reply to the tool
     # result is cancelled: one model round instead of two on the booking turn.
     confirmation_spoken: bool = False
+    # The caller said nobody there is at risk, at any point on the call. It holds until they name
+    # someone: on the 2:28 PM call a "No" was followed by "it needs urgent fixing" and the model
+    # paged on-call for a healthy adult with a broken AC.
+    risk_denied: bool = False
+    # The system failed after windows were offered (an estimate turned into a repair on the 2:28
+    # PM call and the Friday estimate was booked anyway). Booking waits for a fresh
+    # check_availability so the caller hears the earliest window.
+    reoffer_for_repair: bool = False
 
 
 def now() -> datetime:
@@ -685,6 +693,23 @@ def windows_note(call: Call, text: str, items) -> str | None:
     )
 
 
+def repair_note(call: Call, was_down: bool) -> str | None:
+    """The note for the model when the caller says the system has failed after windows were
+    offered: the visit is now a repair, so the earliest window comes first. Sets the flag that holds
+    booking until check_availability runs again. None otherwise, and never for a call already
+    urgent, where the urgent task decides what happens next."""
+    if was_down or not call.system_down or not call.offered or urgent_reason(call):
+        return None
+    call.reoffer_for_repair = True
+    held = " and offer to move their booking to it" if call.booked_turn >= 0 else ""
+    return (
+        "The caller just said their system has failed, so this visit is now a repair, not an "
+        "estimate or maintenance. If you haven't asked whether anyone there is at risk, ask that "
+        "first. Then call check_availability from today and offer the earliest open window"
+        f"{held}, and book with the issue in their words."
+    )
+
+
 def number_settled(items) -> bool:
     """Whether the callback number has come up on this call: the agent asked about it or the
     caller spoke to it ("this number is fine"). A booking without that step skipped what Summit
@@ -993,7 +1018,12 @@ class SummitAirAgent(Agent):
                 if confirms(text):
                     await self.close_emergency(call, new_message)  # raises StopResponse
                     return
+        was_down = call.system_down
         note_urgency(call, turn_ctx, text)
+        items = [*turn_ctx.items, new_message]
+        call.risk_denied = (call.risk_denied or risk_denied_last(items)) and not call.at_risk
+        if note := repair_note(call, was_down):
+            await self.add_note(turn_ctx, note)
         if await flag_hazard(call, text):
             await self.speak_over(SAFETY_SCRIPT, new_message)
             raise StopResponse()
@@ -1002,7 +1032,6 @@ class SummitAirAgent(Agent):
             await self.answer_in_spanish(call, new_message)  # raises StopResponse
         if not call.warned or call.false_alarm:  # never while an emergency stands
             await self.flag_urgent(call, turn_ctx, new_message)
-        items = [*turn_ctx.items, new_message]
         if note := windows_note(call, text, items):
             await self.add_note(turn_ctx, note)
 
@@ -1211,6 +1240,7 @@ class SummitAirAgent(Agent):
         context: RunContext[Call],
         earliest_date: str,
         part_of_day: Literal["morning", "afternoon", "any"] = "any",
+        latest_date: str = "",
     ) -> str:
         """Find open arrival windows. Call this before offering the caller any time.
 
@@ -1218,19 +1248,34 @@ class SummitAirAgent(Agent):
             earliest_date: The first date that works for the caller, as YYYY-MM-DD. Resolve words
                 like "tomorrow" or "next Tuesday" from today's date in your instructions.
             part_of_day: morning (8 AM to noon), afternoon (noon to 4 PM), or any.
+            latest_date: Only when the caller names several days ("Wednesday, Thursday or
+                Friday"): the last of them, as YYYY-MM-DD. You get the first open window on each
+                day, up to three days, to offer together in one reply.
         """
         try:
             earliest = date.fromisoformat(earliest_date)
+            latest = date.fromisoformat(latest_date) if given(latest_date or "") else None
         except ValueError:
-            raise ToolError("earliest_date must be a date in YYYY-MM-DD form.") from None
-        slots = await asyncio.to_thread(
-            store.open_slots, context.userdata.db, earliest, part_of_day, now()
-        )
+            raise ToolError("Dates must be in YYYY-MM-DD form.") from None
+        if latest is not None and latest > earliest:
+            slots = await asyncio.to_thread(
+                store.first_slot_each_day,
+                context.userdata.db,
+                earliest,
+                min(latest, earliest + timedelta(days=2)),
+                part_of_day,
+                now(),
+            )
+        else:
+            slots = await asyncio.to_thread(
+                store.open_slots, context.userdata.db, earliest, part_of_day, now()
+            )
         if not slots:
             return (
                 "No open windows from that date. Offer another day, or a callback task if nothing "
                 "works."
             )
+        context.userdata.reoffer_for_repair = False
         for slot in slots:
             context.userdata.offered[slot["id"]] = speak_window(slot)
         return "Open windows: " + "; ".join(f"{speak_window(s)} (slot_id {s['id']})" for s in slots)
@@ -1308,6 +1353,12 @@ class SummitAirAgent(Agent):
             )
         if business:
             note = f"Business: {business}. Site contact: {contact}. {note or ''}".strip()
+        if call.reoffer_for_repair:
+            raise ToolError(
+                "Nothing is booked yet. The caller's system has failed since you offered those "
+                "windows, so this is a repair: call check_availability from today, offer the "
+                "earliest open window, and book the one they pick."
+            )
         if slot_id not in call.offered:
             raise ToolError(
                 "That slot was not offered on this call. Call check_availability and offer a window first."
@@ -1469,11 +1520,13 @@ class SummitAirAgent(Agent):
             kind == "urgent"
             and not call.at_risk
             and not (call.heat_down and call.cold)
-            and risk_denied_last(history_of(context))
+            and (call.risk_denied or risk_denied_last(history_of(context)))
         ):
             raise ToolError(
-                "The caller just said nobody there is at risk, so this is routine: no urgent "
-                "task, no on-call, no after-hours visit. Book the next open window."
+                "The caller said nobody there is at risk, so this is routine even if they want it "
+                "fast: no urgent task, no on-call, no after-hours visit. Don't say on-call has it. "
+                "Tell them plainly it's a priority repair and offer the earliest open window "
+                "(check_availability from today)."
             )
         if kind == "emergency" and call.hazard_task is not None and call.false_alarm:
             await reopen_emergency(call)
@@ -1727,12 +1780,16 @@ def wants_dictation(said: str) -> bool:
 async def keep_promise(call: Call, text: str) -> bool:
     """File the urgent task when the agent has told the caller on-call is paged but never filed it.
     A false page is cheap; a promised callback that never comes is not. True means it filed one."""
-    if call.paged or call.warned or not PAGE_PROMISE.search(text):
+    if call.paged or call.promise_kept or call.warned or not PAGE_PROMISE.search(text):
         return False
     logger.warning("the agent promised an on-call callback without filing it; filing it now")
     call.promise_kept = True
+    # The caller said nobody is at risk: keep the promise to call back, without paging on-call.
+    routine = call.risk_denied and not call.at_risk and not (call.heat_down and call.cold)
+    kind = "callback" if routine else "urgent"
     try:
-        await file_task(call, "urgent", "on-call callback the agent promised", text)
+        reason = "callback the agent promised" if routine else "on-call callback the agent promised"
+        await file_task(call, kind, reason, text)
     except Exception:
         logger.exception("the promised urgent task was not recorded; paging on-call without it")
         start_page(

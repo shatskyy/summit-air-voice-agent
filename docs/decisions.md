@@ -568,3 +568,31 @@ nothing, and "No, that's all" after the line closing the call.
 
 **Would reverse it.** A caller talking over the confirmation and the model then repeating it, or
 callers finding the fixed wording stiff.
+
+## ADR-020: A failure mid-call makes it a repair, and a "no" to risk holds for the call
+
+**Status:** Accepted 2026-09-28. Offline tests only; not yet heard on a phone call.
+
+**Decision.** Three changes from the 2:28 PM call, where a caller booked a free AC install
+estimate for Friday, then said "my AC just completely broke", answered "No" to the at-risk
+question, and pushed with "it needs urgent fixing":
+
+1. If the caller says the system has failed after windows were offered, code tells the model the
+   visit is now a repair and holds `book_appointment` until `check_availability` runs again, so
+   the caller hears the earliest window before anything is booked.
+2. A denial of risk now holds for the rest of the call (`Call.risk_denied`), not only on the turn
+   right after it. The urgent-task guard refuses on it until the caller names someone at risk, or
+   says the heat is out in the cold (ADR-018). If the model still tells the caller on-call has
+   it, the promise backstop files an office callback instead of paging.
+3. `check_availability` takes an optional `latest_date`. When the caller names several days, it
+   returns the first open window on each, up to three days, offered in one reply. On the call,
+   "Wednesday, Thursday, or Friday" took three turns.
+
+**Why.** The call ended with a Friday estimate at routine priority and an urgent on-call page
+for the same healthy adult, two outcomes that contradict each other and the brief, where a broken
+AC with nobody at risk is routine.
+
+**Cost.** A caller who says "no" and then describes risk in words the at-risk patterns miss stays
+routine; the model can no longer override that with its own judgment.
+
+**Would reverse it.** A missed at-risk caller after an early "no".
