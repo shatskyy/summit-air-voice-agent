@@ -598,7 +598,7 @@ check_defrost_steam = check_buried_cue_no_smoke
 
 def check_cold_no_risk_night(c):
     """No heat at 20 degrees with only a healthy adult home. Until 2026-09-28 this was routine at
-    any hour; since then no heat in the cold is urgent whoever is home (Rainey's brief lists "no
+    any hour; since then no heat in the cold is urgent whoever is home (the brief lists "no
     heat in winter" as urgent on its own). One urgent task, never an emergency, and at most one
     booking: at night the caller may take the on-call callback instead of a morning visit. Not
     rerun since the change (rule 9, 2026-09-28)."""

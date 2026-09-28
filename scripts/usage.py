@@ -53,7 +53,7 @@ LLM_RATES = {
     "google/gemma-4-31b-it": {"input": 0.40, "cached": 0.20, "output": 1.20},
 }
 STT_PER_MINUTE = {"nova-3": 0.0077}
-TTS_PER_1K_CHARS = {"aura-2-thalia-en": 0.030}
+TTS_PER_1K_CHARS = {"aura-2-thalia-en": 0.030, "aura-2-arcas-en": 0.030}
 
 
 def load_env() -> None:

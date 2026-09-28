@@ -130,8 +130,7 @@ lid, so for the review window the laptop stays open and plugged in.
 ### Overnight pass (2026-09-27 22:15 to 2026-09-28, branch `overnight`)
 
 No phone calls: the line was dark from 22:03 until submission. Everything here is simulation and
-offline tests, so the morning calls listed in [`evals/overnight-progress.md`](../evals/overnight-progress.md)
-are what prove it on a phone. The pass mined the 28 stored phone calls above and the worker log,
+offline tests, so phone calls are still needed to prove it. The pass mined the 28 stored phone calls above and the worker log,
 turned the failures into scenarios, and fixed what the scenarios and two fresh-context reviews
 found. Twelve scenarios were added (`misheard_opening`, `no_zip`, `split_address`,
 `rambling_elderly`, `angry_kid_asthma`, `fillers_self_correction`, `answers_different_question`,
