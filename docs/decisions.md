@@ -596,3 +596,41 @@ AC with nobody at risk is routine.
 routine; the model can no longer override that with its own judgment.
 
 **Would reverse it.** A missed at-risk caller after an early "no".
+
+## ADR-021: Code puts the caller's details on a paged task, and a yes confirms only a read-back heard to the end
+
+**Status:** Accepted 2026-09-28. Offline tests only; not yet heard on a phone call. Part 4 is a
+prompt change and has not been simulated.
+
+**Decision.** Four changes from the 3:51 PM call (`KSJ5YTzz9uHA`), an 80-year-old without heat:
+
+1. When `check_address` passes an in-area address and the call has a paged task (urgent, or an
+   emergency not called off), code writes the address onto the task and pushes on-call once,
+   "#N: address added", with the first name and ZIP only. A name the caller gives for themselves
+   ("my name is", "this is") is written onto the task the same turn. Both are kept on the call,
+   so a task filed later starts with them. A booking still replaces these code-made copies.
+2. The windows found with the address reach the model only on a yes whose previous agent message
+   was the read-back, said to the end (not `interrupted`). When the caller talked over the
+   read-back, a note tells the model to answer them and read the address back again, alone.
+3. The closing check also accepts any short answer made only of closing words ("It's all good.
+   K.", "Okay, thank you so much") with at least one marker (no, nothing, good, set, fine,
+   thanks, bye). "Yes", "but", "actually", "also" or a question keeps the call open.
+4. Urgent with the office open and no window today: the prompt has the agent say so, say on-call
+   will call by the target about getting someone out today, name the after-hours fee, and hold
+   the earliest window as a backup, without ever saying a technician is coming today.
+
+**Why.** The page went out on the second turn by design (ADR-009), before any details, and the
+prompt's instruction to update the task later was not followed, so on-call had a reason and a
+caller ID and nothing else while the agent told the caller "I have your details". The caller's
+"Yes." answered the phone question, but any yes released the windows. The close check was a list
+of whole phrases, and this was its third miss. The caller asked for today and was offered Tuesday
+twice, then nothing.
+
+**Cost.** A second push on urgent calls. A name heard wrong by speech-to-text lands on the task
+until a booking or the model corrects it. A read-back the model phrases without the house number
+and street words doesn't count, so the model finds windows itself with `check_availability`, one
+extra tool turn.
+
+**Would reverse it.** A wrong name or address on a task that the caller never gave, or a real
+request after "anything else" taken as a goodbye.
+

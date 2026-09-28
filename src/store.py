@@ -236,16 +236,26 @@ def add_task(path: Path, **task) -> int:
 
 
 def fill_task_contact(
-    path: Path, call_id: str, name: str, phone: str, address: str, previous: dict | None = None
+    path: Path,
+    call_id: str,
+    name: str,
+    phone: str,
+    address: str,
+    previous: dict | None = None,
+    copied: dict | None = None,
 ) -> None:
     """Copy booked contact details to tasks, including corrections to earlier copied values.
-    Keep independently supplied task contacts (for example, a different on-site person)."""
+    Keep independently supplied task contacts (for example, a different on-site person). `copied`
+    holds what code itself put on the tasks earlier in the call (the name the caller gave, the
+    checked address), which the booking replaces: "David" gives way to "David Shatsky"."""
     previous = previous or {}
+    copied = copied or {}
     sql = """
         update tasks set
-            name = case when name = '' or name = :old_name then :name else name end,
+            name = case when name in ('', :old_name, :copied_name) then :name else name end,
             phone = case when phone = '' or phone = :old_phone then :phone else phone end,
-            address = case when address = '' or address = :old_address then :address else address end
+            address = case when address in ('', :old_address, :copied_address) then :address
+                else address end
         where call_id = :call_id
     """
     with connect(path) as conn:
@@ -259,6 +269,8 @@ def fill_task_contact(
                 "old_name": previous.get("name", ""),
                 "old_phone": previous.get("phone", ""),
                 "old_address": previous.get("address", ""),
+                "copied_name": copied.get("name", ""),
+                "copied_address": copied.get("address", ""),
             },
         )
 

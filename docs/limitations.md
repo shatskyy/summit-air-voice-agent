@@ -48,6 +48,10 @@ in [scenarios.md](scenarios.md); simulated-call results are in [the eval report]
 - **Short acknowledgments cut the agent off.** On the phone calls "Alright." and "Okay." over an
   agent question interrupted it mid-sentence (calls `riWFX67`, `NpW9kct`). Only a phone call can
   show whether the adaptive interruption model handles a given caller's backchannels.
+- **No same-day visit exists in the demo.** The schedule has two arrival windows a day and no
+  same-day dispatch. For an urgent caller with no window left today, the agent can only promise
+  an on-call callback about getting someone out and hold tomorrow's window (ADR-021). That rule is
+  prompt text and has not been simulated.
 - **Nobody is actually on call.** Pages reach one test phone, and callback targets are targets.
 
 ## Known bugs, not yet fixed

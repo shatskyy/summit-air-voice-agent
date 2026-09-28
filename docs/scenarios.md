@@ -164,6 +164,17 @@ turn), the borough without a ZIP, the ZIP the caller never said, the number step
 interruptible confirmation (the store held on the 10:04 move). The booking lock and the correction
 note didn't fire.
 
+### Afternoon calls (2026-09-28 13:06 to 15:51)
+
+| Time | Room | Build | What the caller said | What happened | Defects |
+|---|---|---|---|---|---|
+| 13:06 | `call-..._xVkrkiqjF84o` | Gemini voice | Commercial filter change | Booking 1012 Tuesday morning; median reply 2.96 s | Voice changed mid-call at Gemini's rate limit; 5.9 s booking turn; name asked again; four business questions before the address (fixed in `a4c8e9d`, `b09319a`, `e376741`) |
+| 14:28 | `call-..._GKp6z86JAVAG` | `e376741` | New AC estimate, then "my AC just completely broke", "No" to risk, "it needs urgent fixing" | Booking 1013 Friday and urgent task 2018; median 1.72 s | Estimate booked after the failure; on-call paged for a healthy adult; three turns for "Wed, Thu or Fri" (ADR-020, `aff6848`) |
+| 15:51 | `call-..._KSJ5YTzz9uHA` | `aff6848` | "My grandma's 80, and my furnace [stopped] working", a Manhattan apartment, "I need it today" | Urgent task 2019 on the second turn with the target; no booking; replies 1.2 to 3.8 s | Task and page never got the name or address; the "Yes." to the number released the windows though the caller had talked over the read-back, and read-back and windows came in one reply; only Tuesday offered, then nothing after "I need it today"; "It's all good. K." refused as a close, "anything else" asked twice, caller hung up (ADR-021) |
+
+The 15:51 call didn't exercise ADR-020 (no risk denial, no several-day request), so that is still
+unheard on a phone.
+
 ## Text tests (`uv run pytest -m llm`)
 
 Run on 2026-09-23 against the new prompt, with no filler line. Each test ran against both candidates.

@@ -1,5 +1,6 @@
 """Deterministic checks: no model, no network, no credit. Run after every change."""
 
+import asyncio
 import contextlib
 from datetime import date, datetime
 
@@ -806,6 +807,25 @@ GREETED = said("assistant", receptionist.GREETING)
         ),  # the Awb8xx294NFr call, asked twice
         ([said("assistant", "Anything else?"), said("user", "That's it, thanks.")], True),
         ([said("assistant", "Anything else?"), said("user", "Nope, I'm all set.")], True),
+        # the KSJ5YTzz9uHA call: refused, asked twice, and the caller hung up on the second ask
+        (
+            [
+                said("assistant", "Anything else I can help with?"),
+                said("user", "It's all good. K."),
+            ],
+            True,
+        ),
+        ([said("assistant", "Anything else?"), said("user", "Okay, thank you so much.")], True),
+        (
+            [
+                said("assistant", "Anything else?"),
+                said("user", "No, actually, can you also check the AC?"),
+            ],
+            False,
+        ),
+        ([said("assistant", "Anything else?"), said("user", "Yeah, one more thing.")], False),
+        ([said("assistant", "Anything else?"), said("user", "It's not good.")], False),
+        ([said("assistant", "Anything else?"), said("user", "Okay.")], False),  # no marker
     ],
 )
 def test_the_call_ends_only_after_anything_else_is_answered(history, ends):
@@ -2689,12 +2709,136 @@ def test_the_windows_note_comes_only_on_a_yes(said, noted):
 
 def test_the_windows_note_names_the_number_step_only_while_it_is_open():
     history = llm.ChatContext()
+    call = Call(call_id="call-a", pending_windows="Monday", checked_street=["14", "maple"])
+    history.add_message(role="assistant", content="That's 14 Maple Street, Brooklyn. Right?")
     history.add_message(role="user", content="Yes.")
-    call = Call(call_id="call-a", pending_windows="Monday")
     assert "best one to reach them" in receptionist.windows_note(call, "Yes.", history.items)
     history.add_message(role="assistant", content="Is this number the best one to reach you?")
+    history.add_message(role="user", content="Yes.")
+    history.add_message(role="assistant", content="And that's 14 Maple Street, Brooklyn?")
+    history.add_message(role="user", content="Yes.")
     call.pending_windows = "Monday"
     assert "best one to reach them" not in receptionist.windows_note(call, "Yes.", history.items)
+
+
+def ksj5_history(*turns):
+    """The 3:51 PM call (KSJ5YTzz9uHA) up to the read-back the caller talked over."""
+    history = llm.ChatContext()
+    history.add_message(
+        role="user", content="150 West 72nd Street. Apartment 3. Manhattan one zero zero two three."
+    )
+    history.add_message(role="assistant", content="That's 150 West 72nd", interrupted=True)
+    for role, text in turns:
+        history.add_message(role=role, content=text)
+    return history.items
+
+
+def ksj5_call():
+    return Call(
+        call_id="call-a",
+        pending_windows="Tuesday, September 29, between 8 AM and noon (slot_id 2026-09-29-0800)",
+        checked_street=receptionist.street_key("150 West 72nd Street Apartment 3"),
+    )
+
+
+def test_a_yes_to_the_number_does_not_confirm_an_address_read_back_cut_off():
+    call = ksj5_call()
+    items = ksj5_history(
+        ("user", "My name is Dan My name is David."),
+        ("assistant", "Just to confirm, your name is David? What's the best number to reach you?"),
+        ("user", "And the number I'm calling from?"),
+        ("assistant", "Is 650-867-7345 the best number to reach you?"),
+        ("user", "Yes."),
+    )
+    assert receptionist.windows_note(call, "Yes.", items) is None
+    assert call.pending_windows  # still waiting for a yes to the address
+
+
+def test_a_read_back_cut_off_is_said_again_before_any_window():
+    call = ksj5_call()
+    items = ksj5_history(("user", "My name is Dan My name is David."))
+    assert receptionist.windows_note(call, "My name is Dan My name is David.", items) is None
+    assert "read the address back again" in receptionist.readback_cut_note(call, items)
+    items = ksj5_history(
+        ("user", "My name is David."),
+        ("assistant", "Thanks, David. That's 150 West 72nd Street, Apartment 3, Manhattan, 10023?"),
+        ("user", "Yes."),
+    )
+    assert receptionist.readback_cut_note(call, items) is None
+    assert "Tuesday, September 29" in receptionist.windows_note(call, "Yes.", items)
+
+
+@pytest.mark.parametrize(
+    ("text", "name"),
+    [
+        ("My name is Dan My name is David.", "David"),
+        ("Hi, this is Maria, my heat is out.", "Maria"),
+        ("This is urgent.", ""),
+        ("My name's Priya.", "Priya"),
+        ("No heat and it's freezing.", ""),
+    ],
+)
+def test_the_callers_own_name_is_heard(text, name):
+    assert receptionist.name_in(text) == name
+
+
+async def test_an_urgent_task_filed_before_details_gets_the_name_and_address(db, monkeypatch):
+    """The 3:51 PM call: the urgent page went out on the second turn, nothing was booked, the model
+    never updated the task, and on-call had no name or address (ADR-021)."""
+    pages = []
+
+    async def fake_page(title, message):
+        pages.append((title, message))
+        return True
+
+    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    agent = SummitAirAgent("")
+    ctx = FakeContext(Call(call_id="call-a", db=db, caller_number="+16505550142"))
+    await agent.create_dispatch_task(ctx, "urgent", "no heat, 80-year-old at home", "furnace out")
+    await agent.check_address(ctx, "150 West 72nd Street Apartment 3", "Manhattan", "10023")
+    await receptionist.name_escalation(ctx.userdata, "My name is Dan My name is David.")
+    await asyncio.sleep(0)  # let the background push run
+    task = store.tasks_for(db, "call-a")[0]
+    assert task["address"] == "150 West 72nd Street Apartment 3, Manhattan 10023"
+    assert task["name"] == "David" and task["phone"] == "+16505550142"
+    assert [t for t, _ in pages] == [
+        "Summit Air urgent #2001",
+        "Summit Air urgent #2001: address added",
+    ]
+    assert "10023" in pages[1][1] and "72nd" not in pages[1][1]  # ZIP only, never the street
+    await agent.check_address(
+        ctx, "152 West 72nd Street Apartment 3", "Manhattan", "10023"
+    )  # a correction
+    await asyncio.sleep(0)
+    assert store.tasks_for(db, "call-a")[0]["address"].startswith("152 West 72nd")
+    assert len(pages) == 2  # on-call is told once
+
+
+async def test_details_given_before_the_urgency_go_on_the_task(db, monkeypatch):
+    async def fake_page(title, message):
+        return True
+
+    monkeypatch.setattr(receptionist, "page_on_call", fake_page)
+    agent = SummitAirAgent("")
+    ctx = FakeContext(Call(call_id="call-a", db=db))
+    await receptionist.name_escalation(ctx.userdata, "Hi, this is Maria.")
+    await agent.check_address(ctx, "14 Maple Street", "Brooklyn", "11225")
+    await agent.create_dispatch_task(ctx, "urgent", "no heat, infant at home", "furnace out")
+    task = store.tasks_for(db, "call-a")[0]
+    assert task["name"] == "Maria" and task["address"] == "14 Maple Street, Brooklyn 11225"
+
+
+def test_a_booked_full_name_replaces_a_first_name_from_the_callers_words(db):
+    ref = store.add_task(
+        db, call_id="call-a", kind="urgent", reason="no heat", summary="", name="David",
+        phone="", address="", due_at="2026-09-28T16:06-04:00",
+    )  # fmt: skip
+    store.fill_task_contact(
+        db, "call-a", "David Shatsky", "+16505550142", "150 West 72nd Street", {}, {"name": "David"}
+    )
+    assert store.tasks_for(db, "call-a")[0]["name"] == "David Shatsky"
+    store.update_task_contact(db, ref, "", "", "")  # empty details never blank a field
+    assert store.tasks_for(db, "call-a")[0]["name"] == "David Shatsky"
 
 
 def test_the_safety_scripts_yes_is_unchanged_by_the_wider_address_yes():
