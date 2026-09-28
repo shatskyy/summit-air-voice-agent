@@ -50,3 +50,22 @@ in [scenarios.md](scenarios.md); simulated-call results are in [the eval report]
   show whether the adaptive interruption model handles a given caller's backchannels.
 - **Nobody is actually on call.** Pages reach one test phone, and callback targets are targets.
 
+## Known bugs, not yet fixed
+
+Found in a read-through on September 28 and confirmed by calling the functions directly. Each fix
+changes who gets paged or what the agent says, so none went in without a simulated and a phone pass.
+
+- **A failed system can hide an at-risk person from the urgent check.** `RISK_DENIED` treats a
+  negation near the risk match as denying the person, and the "no" in "no heat" or the "isn't" in
+  "isn't working" counts. `at_risk_in("No heat and my mom is 82.")` returns false; with a comma
+  after "heat" it returns true, so the transcript's punctuation decides it. The prompt still tells
+  the model to escalate, so the call falls back to the model rather than to routine outright. The
+  fix is to scope the negation to the clause that holds the person.
+- **An equipment age reads as an infant.** The months-old pattern matches "it's only 3 months
+  old" about the AC, which files an urgent task and pages on-call.
+- **Smoke as a habit triggers the safety script.** "I smoke" matches the hazard list the same as
+  "I smell smoke".
+- **A ZIP given after a ZIP-less booking is refused.** A borough-only booking stores an empty ZIP.
+  If the caller then adds the ZIP for the same street, `same_visit` compares the ZIPs first, sees
+  them differ, and treats it as a second address.
+
