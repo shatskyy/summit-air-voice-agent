@@ -4,6 +4,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+from evals.ledger import CAP
 from evals.scenarios import BY_NAME, STYLE_KEYS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -117,7 +118,7 @@ def render(meta: dict, results: list[dict], ledger_total: float, changes: list[s
         "",
         (
             f"**{passed}/{len(ran)} conversations passed.** This run cost ${run_cost:.4f} "
-            f"(${per:.4f} a conversation). Ledger total ${ledger_total:.4f} of $3.00."
+            f"(${per:.4f} a conversation). Ledger total ${ledger_total:.4f} of ${CAP:.2f}."
         ),
         "",
         "## By category",

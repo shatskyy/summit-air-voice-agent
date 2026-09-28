@@ -28,14 +28,14 @@ def book(tmp_path, monkeypatch):
 
 
 def test_a_run_over_what_is_left_is_refused(book):
-    ledger.record("eval", "earlier", 2.90, conversations=10, path=book)
+    ledger.record("eval", "earlier", ledger.CAP - 0.10, conversations=10, path=book)
     with pytest.raises(ledger.Refused):
         ledger.check(0.20, path=book)
     assert ledger.check(0.05, path=book) == pytest.approx(0.10)
 
 
 def test_a_budget_never_lifts_the_cap(book):
-    ledger.record("eval", "earlier", 2.50, conversations=10, path=book)
+    ledger.record("eval", "earlier", ledger.CAP - 0.50, conversations=10, path=book)
     assert ledger.check(0.10, budget=5.00, path=book) == pytest.approx(0.50)
     with pytest.raises(ledger.Refused):
         ledger.check(0.30, budget=0.20, path=book)

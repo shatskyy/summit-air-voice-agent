@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "evals" / "spend.json"
 TZ = ZoneInfo("America/New_York")
 
-CAP = 3.00  # USD, simulations and `pytest -m llm` together
+CAP = 3.60  # USD, simulations and `pytest -m llm` together
 BALANCE_FLOOR = 1.50  # below this estimated OpenAI balance, the phone line needs what is left
 DEFAULT_PER_CONVERSATION = 0.03  # until a run has measured one
 

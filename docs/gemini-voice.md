@@ -10,8 +10,8 @@ recovered 20 s later. Every call longer than a minute would do the same. The rec
 activation follows.
 
 Activated on the demo host September 28, 2026, after a direct synthesis test returned first audio
-in 0.807 seconds (3.72 seconds of generated speech). This is one API measurement, not end-to-end
-phone latency. A phone check of the new voice is still required.
+in 0.807 seconds (3.72 seconds of generated speech). That was one API measurement; the 1:06 PM
+phone call above is what decided it.
 
 The speech provider is selected with `TTS_PROVIDER`. The default stays `deepgram` so installing
 this change does not silently switch a running deployment. Set these in `.env.local`:
@@ -40,8 +40,7 @@ before it goes to Deepgram's different voice. Probes that morning, with each res
 3.8 Flash leads because it ranks highest on independent voice arenas. The plugin puts the style
 prompt in front of the text, and the 3.8 models read that prompt aloud ("Speak as a calm, friendly
 HVAC receptionist..."), so only 3.1 gets it. `GEMINI_TTS_MODEL` now only picks the model
-`scripts/check_voice.py` probes. Neither 3.8 model had answered a phone call when this was
-written.
+`scripts/check_voice.py` probes.
 
 Keys come from [Google AI Studio](https://aistudio.google.com/apikey). The key must have access and
 quota for the selected TTS model. Never commit `.env.local`.

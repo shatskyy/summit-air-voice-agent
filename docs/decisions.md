@@ -7,27 +7,28 @@ changed.
 | ADR | Decision | Status |
 |---|---|---|
 | [001](#adr-001-livekit-agents-one-always-on-worker) | LiveKit Agents, one always-on worker | Accepted, host revised 2026-09-23 |
-| [002](#adr-002-cascaded-speech-pipeline) | Cascaded speech pipeline | Accepted, models revised 2026-09-27 |
-| [003](#adr-003-confirm-only-after-a-durable-write) | Confirm only after a durable write | Accepted, mechanism simplified 2026-09-23 |
-| [004](#adr-004-emergencies-are-detected-in-code) | Emergencies are detected in code | Accepted, revised 2026-09-27 |
+| [002](#adr-002-cascaded-speech-pipeline) | Cascaded speech pipeline | Accepted; components revised 2026-09-23, models 2026-09-27 |
+| [003](#adr-003-confirm-only-after-a-durable-write) | Confirm only after a durable write | Accepted; mechanism simplified 2026-09-23, revised 2026-09-28 |
+| [004](#adr-004-emergencies-are-detected-in-code) | Emergencies are detected in code | Accepted; revised 2026-09-27 and 2026-09-28 |
 | [005](#adr-005-live-transfer-deferred) | Live transfer through the Twilio trunk | Deferred 2026-09-23 |
 | [006](#adr-006-business-rules-in-configuration-not-in-the-prompt) | Business rules in configuration | Accepted |
-| [007](#adr-007-postgres-as-the-booking-store-superseded) | Postgres as the booking store | Superseded by 008 |
+| [007](#adr-007-postgres-as-the-booking-store-superseded) | Postgres as the booking store | Superseded by 008 on 2026-09-23 |
 | [008](#adr-008-sqlite-on-the-workers-host) | SQLite on the worker's host | Accepted 2026-09-23 |
-| [009](#adr-009-urgent-is-detected-in-code) | Urgent is detected in code | Accepted 2026-09-27, revised 2026-09-28 |
-| [010](#adr-010-one-visit-per-call) | One visit per call | Accepted 2026-09-27 |
+| [009](#adr-009-urgent-is-detected-in-code) | Urgent is detected in code | Accepted 2026-09-27; revised 2026-09-28, in part superseded by 018 |
+| [010](#adr-010-one-visit-per-call) | One visit per call | Accepted 2026-09-27, revised 2026-09-28 |
 | [011](#adr-011-the-failure-ladder-and-the-shared-key) | The failure ladder, and the shared key | Accepted 2026-09-27 |
 | [012](#adr-012-evals-fixed-clocks-database-checks-a-spend-ledger) | Evals: fixed clocks, database checks, a spend ledger | Accepted 2026-09-27 |
 | [013](#adr-013-hosting-launchd-and-a-watchdog) | Hosting: launchd and a watchdog | Accepted 2026-09-27 |
 | [014](#adr-014-one-tool-call-per-turn) | One tool call per turn | Accepted 2026-09-28 |
-| [015](#adr-015-a-zip-the-caller-never-said) | A ZIP the caller never said | Accepted 2026-09-28; its ask-first rule and number step removed by 022 |
-| [016](#adr-016-a-confirmation-with-no-booking-behind-it-is-caught-and-corrected) | A confirmation with no booking behind it is caught and corrected | Accepted 2026-09-28 |
+| [015](#adr-015-a-zip-the-caller-never-said) | A ZIP the caller never said | Accepted 2026-09-28; its ask-for-the-ZIP-first rule and number step removed by 022 |
+| [016](#adr-016-a-confirmation-with-no-booking-behind-it-is-caught-and-corrected) | A confirmation with no booking behind it is caught and corrected | Accepted 2026-09-28; its first cut, an output filter, reverted and superseded by the after-the-fact check |
 | [017](#adr-017-a-reply-guard-on-the-models-output) | A reply guard on the model's output | Accepted 2026-09-28 |
 | [018](#adr-018-no-heat-in-the-cold-is-urgent-whoever-is-home) | No heat in the cold is urgent whoever is home | Accepted 2026-09-28 |
 | [019](#adr-019-the-booking-tool-says-the-confirmation-itself) | The booking tool says the confirmation itself | Accepted 2026-09-28 |
 | [020](#adr-020-a-failure-mid-call-makes-it-a-repair-and-a-no-to-risk-holds-for-the-call) | A failure mid-call makes it a repair; a "no" to risk holds | Accepted 2026-09-28 |
 | [021](#adr-021-code-puts-the-callers-details-on-a-paged-task-and-a-yes-confirms-only-a-read-back-heard-to-the-end) | Code puts the caller's details on a paged task | Accepted 2026-09-28; parts 2 and 3 superseded by 022 |
 | [022](#adr-022-code-owns-facts-and-actions-the-model-owns-the-conversation) | Code owns facts and actions; the model owns the conversation | Accepted 2026-09-28 |
+| [023](#adr-023-split-the-receptionist-module) | Split the receptionist module | Accepted 2026-09-28 |
 
 ## ADR-001: LiveKit Agents, one always-on worker
 
@@ -91,7 +92,7 @@ back, and the maximum wait drops from 3 s to 2 s.
 |---|---|---|
 | Speech to text | Deepgram Nova-3, with keyterms; no backup | Runs on Deepgram's signup credit (see revision below). On call 4 it captured a dictated address and ZIP exactly, but heard "AC" as "IC", so "AC" is now a keyterm. A missing Deepgram key stops the worker at start (`REQUIRED_KEYS`), and a failure mid-call goes to the failure ladder (ADR-011) |
 | Language model | GPT-4.1 mini leads, GPT-4.1 as its fallback, both on OpenAI's API | See the 2026-09-27 revision below. Gemma 4 31B led from 2026-09-24, when replaying call 5's turns put its first sentence at 0.33 s median against 0.64 s for GPT-4.1 mini, until LiveKit Inference's credit ran out |
-| Text to speech | Deepgram Aura-2 (`aura-2-arcas-en`), OpenAI gpt-4o-mini-tts (`onyx`) as backup | Same account and credit as speech to text. The backup is also a male voice, so a fallback doesn't switch voices mid-call |
+| Text to speech | Deepgram Aura-2 (`aura-2-arcas-en`), OpenAI gpt-4o-mini-tts (`onyx`) as backup | Same account and credit as speech to text. The backup is also a male voice, so a fallback doesn't switch voices mid-call. A Gemini voice can be put in front (`TTS_PROVIDER=gemini`) but is off: on the 13:06 call on 2026-09-28 it was slow to start and hit Gemini's rate limit, and the voice changed mid-call |
 
 **Revision, 2026-09-23.** The first choice was AssemblyAI Universal-3.5 Pro for speech to text (the
 lowest word error rate and strongest entity accuracy in independent streaming benchmarks) and Inworld
@@ -100,13 +101,14 @@ After the first test calls, speech turned out to be the biggest cost against Liv
 credit, which covers only about 20 to 30 calls with everything on it. That risked the number going
 dead during the review. Moving speech to Deepgram leaves the credit to the model. Both original
 choices stayed as the fallback when no Deepgram key was set, until the 2026-09-27 revision: a
-missing Deepgram key now stops the worker at start. The original model fallback, GPT-4.1,
-was replaced by the two candidates backing each other up.
+missing Deepgram key now stops the worker at start. The original model fallback, GPT-4.1, was
+replaced that day by the two candidates backing each other up, and came back as the fallback in
+the 2026-09-27 revision below.
 
 **Revision, 2026-09-27: OpenAI models on OpenAI's API, GPT-4.1 as the fallback.** Gemma 4 31B and
 GPT-4.1 mini both ran through LiveKit Inference, which bills every model against one account-wide
 credit. The simulated calls spent it on 2026-09-27, and at zero every model on it stops at once,
-the fallback included. The models moved to OpenAI directly on the builder's key. Gemma isn't served
+the fallback included. The models moved to OpenAI directly, on my own API key. Gemma isn't served
 there, so GPT-4.1 mini leads: it passed the same model tests, and it is the model the simulated calls
 and every phone call from 18:32 on 2026-09-27 ran on. GPT-4.1 is the fallback because it is the stronger model on
 the same key and API, with the same tool-calling behavior, so a slow or failed attempt can be
@@ -129,8 +131,9 @@ ZIP and phone capture without confirming ahead of the write.
 
 **Decision.** The agent may confirm a booking only after the booking tool returns a stored reference.
 The tool accepts only a window that was offered on this call, a ZIP code inside the service area
-that the caller actually said (or none, for an address in a covered borough, once the caller has
-been asked for one), and a real name, which is not a relation like "your sister".
+that the caller actually said (or none, for an address in a covered borough), and a real name,
+which is not a relation like "your sister". The borough case first required that the caller had
+been asked for the ZIP; ADR-022 removed that condition.
 
 **Why.** An answering service fails most expensively when it tells a caller something that did not
 happen. On call 1, before any booking tool existed, the agent said "Let me get a technician
@@ -156,22 +159,41 @@ protection, since it has already returned before anything is spoken.
 
 ## ADR-004: Emergencies are detected in code
 
-**Status:** Accepted, revised 2026-09-27 (negation, a held page, a closed emergency)
+**Status:** Accepted. Revised 2026-09-27 (negation, a held page, a closed emergency) and
+2026-09-28 (the hold starts when the script ends; detector batteries and hedged gas).
 
 **Decision.** Every finished caller turn is checked against a fixed pattern list of hazard signals:
 gas smell or leak, rotten eggs, carbon monoxide or a CO alarm, smoke, fire or flames, a burning smell
-and sparks. A match is ignored when the words just before it, in the same clause, end in a negation
-("I don't smell gas", "no smoke", "don't really smell"); "I don't know, I smell gas" still fires. On
-the first match in a call, the agent writes an emergency task (a local write that takes
+and sparks (`hazard_in` in `src/rules.py`). A match is ignored when the words just before it, in the
+same clause, end in a negation ("I don't smell gas", "no smoke", "don't really smell"); "I don't
+know, I smell gas" still fires. Two cases are read more closely:
+
+- **A detector asking for a battery.** A smoke detector chirping or reporting a low battery, with
+  nothing that sounds like a real alarm (going off, won't stop, a new battery already in, a symptom,
+  a smell, another hazard), is a routine call from the first mention and gets no script. A carbon
+  monoxide detector still gets the script on first mention, because a CO alarm and a CO
+  low-battery chirp are easy to confuse and guidance says to treat doubt as an alarm. Once the
+  caller has heard the script, "no, it's just the battery" is a clear no and doesn't reopen the
+  emergency (`benign_detector`).
+- **Gas the caller isn't sure of.** "I don't think it's gas, but there's a weird smell" gets the
+  script on first mention, like any gas smell (`gas_suspected`). It is kept out of the check on the
+  answer, so a hedged "no, I don't think it's gas" to the script never counts as a yes and never
+  gets the 911 close.
+
+On the first match in a call, the agent writes an emergency task (a local write that takes
 milliseconds), cuts off anything already being said, speaks a fixed safety script that cannot be
 interrupted, and skips the model's reply for that turn. The script ends by asking "Is that what's
 happening?", and code acts on the answer:
 
-- **The page is held, not the script.** The on-call page waits for the caller's next turn, and goes
-  out on the first of: an answer that is anything but a clear no, the caller hanging up, or 15
-  seconds. A clear no (a short negative: "no", "nope", "no, it's not", "no, just dusty") cancels
-  the page, marks the task `false_alarm` in its `status` column, and tells the model to carry on
-  with the normal call. A hazard mentioned after that reopens the task and pages at once.
+- **The page is held, not the script.** The on-call page is created with the task but waits for
+  the caller's answer (`HeldPage` in `src/paging.py`). Its 15-second countdown starts when the
+  script has finished playing (`start_hold_after`), and the whole hold is capped at 45 seconds
+  from when the task was filed, so a playout that never reports finishing can't keep a real
+  emergency from paging. The page goes out on the first of: an answer that is anything but a
+  clear no, the caller hanging up, the countdown, or the cap. A clear no (a short negative: "no",
+  "nope", "no, it's not", "no, just dusty") cancels the page, marks the task `false_alarm` in its
+  `status` column, and tells the model to carry on with the normal call. A hazard mentioned after
+  that reopens the task and pages at once.
 - **A confirmed emergency is closed in code.** A yes, or a hazard named in the answer, gets a fixed
   line in place of a model reply: "Okay. Get everyone outside now and call 911 from there. Our
   on-call technician will call you at this number by {target}. Please hang up and go." The call
@@ -181,24 +203,37 @@ If the task can't be written, the script still plays and the page goes out at on
 
 **Why.** Safety guidance must never wait on a model choosing to follow an instruction, and neither
 should ending the call: a caller in a house with a gas leak should be walking out, not answering
-questions. Holding the page costs at most 15 seconds on a real emergency and saves a 2 AM page on
-every dusty first-heat smell. Urgency without a hazard (no heat with someone at risk) is now also
-filed by code (`flag_urgent` in `src/receptionist.py`).
+questions. On a real emergency the held page waits for the script and the caller's yes, and never
+more than 45 seconds; a caller who hangs up releases it at once. In exchange, a dusty first-heat
+smell or a detector battery doesn't wake on-call at 2 AM. Urgency without a hazard (no heat with
+someone at risk) is also filed by code (`flag_urgent` in `src/receptionist.py`, ADR-009).
 
-**Cost.** A pattern list still over-triggers (a chirping smoke detector matches), and the negation
-rule is lexical, so "it's not like there's no gas smell" would be read as a no. The script is
-worded to be harmless when it fires, and a clear no now undoes the page. A classifier is the upgrade
+**Revision, 2026-09-28 evening: the hold starts when the script ends.** Until this change the
+15-second countdown started when the hazard was heard. The script is 42 words and took about
+13.4 s to play on the 18:36 call on 2026-09-27 (`RM_M5dTYG3RNVcr`). That left about a second and
+a half for an answer, so the hold ran out before any caller could give one, and every "no, it's just dusty" on a real call would still have paged
+on-call. The false-alarm cancel only ever worked in simulation. The same change took smoke
+detector batteries out of the pattern's reach, let a CO battery answer count as a clear no, and
+gave hedged gas the script.
+
+**Cost.** A pattern list still over-triggers, and the negation rule is lexical, so "it's not like
+there's no gas smell" would be read as a no. The battery rule is a word list too: a smoke detector
+described in words it doesn't know ("it keeps beeping") still gets the script. The script is
+worded to be harmless when it fires, and a clear no undoes the page. A classifier is the upgrade
 if false alarms start to cost calls.
 
 **Evidence.** Offline tests cover the patterns, the negations, the phrases that must not match (a
-furnace that "won't fire up"), one emergency task per call, the held page (cancelled, released,
-timed out, released on hang-up) and the closing line with the hang-up after playout. Simulated
-calls `gas`, `no_gas_negation` and `dusty_smell` check the task, its status, the page and the
-hang-up. On the phone the old version (page at once, model reply after the script) was proven on
-calls 6 to 9. This version was proven on the Gate 2 calls of 2026-09-27: "I think gas is leaking
-from my stove", then "Yes", got the script, the closing line and a hang-up 0.17 s after it played,
-with one emergency task (2012); "no, I don't smell gas" got no script. The `false_alarm` path (a
-clear no after the script) is proven in simulation only.
+furnace that "won't fire up"), the detector-battery and hedged-gas cases, one emergency task per
+call, the held page (cancelled, released, timed out, released on hang-up, started only once the
+script has played, and sent by the cap when playout never finishes) and the closing line with the
+hang-up after playout. Simulated calls `gas`, `no_gas_negation` and `dusty_smell` check the task,
+its status, the page and the hang-up. On the phone the old version (page at once, model reply
+after the script) was proven on calls 6 to 9. The held page and the closing line were proven on
+the calls of 2026-09-27 between 20:39 and 20:42: "I think gas is leaking from my stove", then
+"Yes", got the script, the closing line and a hang-up 0.17 s after it played, with one emergency
+task (2012); "no, I don't smell gas" got no script. The `false_alarm` path (a clear no after the
+script) is proven in simulation and offline tests only, and the 2026-09-28 evening changes have
+not been simulated or heard on a phone call.
 
 ## ADR-005: Live transfer, deferred
 
@@ -209,8 +244,8 @@ transfer waits for the destination to answer, and if nobody does, the caller sta
 which files a handoff task. That was meant to make "a person picked up" something the agent knows
 rather than assumes.
 
-**Why it was deferred.** The only transfer destination this demo has is one person's cell phone, and
-during the review window that person is at work or on the review call. An unanswered cell rolls to
+**Why it was deferred.** The only transfer destination this demo has is my own cell phone, and
+during the review window I am at work or on the review call. An unanswered cell rolls to
 carrier voicemail, and the phone network reports voicemail as an answered call. The REFER would
 succeed, the caller would hear a personal voicemail greeting, and the agent would believe a person
 had picked up. That breaks the claim this repository is built on.
@@ -288,8 +323,8 @@ model filed an urgent task the turn after the caller said "No, it's just me", an
 would call. `create_dispatch_task` now refuses an urgent task when the caller's latest turn is a
 plain denial of risk, made of nothing but denial words ("no, it's just me, I'm fine"), and the
 flags are clear. "No, she just had a stroke" and "no, but my son is sick" are not denials, so the
-model keeps its say over what the lists can't see; a fresh-context review caught a first cut that
-took any short "No, ..." as one. `cold_no_risk_night` 3 of 3 after the change, 0 of 1 before.
+model keeps its say over what the lists can't see; a review caught a first cut that took any
+short "No, ..." as one. `cold_no_risk_night` 3 of 3 after the change, 0 of 1 before.
 
 **Revision, 2026-09-28 morning: no heat in the cold is urgent on its own.** Superseded in part by
 [ADR-018](#adr-018-no-heat-in-the-cold-is-urgent-whoever-is-home): the denial above still holds
@@ -302,11 +337,31 @@ cold.
 the backstop never fired, and the model paged 22 s later, after the name, the number and
 "Goodbye". The prompt has the agent ask who is at risk only once heating or cooling has failed, so
 a yes to that question (`RISK_QUESTION` in the agent's last turn) now also sets `system_down`
-(`12e0b26`). A needless page is cheap. Offline tests only.
+(changed at 16:48 that day). A needless page is cheap. Offline tests only.
+
+**Revision, 2026-09-28 evening: who is home, and what counts as down.** Three misreads of the word
+lists, fixed together with the ADR-004 revision of the same evening:
+
+- A relative who isn't in the home no longer counts as at risk: one who has passed away, died or
+  is "late" ("my late father's house"), one who is away, out of town, on vacation or doesn't live
+  here, and one said to be somewhere else ("my mom's in Florida") when the caller also makes the
+  home their own ("the AC at my place", "it's just me"). Only a named relation can be away; an
+  age, a baby or a medical condition is taken as in the home, and "I'm calling for my mom, she's
+  in Queens and her heat is out" still pages (`not_home` in `src/rules.py`).
+- "No heat and my mom is 82" was read as a denial of risk, because a "no" shortly before the
+  person counted as one. A "no" about the heat, cooling or power, or an "and" or "so" between the
+  "no" and the person, now ends the denial.
+- Heat that won't turn off, won't shut off, won't stop or is stuck on (`STUCK_ON`) no longer
+  counts as the system being down, for `system_down` or for the cold rule in ADR-018. "The heat
+  won't turn on, it won't stop clicking" still counts, because the check reads only the clause
+  the failure is named in.
+
+Offline tests only; not simulated and not heard on a phone call.
 
 **Evidence.** Simulated `elderly_no_heat`, `infant_no_heat`, `ac_oxygen` and `risk_during_readback`,
-on both clocks, 16 of 16 in the final run. On the phone, Gate 2 call 1: "My heat went out and my
-mother is 80" filed urgent task 2011 on the first turn, and the target was said before the name.
+on both clocks, 16 of 16 in the final run of the night of 2026-09-27. On the phone, the 20:39
+call that evening: "My heat went out and my mother is 80" filed urgent task 2011 on the first
+turn, and the target was said before the name.
 
 **Would reverse it.** False urgents that cost on-call real sleep, which would argue for a classifier.
 
@@ -326,8 +381,8 @@ should arrive knowing about both the leak and the tune-up.
 
 **Revision, 2026-09-28.** Two things found in simulation. First, the model once sent two
 `book_appointment` calls in one turn, the new window then the old, and both went through, so the
-store ended on the old window while the caller heard the new one (`change_window`, 1 of 6 runs at
-Stage 3). Fixed by ADR-014. Second, "a different street or ZIP" also refused a correction: "it's
+store ended on the old window while the caller heard the new one (`change_window`, 1 of 6 runs in
+the simulations of the evening of 2026-09-27). Fixed by ADR-014. Second, "a different street or ZIP" also refused a correction: "it's
 forty, not fourteen" after the booking was treated as a second address and sent to a callback while
 the technician kept the wrong number. A change in the same ZIP that keeps the house number or the
 street is now a correction of this visit (`same_visit`); a different number on a different street
@@ -433,7 +488,8 @@ scenario (`two_issues`, `address_change`, `commercial`, `elderly_no_heat` on bot
 
 ## ADR-015: A ZIP the caller never said
 
-**Status:** Accepted 2026-09-28. The ask-first ZIP rule and the number step below were removed by
+**Status:** Accepted 2026-09-28. The rule to ask for the ZIP first and the number step below were
+superseded and removed by
 [ADR-022](#adr-022-code-owns-facts-and-actions-the-model-owns-the-conversation) the same day; the
 prompt still asks for both.
 
@@ -444,7 +500,7 @@ borough, the city, or a Queens post-office name (`coverage.towns` in the configu
 the ZIP left blank; anywhere else without a ZIP is outside the area. The booking ZIP must be the
 checked one, so an invented ZIP can't enter at booking time either.
 
-**Why.** On the Gate 1 call the caller said "I forgot" and the model checked and booked 11201 on
+**Why.** On the 19:43 call on 2026-09-27 the caller said "I forgot" and the model checked and booked 11201 on
 its own, then read it back as if the caller had said it. The number happened to be right. The
 alternative, refusing to book without a ZIP, sends a Brooklyn caller who doesn't know their ZIP to a
 callback, which is the form-reading-robot outcome the rubric grades against.
@@ -460,16 +516,17 @@ must be the checked ones, so a blank ZIP can't carry a town the check never saw.
 **Same date, the number step.** `book_appointment` also refuses until the callback number has
 come up on the call, asked by the agent or volunteered by the caller, after the model booked a
 sister's apartment on the caller's own number without asking which number reaches someone there
-(`relative_address`, 2 of 3 at the Stage 4 commit and at the overnight commits alike). Removed by
-ADR-022: booking now needs only a real number, from the caller or caller ID.
+(`relative_address`, 2 of 3 both on the build from before that night's changes and on the changed
+build). Removed by ADR-022: booking now needs only a real number, from the caller or caller ID.
 
 **Evidence.** `no_zip` 3 of 3 (booked at 48 Bergen Street, Brooklyn, ZIP blank, no ZIP spoken by the
-agent), `split_address` after the ask-first rule, and `address_change`, `asr_street`, `blocked_id`,
+agent), `split_address` after the rule to ask for the ZIP first, and `address_change`, `asr_street`, `blocked_id`,
 `commercial`, `routine_furnace` unchanged with the check in place.
 
 ## ADR-016: A confirmation with no booking behind it is caught and corrected
 
-**Status:** Accepted 2026-09-28
+**Status:** Accepted 2026-09-28. The first cut, a filter on the reply before it reached the
+voice, was reverted the same night and is superseded by the after-the-fact check below.
 
 **Decision.** After each reply, code checks the agent's own words against the store: if it said
 "you're booked for", "I have you down for", "your reference number is" or "your confirmation
@@ -478,14 +535,14 @@ to say so plainly in its next reply and to book with the tool. The call record c
 is the `keep_promise` shape (ADR-009): after the fact, precise about the phrase, never silencing.
 
 **Why.** On a simulated cold-night call the model asked "Which works?" and, in the same reply,
-said "David, you're booked for Wednesday... Your reference number is one two three four", with no
+said "Sam, you're booked for Wednesday... Your reference number is one two three four", with no
 tool call and nothing in the store. It then asked "anything else?", so the end-call guard let the
 call end. Confirming only what persisted (ADR-003) had a tool-side half, the write before the
 reference; this is the speech-side half. The prompt already forbade it and the model did it
 anyway, once in about 450 simulated conversations.
 
 **What was tried and reverted the same night.** A first cut filtered the reply sentence by
-sentence in `llm_node` before it reached the voice. A fresh-context review showed, offline, that
+sentence in `llm_node` before it reached the voice. A review showed, offline, that
 it silenced honest lines ("You're all set. Our target is to call you back by 10 AM", after any
 callback task, became dead air), dropped a `book_appointment` call that arrived with the
 confirmation, and still missed most paraphrases. Silence and a lost booking are worse than one
@@ -503,8 +560,8 @@ tool result, the way the greeting and the emergency closing line already are.
 
 ## ADR-017: A reply guard on the model's output
 
-**Status:** Accepted 2026-09-28. Not yet run in a simulation (rule 9); the first live runs are the
-phone calls after the deploy.
+**Status:** Accepted 2026-09-28. Not yet run in a simulation, so its only live runs are the phone
+calls made after it was deployed.
 
 **Decision.** Every model reply passes through `guard_reply` in `llm_node`, before the voice, the
 transcript and the tool calls see it. It does two things. A sentence identical to one already said
@@ -537,7 +594,7 @@ window without one.
 
 ## ADR-018: No heat in the cold is urgent whoever is home
 
-**Status:** Accepted 2026-09-28 (David's call). Not yet run in a simulation (rule 9).
+**Status:** Accepted 2026-09-28. Not yet run in a simulation.
 
 **Decision.** Code files the urgent task and pages on-call the turn the caller has said the heat is
 down (`HEAT_DOWN`: no heat, a furnace, boiler, heater or heat pump out, off, dead or won't come on,
@@ -545,10 +602,11 @@ never a water heater) and that it is cold (`COLD`: freezing, cold in here, a col
 winter, 45 degrees or below), with reason "no heat in cold weather". Cooling still needs someone at
 risk. The denial guard in ADR-009 no longer turns this case routine, and the prompt says the same.
 
-**Why.** Rainey's brief lists "no heat in winter" as urgent on its own, beside "no AC with a medical
-condition or elderly resident". On the 10:08 call, "My furnace won't kick on. It's 20 degrees out.
+**Why.** The assignment brief lists "no heat in winter" as urgent on its own, beside "no AC with a
+medical condition or elderly resident". On the 10:08 call, "My furnace won't kick on. It's 20 degrees out.
 It's just me." ran routine, then the model paged on-call when the caller said "as soon as
-possible", so the agent did both on one call.
+possible", so the agent did both on one call. I chose to follow the brief and accept the extra
+pages.
 
 **Cost.** More pages: every no-heat call in the cold goes to on-call, a healthy adult alone
 included. The cold cue is a word list, so "it's chilly" or "the house is 50" don't count.
@@ -621,8 +679,9 @@ routine; the model can no longer override that with its own judgment.
 
 ## ADR-021: Code puts the caller's details on a paged task, and a yes confirms only a read-back heard to the end
 
-**Status:** Accepted 2026-09-28. Parts 2 and 3, and the name taken from speech in part 1, superseded the same day by ADR-022. Offline tests only; not yet heard on a phone call. Part 4 is a
-prompt change and has not been simulated.
+**Status:** Accepted 2026-09-28. Parts 2 and 3, and the name taken from speech in part 1, were
+superseded and removed the same day by ADR-022. Offline tests only; not yet heard on a phone
+call. Part 4 is a prompt change and has not been simulated.
 
 **Decision.** Four changes from the 3:51 PM call (`KSJ5YTzz9uHA`), an 80-year-old without heat:
 
@@ -658,16 +717,16 @@ request after "anything else" taken as a goodbye.
 
 ## ADR-022: Code owns facts and actions; the model owns the conversation
 
-**Status:** Accepted 2026-09-28 (David). Offline tests plus two simulated calls. It was live on the
+**Status:** Accepted 2026-09-28. Offline tests plus two simulated calls. It was live on the
 16:40 and 16:45 phone calls, but neither reached the address read-back, a booking or `end_call`.
 
-**Decision.** Code reads the caller's words only for safety: the gas and carbon monoxide script
-and the urgent page backstop (ADR-004, ADR-009, ADR-018). Everything else code knows comes from
-the arguments the model passes to its tools, which code checks against the store. Removed:
+**Decision.** I decided that code reads the caller's words only for safety: the gas and carbon
+monoxide script and the urgent page backstop (ADR-004, ADR-009, ADR-018). Everything else code
+knows comes from the arguments the model passes to its tools, which code checks against the store. Removed:
 
 1. The closing check on `end_call`. It now refuses only on the caller's first turn (the "Stop."
    over the greeting); after that, when to hang up is the model's call.
-2. The windows found with the address and released on a yes (A7, ADR-021 part 2).
+2. The windows found with the address and released on a yes (ADR-021 part 2).
    `check_address` tells the model to read back only, then call `check_availability` after the
    yes.
 3. The rule that the callback number had to come up before booking. Booking still needs a real
@@ -700,3 +759,32 @@ model offered Wednesday without the same-day wording ADR-021 part 4 asks for.
 **Would reverse it.** Repeated phone calls where the model bundles times with the read-back, books
 without a number, or hangs up on a caller who still needed something.
 
+## ADR-023: Split the receptionist module
+
+**Status:** Accepted 2026-09-28
+
+**Decision.** `src/receptionist.py` had grown to 1,960 lines. I split it move-only, with no change
+in behavior, into four modules by what the code does:
+
+| Module | What it holds |
+|---|---|
+| `src/rules.py` | What code reads in the caller's words: hazards, who is at risk, whether the system is down, and the parsing of names, streets and spoken numbers |
+| `src/speech.py` | What code says: the fixed lines (the greeting, the safety script, the closing lines) and how numbers, clock times, windows and callback targets are said |
+| `src/paging.py` | Pages to the on-call phone and pushes to dispatch through ntfy, including the held emergency page |
+| `src/guards.py` | The checks on the model's output: the reply guard (ADR-017) and the after-the-fact checks (ADR-009, ADR-016) |
+
+`receptionist.py` keeps the call state, the code that depends on the clock, and the agent with its
+tools, about 1,200 lines. It still exposes the names it used to define, so imports from elsewhere
+keep working.
+
+**Why.** One 1,960-line file mixed pure text rules with the agent's lifecycle, which made both
+harder to review and to test. The dividing line is the clock and the configuration: everything
+that calls `now()` or reads the business configuration stayed in `receptionist.py`, so the
+simulator's fixed clocks (ADR-012) and the tests' clock patches still apply without change, and
+`rules.py` is a set of pure functions of the text and the call's flags.
+
+**Cost.** A reader has five files to open instead of one, and a test that patches a function must
+patch it where it now lives.
+
+**Evidence.** The tests are unchanged except their patch targets for paging
+(`monkeypatch.setattr(paging, "page_on_call", ...)` in place of `receptionist`).

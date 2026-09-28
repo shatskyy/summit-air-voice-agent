@@ -4,15 +4,22 @@ These are the current implementation limits and observations from testing. Phone
 in [scenarios.md](scenarios.md); simulated-call results are in [the eval report](../evals/REPORT.md).
 
 
-- **Premature confirmation.** The model can announce a booking before it exists. A post-hoc check adds a correction note for the next reply, but does not prevent the caller from hearing the first claim. This happened once in the final 82-conversation simulation; the next turn wrote the booking.
+- **A booking claimed without a tool call.** The real confirmation is spoken by code from the
+  stored row, after the write ([ADR-019](decisions.md#adr-019-the-booking-tool-says-the-confirmation-itself)),
+  but the model can still say "you're booked" in its own words without calling the tool. A check
+  reads the store after the reply and adds a correction for the next turn; it cannot unsay what
+  the caller already heard.
 - **One host.** The worker and the database run on one Mac. If it loses power or network, the
   number stops answering; a watchdog pages when the worker stops taking health checks.
 - **One OpenAI key.** Both models and the backup voice run on it, so an outage or an empty balance
   takes out all three. The failure ladder then ends the call with a callback.
-- **Keyword detectors.** Hazard, urgent and Spanish detection are word lists. The gas negation is
-  lexical ("it's not like there's no gas smell" reads as a no), a chirping smoke detector matches,
-  and a bare age counts only after a pronoun or a relation ("I'm 82", "my wife is 79"), never as
-  a word ("eighty-two").
+- **Keyword detectors.** Hazard, urgent and Spanish detection are word lists, tuned to over-trigger
+  on danger. The gas negation is lexical ("it's not like there's no gas smell" reads as a no). A
+  carbon monoxide detector chirping for a battery still gets the safety script on first mention,
+  by design; a smoke detector doing the same does not. A bare age counts only after a pronoun or
+  a relation ("I'm 82", "my wife is 79"), never as a word ("eighty-two"). A relative placed
+  somewhere else ("she's in Florida") only counts as away when the transcript capitalizes the
+  place and the caller makes the home their own, so an ambiguous case still pages.
 - **The ZIP check is a heuristic.** A ZIP the caller said is found as a run of digits in what they
   said, with number words read the way ZIPs are spoken ("eleven two twenty-one"); a ZIP hidden
   inside a phone number would pass, and "one double oh two five" would be refused and asked
@@ -51,25 +58,10 @@ in [scenarios.md](scenarios.md); simulated-call results are in [the eval report]
 - **No same-day visit exists in the demo.** The schedule has two arrival windows a day and no
   same-day dispatch. For an urgent caller with no window left today, the agent can only promise
   an on-call callback about getting someone out and hold tomorrow's window (ADR-021). That rule is
-  prompt text and has not been simulated.
+  prompt text, and one simulated call skipped it.
+- **Consent is guided, not enforced.** Whether the caller accepted the address and the window is
+  judged by the model under the prompt and the reply guard, not by a state machine. The booked
+  address must match the checked street and ZIP, but not every unit or town detail.
+- **Callback tasks have no idempotency key.** One booking per call is enforced by the database;
+  a model that files the same routine callback twice creates two tasks.
 - **Nobody is actually on call.** Pages reach one test phone, and callback targets are targets.
-
-## Known bugs, not yet fixed
-
-Found in a read-through on September 28 and confirmed by calling the functions directly. Each fix
-changes who gets paged or what the agent says, so none went in without a simulated and a phone pass.
-
-- **A failed system can hide an at-risk person from the urgent check.** `RISK_DENIED` treats a
-  negation near the risk match as denying the person, and the "no" in "no heat" or the "isn't" in
-  "isn't working" counts. `at_risk_in("No heat and my mom is 82.")` returns false; with a comma
-  after "heat" it returns true, so the transcript's punctuation decides it. The prompt still tells
-  the model to escalate, so the call falls back to the model rather than to routine outright. The
-  fix is to scope the negation to the clause that holds the person.
-- **An equipment age reads as an infant.** The months-old pattern matches "it's only 3 months
-  old" about the AC, which files an urgent task and pages on-call.
-- **Smoke as a habit triggers the safety script.** "I smoke" matches the hazard list the same as
-  "I smell smoke".
-- **A ZIP given after a ZIP-less booking is refused.** A borough-only booking stores an empty ZIP.
-  If the caller then adds the ZIP for the same street, `same_visit` compares the ZIPs first, sees
-  them differ, and treats it as a second address.
-
