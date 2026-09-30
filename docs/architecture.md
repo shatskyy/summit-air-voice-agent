@@ -20,7 +20,7 @@ What the system does today. Where it differs from the first design, the reason i
 | [`config/business.yaml`](../config/business.yaml) | The business: service area, services, hours, windows, capacity, fees, callback targets, keyterms |
 | [`scripts/calls.py`](../scripts/calls.py) | Recent calls, and one call's sheet with its transcript |
 | [`scripts/watchdog.py`](../scripts/watchdog.py) | The 5-minute health check ([ADR-013](decisions.md#adr-013-hosting-launchd-and-a-watchdog)) |
-| [`scripts/usage.py`](../scripts/usage.py), [`scripts/check_voice.py`](../scripts/check_voice.py) | The provider spend monitor, and a one-request probe of the Gemini voice |
+| [`scripts/usage.py`](../scripts/usage.py) | The provider spend monitor |
 | [`evals/`](../evals) | Simulated calls, their checks, pricing and the spend ledger ([ADR-012](decisions.md#adr-012-evals-fixed-clocks-database-checks-a-spend-ledger)) |
 
 ## Layers

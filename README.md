@@ -23,9 +23,8 @@ conversation model.
 
 I tried Gemini 3.8 Flash TTS on September 28 and preferred how it sounded, but on a real call it
 took 1.0 to 1.8 s to start each reply against about 0.5 s for Deepgram, and its limit of 10
-requests a minute (one per sentence) switched the voice about a minute into the call. The Gemini
-path is still in the code behind `TTS_PROVIDER=gemini`; [voice setup and rollback](docs/gemini-voice.md)
-are documented separately.
+requests a minute (one per sentence) switched the voice about a minute into the call. I kept Deepgram
+and took the Gemini path out of the code.
 
 The model gathers information in whatever order the caller gives it and uses tools to check the
 address, find availability, book, or create a dispatch task. The tools validate bookings and write
@@ -77,8 +76,7 @@ on this build, where a call about an elderly parent at home paged on-call on the
 
 ## Run locally
 
-You'll need Python 3.11–3.14, uv, a LiveKit Cloud project, and OpenAI and Deepgram keys (a Google
-API key only if you set `TTS_PROVIDER=gemini`). Phone calls also
+You'll need Python 3.11–3.14, uv, a LiveKit Cloud project, and OpenAI and Deepgram keys. Phone calls also
 need a Twilio number routed through an Elastic SIP trunk into LiveKit.
 
 ```sh

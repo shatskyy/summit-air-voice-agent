@@ -29,7 +29,7 @@ from livekit.agents import (
     tts,
 )
 from livekit.agents.voice.agent_session import SessionConnectOptions
-from livekit.plugins import deepgram, google, noise_cancellation, openai
+from livekit.plugins import deepgram, noise_cancellation, openai
 
 import store
 from models import make_llm
@@ -68,8 +68,8 @@ LLM_MODEL = os.getenv("LLM_MODEL", CANDIDATE_LLMS[0])
 FALLBACK_LLM_MODEL = os.getenv(
     "FALLBACK_LLM_MODEL", next(m for m in CANDIDATE_LLMS if m != LLM_MODEL)
 )
-# Male voices throughout: Gemini Achird ("friendly and approachable"),
-# Deepgram Arcas (calm, neutral), OpenAI Onyx, so a fallback keeps a man's voice.
+# Male voices throughout: Deepgram Arcas (calm, neutral), then OpenAI Onyx, so a fallback keeps a
+# man's voice.
 TTS_VOICE = os.getenv("TTS_VOICE", "aura-2-arcas-en")
 SILENCE_SECONDS = 12.0  # quiet before the check-in, and again before hanging up
 
@@ -81,66 +81,13 @@ def backup_voice():
     return openai.TTS(model="gpt-4o-mini-tts", voice="onyx")
 
 
-def voice_provider() -> str:
-    provider = os.getenv("TTS_PROVIDER", "deepgram").lower()
-    if provider not in {"deepgram", "gemini"}:
-        raise ValueError("TTS_PROVIDER must be deepgram or gemini")
-    return provider
-
-
-# The Gemini voices, best first. Each Gemini TTS model has its own 10-requests-a-minute limit on
-# the paid Tier 1 key, and one phone call peaked at 7 on 3.1 alone (2026-09-28), so a sentence a
-# model refuses goes to the next Gemini model before it goes to Deepgram's different voice. Order
-# from probes on 2026-09-28: 3.8 Flash ranks highest on independent voice arenas and started audio in
-# 1.0 to 1.1 s; 3.8 Flash Lite in 0.4 to 0.6 s; 3.1 Flash, the first voice on the line, in 0.7 to
-# 1.0 s. The 2.5 Flash and Pro voices took 2.8 to 4.7 s to first audio, too slow for a phone call.
-GEMINI_TTS_MODELS = (
-    "gemini-3.8-flash-tts",
-    "gemini-3.8-flash-lite-tts",
-    "gemini-3.1-flash-tts-preview",
-)
-# The plugin sends the style prompt in front of the text ('prompt:\n"text"'). Both 3.8 models read
-# that prompt aloud as if it were the text (Flash Lite 2 of 2 probes, Flash 1 of 2), and read the
-# bare text exactly (6 of 6), so only 3.1 gets it.
-STYLE_PROMPT = (
-    "Speak as a calm, friendly HVAC receptionist, at a natural conversational "
-    "pace with an American accent. Read exactly the supplied text. "
-    "Do not add, omit or change words."
-)
-STYLE_PROMPT_MODELS = {"gemini-3.1-flash-tts-preview"}
-
-
-def gemini_models() -> list[str]:
-    """GEMINI_TTS_MODELS, comma-separated, or the default order above."""
-    raw = os.getenv("GEMINI_TTS_MODELS", "")
-    return [m.strip() for m in raw.split(",") if m.strip()] or list(GEMINI_TTS_MODELS)
-
-
-def gemini_voice(model: str | None = None):
-    """One Gemini voice. With no model: GEMINI_TTS_MODEL (scripts/check_voice.py), else the first
-    of gemini_models()."""
-    if not os.getenv("GOOGLE_API_KEY"):
-        raise RuntimeError("GOOGLE_API_KEY is required when TTS_PROVIDER=gemini")
-    model = model or os.getenv("GEMINI_TTS_MODEL") or gemini_models()[0]
-    return google.beta.GeminiTTS(
-        model=model,
-        voice_name=os.getenv("GEMINI_TTS_VOICE", "Achird"),
-        vertexai=False,
-        instructions=STYLE_PROMPT if model in STYLE_PROMPT_MODELS else None,
-    )
-
-
 def speech():
-    """Deepgram transcribes; speech uses the selected provider and direct-provider backups."""
+    """Deepgram transcribes and speaks, with OpenAI's voice as the backup."""
     if not os.getenv("DEEPGRAM_API_KEY"):
         raise RuntimeError("DEEPGRAM_API_KEY is not set")
-    provider = voice_provider()
-    voices = [deepgram.TTS(model=TTS_VOICE), backup_voice()]
-    if provider == "gemini":
-        voices = [gemini_voice(model) for model in gemini_models()] + voices
-    # On the Gemini path, try the next voice after one failed attempt, without retry delays: a
-    # rate-limited model answers at once, and the next Gemini model takes the sentence.
-    speaking = tts.FallbackAdapter(voices, max_retry_per_tts=0 if provider == "gemini" else 2)
+    speaking = tts.FallbackAdapter(
+        [deepgram.TTS(model=TTS_VOICE), backup_voice()], max_retry_per_tts=2
+    )
     return (
         deepgram.STT(model="nova-3", keyterm=CONFIG["keyterms"], smart_format=True),
         speaking,
@@ -173,8 +120,7 @@ REQUIRED_KEYS = (
 
 
 def missing_keys() -> list[str]:
-    required = (*REQUIRED_KEYS, "GOOGLE_API_KEY") if voice_provider() == "gemini" else REQUIRED_KEYS
-    return [key for key in required if not os.getenv(key)]
+    return [key for key in REQUIRED_KEYS if not os.getenv(key)]
 
 
 def turn_detector() -> inference.TurnDetector:
