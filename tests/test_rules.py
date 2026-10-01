@@ -3162,3 +3162,39 @@ def test_the_booking_confirmation_carries_name_address_and_window():
     line = receptionist.confirmation_line(booking, "David Shatsky", "92 2nd Avenue, New York 10003")
     assert "92 2nd Avenue" in line and "under the name David Shatsky" in line
     assert "If any of that is wrong, just tell me." in line
+
+
+def test_a_yes_to_the_cold_question_makes_no_heat_urgent():
+    """Sept 30 8:32 PM call: no heat, "Is it cold right now where you are?" "Yeah.", no urgent."""
+    call = Call(call_id="call-a")
+    ctx = llm.ChatContext()
+    ctx.add_message(role="user", content="My heat's out.")
+    receptionist.note_urgency(call, ctx, "My heat's out.")
+    ctx.add_message(role="assistant", content="Is it cold right now where you are?")
+    receptionist.note_urgency(call, ctx, "Yeah.")
+    assert receptionist.urgent_reason(call) == "no heat in cold weather"
+
+
+def test_a_no_to_the_cold_question_is_not_cold():
+    call = Call(call_id="call-a")
+    ctx = llm.ChatContext()
+    ctx.add_message(role="assistant", content="Is it cold right now where you are?")
+    receptionist.note_urgency(call, ctx, "No, it's actually pretty mild.")
+    assert not call.cold
+
+
+async def test_an_address_correction_after_booking_keeps_the_window(db):
+    """Sept 30 8:30 PM call: "it's actually apartment four" got times offered again."""
+    agent = SummitAirAgent("")
+    said = ["My AC needs replacing.", "92 2nd Avenue, Apartment 3, New York, 10003."]
+    ctx = SpokenContext(Call(call_id="call-a", db=db, caller_number="+19145550100"), said)
+    await agent.check_address(ctx, "92 2nd Avenue, Apartment 3", "New York", "10003")
+    await agent.check_availability(ctx, "2026-09-29", "morning")
+    await agent.book_appointment(
+        ctx, "2026-09-29-0800", "residential", "David", "", "92 2nd Avenue, Apartment 3", "10003",
+        "AC replacement",
+    )  # fmt: skip
+    ctx.session.history.add_message(role="user", content="It's actually apartment four.")
+    result = await agent.check_address(ctx, "92 2nd Avenue, Apartment 4", "New York", "10003")
+    assert "slot_id 2026-09-29-0800" in result and "don't offer times again" in result
+    assert "Read it back once" in result  # the correction came on its own, so it is read back

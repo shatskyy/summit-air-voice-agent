@@ -671,6 +671,18 @@ class SummitAirAgent(Agent):
         # Times come from check_availability after the caller's yes, not with this result: handed
         # over with the read-back, the model offered them in the same breath (the 10:01 call), and
         # code that released them on "a yes" took the wrong yes (3:51 PM call, ADR-022).
+        # A correction after booking keeps the window the caller already chose (Sept 30 8:30 PM
+        # call: "it's actually apartment four" got the address fixed and then times offered again).
+        held = await asyncio.to_thread(store.booking_for, call.db, call.call_id)
+        if held:
+            keep = (
+                f"They are already booked for {speak_window(held)} (slot_id {held['slot_id']}), so "
+                "don't offer times again: "
+            )
+            step = "call book_appointment with that slot_id and the corrected address"
+            if read_back:
+                return f"{checked} {keep}after their yes to the read-back, {step}."
+            return f"{checked} {keep}{step} now, without reading the address back."
         if not read_back:
             return (
                 f"{checked} The caller gave the whole address in one go, so don't read it back: "

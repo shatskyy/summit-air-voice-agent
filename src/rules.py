@@ -250,6 +250,10 @@ RISK_DENIED = re.compile(
     re.IGNORECASE,
 )
 NOBODY = re.compile(r"\b(?:nobody|no one|just me|i'?m fine)\b", re.IGNORECASE)
+# The agent asking whether it is cold. A yes to it says it is, as a yes to RISK_QUESTION says someone
+# is at risk: on the Sept 30 8:32 PM call "My heat's out." "Is it cold right now where you are?"
+# "Yeah." filed no urgent task, and the model offered routine times.
+COLD_QUESTION = re.compile(r"\b(?:cold|freezing|chilly)\b[^.!?]*\?", re.IGNORECASE)
 PLAIN_YES = re.compile(r"^\W*(?:yes|yeah|yep|yup|she is|he is|they are)\b", re.IGNORECASE)
 RISK_QUESTION = re.compile(
     r"at risk|someone older|elderly|a baby|health problem|medical", re.IGNORECASE
@@ -604,7 +608,11 @@ def note_urgency(call: Call, turn_ctx: llm.ChatContext, text: str) -> None:
         call.system_down = True
     call.at_risk = call.at_risk or at_risk
     call.heat_down = call.heat_down or down_in(HEAT_DOWN, text)
-    call.cold = call.cold or bool(COLD.search(text))
+    call.cold = (
+        call.cold
+        or bool(COLD.search(text))
+        or bool(COLD_QUESTION.search(last_agent) and PLAIN_YES.match(text))
+    )
 
 
 def urgent_reason(call: Call) -> str | None:
