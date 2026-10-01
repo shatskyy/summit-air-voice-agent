@@ -65,10 +65,13 @@ The final build passed 80 of 82 simulated conversations across 40 scenarios, wit
 the safety and adversarial scenarios and no re-grading; the safety scenarios passed 30 of 30. In
 one miss the simulated caller never mentioned the roof hatch, so a commercial booking went in
 without an access note, and in the other the model filed two callback tasks for one caller. The
-[report](evals/REPORT.md) links both transcripts. A simulated caller is another model reading a
-brief, so these runs test the turn logic and what gets written, not hearing or turn-taking.
+[final-build row in scenarios.md](docs/scenarios.md) describes both. On September 30, 18 targeted
+simulated calls checked the end-of-call confirmation and the false-alarm fix (ADR-024); the
+[eval report](evals/REPORT.md) has the last of those runs. A simulated caller is another model
+reading a brief, so these runs test the turn logic and what gets written, not hearing or
+turn-taking.
 
-529 offline tests cover the rules, the tools and the store without any keys or credit, and CI runs
+541 offline tests cover the rules, the tools and the store without any keys or credit, and CI runs
 them on every push.
 
 Routine booking, urgent escalation and the gas response have been tested by phone, most recently
