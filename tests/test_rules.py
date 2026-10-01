@@ -638,7 +638,7 @@ async def test_a_battery_answer_calls_off_the_page_without_reopening_it(db, monk
     line.handles[-1].done.set()
     await turn(agent, "No, it's just the CO detector battery.")  # the model replies
     await receptionist.asyncio.sleep(0.3)
-    assert pages == [] and hung_up == [] and line.userdata.false_alarm
+    assert pages == [] and hung_up == [] and line.userdata.emergency == "false_alarm"
     assert line.said == [receptionist.SAFETY_SCRIPT]
 
 
@@ -1576,7 +1576,7 @@ async def test_the_wait_for_an_answer_starts_when_the_script_ends(db, monkeypatc
     line.handles[-1].done.set()
     await turn(agent, "No, just dusty.")
     await receptionist.asyncio.sleep(0.3)
-    assert pages == [] and line.userdata.false_alarm
+    assert pages == [] and line.userdata.emergency == "false_alarm"
 
 
 async def test_a_script_that_never_finishes_still_pages_by_the_cap(db, monkeypatch):
@@ -2927,7 +2927,7 @@ async def test_booking_corrections_update_copied_task_contact(db):
 
 async def test_emergency_cannot_be_booked_even_if_model_requests_it(db):
     agent, ctx = await checked_call(db)
-    ctx.userdata.warned = True
+    ctx.userdata.emergency = "standing"
     with pytest.raises(ToolError, match="emergency is active"):
         await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
     assert store.booking_for(db, ctx.userdata.call_id) is None

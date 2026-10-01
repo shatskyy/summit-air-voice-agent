@@ -179,6 +179,9 @@ PAGE_HOLD_SECONDS = 15.0
 PAGE_HOLD_CAP_SECONDS = 45.0
 
 
+Emergency = Literal["none", "asking", "standing", "closing", "false_alarm"]
+
+
 @dataclass
 class Call:
     """Per-call state shared by the tools. The booking tool's arguments carry the rest."""
@@ -194,15 +197,18 @@ class Call:
     paged: bool = False  # an urgent or emergency task was filed, so on-call has been paged
     urgent_task: int | None = None
     urgent_due: datetime | None = None
-    warned: bool = False  # the safety script has been given, whether or not its task was written
     system_down: bool = False  # the caller said the heat or cooling has failed (A1)
     at_risk: bool = False  # the caller said someone vulnerable is in the home (A1)
     heat_down: bool = False  # the caller said the heat has failed
     cold: bool = False  # the caller said it is cold, in the home or outside
     held_page: HeldPage | None = None  # the emergency page, waiting on the answer to the script
-    awaiting_answer: bool = False  # the safety script asked "Is that what's happening?"
-    false_alarm: bool = False  # the caller answered the script with a clear no
-    closing: bool = False  # the emergency closing line is playing; the call ends after it
+    # Where the call is in the emergency flow. "none" until a hazard is heard; then "asking" (the
+    # safety script played and asked "Is that what's happening?"); the answer moves it to
+    # "closing" (a yes: the closing line plays and the call ends), "false_alarm" (a clear no) or
+    # "standing" (anything else: the emergency holds and the model carries on). A new hazard after
+    # a false alarm reopens it. Anything but "none" means the script has been said, whether or not
+    # its task was written.
+    emergency: Emergency = "none"
     errors: list[str] = field(default_factory=list)  # unrecoverable provider errors (A5)
     # For the call record (record.py):
     started_at: datetime = field(default_factory=lambda: now())
@@ -458,8 +464,8 @@ class SummitAirAgent(Agent):
         call: Call = self.session.userdata
         call.turn += 1
         text = new_message.text_content or ""
-        if call.awaiting_answer:
-            call.awaiting_answer = False
+        if call.emergency == "asking":
+            call.emergency = "standing"
             if clear_no(text):
                 await self.call_off_emergency(call, turn_ctx)
             else:
@@ -483,7 +489,7 @@ class SummitAirAgent(Agent):
         call.caller_turns += 1
         if call.caller_turns <= 2 and not call.spanish and SPANISH.search(text):
             await self.answer_in_spanish(call, new_message)  # raises StopResponse
-        if not call.warned or call.false_alarm:  # never while an emergency stands
+        if call.emergency in ("none", "false_alarm"):  # never while an emergency stands
             await self.flag_urgent(call, turn_ctx, new_message)
 
     async def speak_over(self, line: str, new_message: llm.ChatMessage):
@@ -507,7 +513,7 @@ class SummitAirAgent(Agent):
         due = call.hazard_due or now() + timedelta(
             minutes=CONFIG["callback_target_minutes"]["urgent"]
         )
-        call.closing = True
+        call.emergency = "closing"
         line = (
             EMERGENCY_CLOSE.format(target=speak_due(due, now()))
             if call.hazard_task is not None and call.caller_number
@@ -551,7 +557,7 @@ class SummitAirAgent(Agent):
         """A clear no to the safety script: no page, the task closed as a false alarm, and the
         model told to carry on with the call."""
         sent = call.held_page is not None and not call.held_page.cancel()
-        call.false_alarm = True
+        call.emergency = "false_alarm"
         if call.hazard_task is not None:
             await asyncio.to_thread(store.set_task_status, call.db, call.hazard_task, "false_alarm")
         paged = "on-call had already been paged" if sent else "on-call was not paged"
@@ -752,7 +758,9 @@ class SummitAirAgent(Agent):
             site_contact: For commercial, who meets the technician on site. Required.
         """
         call = context.userdata
-        if (call.warned or call.hazard_task is not None) and not call.false_alarm:
+        if call.emergency != "false_alarm" and (
+            call.emergency != "none" or call.hazard_task is not None
+        ):
             raise ToolError(
                 "An emergency is active. Do not book a visit; follow the safety instructions."
             )
@@ -950,7 +958,7 @@ class SummitAirAgent(Agent):
                 "Tell them plainly it's a priority repair and offer the earliest open window "
                 "(check_availability from today)."
             )
-        if kind == "emergency" and call.hazard_task is not None and call.false_alarm:
+        if kind == "emergency" and call.hazard_task is not None and call.emergency == "false_alarm":
             await reopen_emergency(call)
         if kind == "emergency" and call.hazard_task is not None:
             await asyncio.to_thread(
@@ -1059,7 +1067,7 @@ class FailureLadder:
             return
         kind = getattr(error, "type", "error")
         self._call.errors.append(f"{kind}: {getattr(error, 'error', error)}")
-        if self.task is not None or self._call.closing:
+        if self.task is not None or self._call.emergency == "closing":
             return
         logger.error("unrecoverable %s; ending the call with a callback", kind)
         self.task = asyncio.create_task(self._end(spoken=kind != "tts_error"))
@@ -1102,7 +1110,7 @@ async def file_dropped_call(call: Call, transcript: str) -> datetime:
         "the call failed on our side" + (f", {urgent_reason(call)}" if urgent else ""),
         transcript or "(nothing said yet)",
     )
-    owed = [due, call.urgent_due] + ([call.hazard_due] if not call.false_alarm else [])
+    owed = [due, call.urgent_due] + ([call.hazard_due] if call.emergency != "false_alarm" else [])
     return min(d for d in owed if d is not None)
 
 
@@ -1146,7 +1154,7 @@ def wants_dictation(said: str) -> bool:
 async def keep_promise(call: Call, text: str) -> bool:
     """File the urgent task when the agent has told the caller on-call is paged but never filed it.
     A false page is cheap; a promised callback that never comes is not. True means it filed one."""
-    if call.paged or call.promise_kept or call.warned or not PAGE_PROMISE.search(text):
+    if call.paged or call.promise_kept or call.emergency != "none" or not PAGE_PROMISE.search(text):
         return False
     logger.warning("the agent promised an on-call callback without filing it; filing it now")
     call.promise_kept = True
@@ -1174,7 +1182,7 @@ async def hang_up_after(call: Call, handle) -> None:
 
 async def reopen_emergency(call: Call) -> None:
     """A hazard after a false alarm: the task is open again and the page goes out now."""
-    call.false_alarm = False
+    call.emergency = "standing"
     if call.hazard_task is not None:
         await asyncio.to_thread(store.set_task_status, call.db, call.hazard_task, "open")
     start_page(
@@ -1189,16 +1197,16 @@ async def flag_hazard(call: Call, text: str) -> bool:
     script. A failed write still pages on-call at once, because once the script has played the
     prompt tells the model the task exists, so the model won't file it either. A written task's page
     is held for the answer to the script (HeldPage)."""
-    if not (hazard_in(text, after_script=call.warned) or (not call.warned and gas_suspected(text))):
+    warned = call.emergency != "none"
+    if not (hazard_in(text, after_script=warned) or (not warned and gas_suspected(text))):
         return False
-    if call.false_alarm:
+    if call.emergency == "false_alarm":
         await reopen_emergency(call)
-        call.awaiting_answer = True
+        call.emergency = "asking"
         return True
-    if call.warned or call.hazard_task is not None:
+    if warned or call.hazard_task is not None:
         return False
-    call.warned = True  # set before the write, so a failed write can't replay the script
-    call.awaiting_answer = True
+    call.emergency = "asking"  # set before the write, so a failed write can't replay the script
     reason = "possible gas, carbon monoxide or smoke"
     try:
         call.hazard_task, call.hazard_due, _ = await file_task(

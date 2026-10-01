@@ -192,7 +192,9 @@ async def play(scenario: Scenario, clock_name: str, model: str, run: int) -> dic
             for _ in range(MAX_TURNS):
                 # The safety script, when it fires, replaces the model's reply, as on a call.
                 spoke_script = await backstop(agent, session, say)
-                if call.closing:  # the emergency closing line: code ends the call after it
+                if (
+                    call.emergency == "closing"
+                ):  # the emergency closing line: code ends the call after it
                     break
                 if not spoke_script and ended(await session.run(user_input=say)):
                     break

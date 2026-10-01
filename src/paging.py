@@ -40,7 +40,7 @@ def zip_of(call: Call, address: str = "") -> str:
 def paged_tasks(call: Call) -> list[tuple[int, str]]:
     """The call's paged tasks, as (ref, kind), leaving out an emergency called off as false."""
     refs = [(call.urgent_task, "urgent")]
-    if not call.false_alarm:
+    if call.emergency != "false_alarm":
         refs.append((call.hazard_task, "emergency"))
     return [(ref, kind) for ref, kind in refs if ref is not None]
 

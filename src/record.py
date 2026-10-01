@@ -140,7 +140,7 @@ def summarize(call: Call, items, booking: dict | None, tasks: list[dict]) -> dic
         "task_refs": ",".join(str(t["ref"]) for t in tasks),
         "flags": json.dumps(
             {
-                "hazard_backstop": call.warned,
+                "hazard_backstop": call.emergency != "none",
                 "urgent_by_code": call.urgent_by_code,
                 "promise_backstop": call.promise_kept,
                 "fallback_model": call.fallback_used,

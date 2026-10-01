@@ -139,7 +139,9 @@ async def test_each_outcome(db, pushes):
 
 
 async def test_the_flags_say_which_backstops_fired(db, pushes):
-    call = Call(call_id="call-a", db=db, warned=True, urgent_by_code=True, fallback_used=True)
+    call = Call(
+        call_id="call-a", db=db, emergency="standing", urgent_by_code=True, fallback_used=True
+    )
     call.errors.append("llm_error: down")
     summary = await record.finish_call(call, history())
     assert json.loads(summary["flags"]) == {
