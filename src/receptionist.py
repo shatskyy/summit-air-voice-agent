@@ -288,7 +288,6 @@ def render_instructions(at: datetime, caller_number: str | None) -> str:
         services_not_offered=spoken_list(CONFIG["services"]["not_offered"], "or"),
         diagnostic_fee=CONFIG["pricing"]["diagnostic_fee"],
         after_hours_fee=CONFIG["pricing"]["after_hours_fee"],
-        urgent_minutes=CONFIG["callback_target_minutes"]["urgent"],
     )
 
 
@@ -756,7 +755,7 @@ class SummitAirAgent(Agent):
         business_name: str = "",
         site_contact: str = "",
     ) -> str:
-        """Book a visit in a window you offered and the caller accepted, after reading back the address.
+        """Book a visit in a window you offered and the caller accepted, at an address check_address passed.
         A call gets one visit: calling this again moves or updates that same booking.
 
         Args:
@@ -768,7 +767,8 @@ class SummitAirAgent(Agent):
             zip_code: The five-digit ZIP code.
             issue: The problem in the caller's words, or maintenance, or a replacement or
                 install estimate.
-            priority: True for an urgent call where someone vulnerable is without heat or cooling.
+            priority: True for an urgent call: someone vulnerable is without heat or cooling, or
+                the heat is out in the cold, whoever is home.
             note: What dispatch needs: access the caller mentioned for commercial, a membership the
                 caller mentioned, or an earlier visit that was missed.
             business_name: For commercial, the business's name as the caller gave it. Required.
@@ -826,8 +826,8 @@ class SummitAirAgent(Agent):
         # read-back first.
         if zip_code != call.checked_zip or street_key(address) != call.checked_street:
             raise ToolError(
-                "This address hasn't been checked on this call. Call check_address, read the "
-                "address back and hear a yes, then book."
+                "This address hasn't been checked on this call. Call check_address with it, do "
+                "what it says, then book."
             )
         turn = call.turn  # read at entry: the next turn can arrive while the write is in flight
         async with call.book_lock:  # a turn's tool calls run concurrently; one write per turn
@@ -930,7 +930,8 @@ class SummitAirAgent(Agent):
     ) -> str:
         """Hand the call to a person. Missing details never block this.
 
-        urgent: someone vulnerable is without heat or cooling. This pages the on-call technician, so
+        urgent: someone vulnerable is without heat or cooling, or the heat is out in the cold,
+        whoever is home. This pages the on-call technician, so
         call it the moment urgency is clear, before scheduling anything.
         emergency: gas, carbon monoxide, smoke or fire, after giving the safety instructions.
         callback: anything a person has to handle, such as a request for a person, a reschedule or

@@ -29,6 +29,7 @@ changed.
 | [021](#adr-021-code-puts-the-callers-details-on-a-paged-task-and-a-yes-confirms-only-a-read-back-heard-to-the-end) | Code puts the caller's details on a paged task | Accepted 2026-09-28; parts 2 and 3 superseded by 022 |
 | [022](#adr-022-code-owns-facts-and-actions-the-model-owns-the-conversation) | Code owns facts and actions; the model owns the conversation | Accepted 2026-09-28 |
 | [023](#adr-023-split-the-receptionist-module) | Split the receptionist module | Accepted 2026-09-28 |
+| [024](#adr-024-one-confirmation-at-the-end-of-the-call-a-long-no-counts-when-it-names-a-harmless-cause) | One confirmation at the end; a long no that names a harmless cause counts | Accepted 2026-09-30; revised the same evening |
 
 ## ADR-001: LiveKit Agents, one always-on worker
 
@@ -795,7 +796,7 @@ patch it where it now lives.
 
 ## ADR-024: One confirmation at the end of the call; a long no counts when it names a harmless cause
 
-**Decision.** `check_address` no longer asks for a read-back when the caller's latest turn held the
+**Decision.** `check_address` no longer asks for a read-back when one caller turn held the
 whole address (the house number and the ZIP, or the borough without one). The model goes straight
 to times, and the booking confirmation says the window, address and name together and asks the
 caller to say if any of it is wrong. An address that arrived in pieces, or a ZIP given on its own,
@@ -818,4 +819,15 @@ exists; the correction updates it. "No, I'm not sure" passed the old check and n
 a hedging caller keeps the emergency standing, which is the safe side.
 
 **Evidence.** Six new offline tests for the address path and the confirmation, seven new
-`clear_no` cases including the call's exact words. Phone check pending.
+`clear_no` cases including the call's exact words. The 8:30 and 8:32 PM calls on September 30
+passed the false alarm, the whole address with no read-back, the confirmation, and the read-back
+for an address in pieces ([call notes](scenarios.md)).
+
+**Revised 2026-09-30, after those calls.** Three fixes. First, any one caller turn holding the
+whole address counts, not only the latest: the model often asks for the name and number before it
+checks the address, so the address turn is no longer the latest by then (`address_in_one_turn` in
+`rules.py`). Second, a yes to the model's own "Is it cold right now?" counts as cold, so no heat in
+the cold is urgent (ADR-018) even when the caller never said the word. Third, a correction after
+the confirmation keeps the booked window instead of offering times again. Six targeted simulated
+calls passed 6 of 6 after the fixes ([eval report](../evals/REPORT.md)); none has been heard on a
+phone yet.
