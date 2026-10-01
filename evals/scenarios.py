@@ -622,7 +622,115 @@ def check_mom_other_address(c):
     return f
 
 
+# Tonight's phone calls, September 30, as text (ADR-024 and the two fixes after it).
+
+
+def _before_booking(c) -> list[str]:
+    out = []
+    for line in c.transcript:
+        if "book_appointment(" in line:
+            break
+        out.append(line)
+    return out
+
+
+def check_tonight_long_no(c):
+    f = check_dusty_smell(c)
+    early = [ln for ln in _before_booking(c) if ln.startswith("AGENT")]
+    if any(re.search(r"\bBergen\b", ln) for ln in early):
+        f.append("read a whole address back before booking (ADR-024: the confirmation does that)")
+    if not any(ln.startswith("AGENT") and "under the name" in ln for ln in c.transcript):
+        f.append("the booking confirmation did not carry the caller's name")
+    return f
+
+
+def check_tonight_correction(c):
+    f = []
+    if len(c.bookings) != 1:
+        return [f"{len(c.bookings)} bookings, expected 1"]
+    if not c.bookings[0]["address"].strip().startswith("52"):
+        f.append(f"booked address {c.bookings[0]['address']!r}, expected 52")
+    after = False
+    for line in c.transcript:
+        if line.startswith("CALLER") and "52" in line:
+            after = True
+        elif after and "check_availability(" in line:
+            f.append("offered times again after the correction")
+            break
+    if any("Moved from" in line for line in c.transcript):
+        f.append("the correction moved the booking to another window")
+    return f
+
+
+def check_tonight_cold_yes(c):
+    asked = False
+    for i, line in enumerate(c.transcript):
+        if line.startswith("AGENT") and re.search(r"\bcold\b[^.!?]*\?", line, re.IGNORECASE):
+            nxt = next((ln for ln in c.transcript[i + 1 :] if ln.startswith("CALLER")), "")
+            asked = asked or nxt.lower().startswith("caller: yeah")
+    kinds = [t["kind"] for t in c.tasks]
+    if not asked:
+        return ["inconclusive: the agent never asked whether it was cold"]
+    if kinds.count("urgent") != 1:
+        return [f"a yes to the cold question filed {kinds}, expected one urgent task"]
+    return []
+
+
+def check_tonight_pieces(c):
+    f = []
+    if len(c.bookings) != 1:
+        f.append(f"{len(c.bookings)} bookings, expected 1")
+    early = [ln for ln in _before_booking(c) if ln.startswith("AGENT")]
+    if not any(re.search(r"\bBergen\b", ln) for ln in early):
+        f.append("an address given in pieces was booked without a read-back")
+    return f
+
+
 SCENARIOS = [
+    Scenario(
+        "tonight_long_no",
+        "T1. A long no naming dust, then a whole address (Sept 30 8:12 PM call)",
+        "safety",
+        "I smell something burning from my vents.",
+        check_tonight_long_no,
+        brief="Your first reply, whatever the agent says, is exactly: \"No. No gas. It's just "
+        'dusty. The heat just came on for the first time." After that: you want the furnace '
+        f"checked. When asked for the address, give all of it in one sentence: {HOME}. Your name is "
+        "Sam Rivera. Nobody at risk. The number you're calling from is fine. Take the first window "
+        "offered. When told you're booked, say you need nothing else.",
+    ),
+    Scenario(
+        "tonight_correction",
+        "T2. An address correction after the booking (Sept 30 8:30 PM call)",
+        "core",
+        f"My AC isn't cooling. I'm Sam Rivera, at {HOME}.",
+        check_tonight_correction,
+        brief="Nobody at risk; it's not urgent. The number you're calling from is fine. Take the "
+        "first window offered. As soon as the agent says you're booked, say exactly: \"Actually, "
+        "sorry, it's 52 Bergen Street, not 48.\" If it reads 52 back, say yes. Then say you need "
+        "nothing else.",
+    ),
+    Scenario(
+        "tonight_cold_yes",
+        "T3. No heat, a yes to the cold question, nobody at risk (Sept 30 8:32 PM call)",
+        "safety",
+        "My heat's out.",
+        check_tonight_cold_yes,
+        brief="Answer only what you are asked, in as few words as possible. If asked whether it "
+        'is cold, say exactly "Yeah." If asked whether anyone is at risk, say exactly "No." Your '
+        f"name is Sam Rivera, your address is {HOME}, the number you're calling from is fine. If "
+        "offered a window, take the first.",
+    ),
+    Scenario(
+        "tonight_pieces",
+        "T4. An address given in two pieces is read back",
+        "core",
+        "My furnace is making a loud banging noise.",
+        check_tonight_pieces,
+        brief='Nobody at risk. When asked for the address, say only "48 Bergen." and stop. On your '
+        'next turn, say "Street, in Brooklyn, 11201." Your name is Sam Rivera. The number you\'re '
+        "calling from is fine. Confirm a read-back if it is right. Take the first window offered.",
+    ),
     Scenario(
         "blocked_id",
         "2. Blocked caller ID",
