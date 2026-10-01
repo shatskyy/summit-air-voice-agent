@@ -631,3 +631,38 @@ def urgent_reason(call: Call) -> str | None:
     if call.heat_down and call.cold:
         return "no heat in cold weather"
     return None
+
+
+# Narrow backstop for generic visit strings; not a semantic service-scope classifier.
+SERVICE_DETAIL = re.compile(
+    r"\b(?:no heat|no cooling|not cooling|not heating|won.t (?:start|turn|heat|cool)|"
+    r"leak\w*|noise|noisy|rattl\w*|smell\w*|gas|smoke|cold|hot|"
+    r"maintenance|tune[ -]?up|replacement|replace|install\w*|estimate)\b",
+    re.IGNORECASE,
+)
+GENERIC_VISIT = re.compile(
+    r"\b(?:look|check|inspect|visit|come (?:out|over)|send (?:someone|a tech\w*)|"
+    r"service|repair|not working|broken|problem|issue)\b",
+    re.IGNORECASE,
+)
+HVAC_EQUIPMENT = re.compile(
+    r"\b(?:ac|a/c|air condition\w*|furnace|boiler|heat pump|mini[ -]?split|"
+    r"heating|cooling|thermostat)\b",
+    re.IGNORECASE,
+)
+
+
+def unresolved_service_request(issue: str) -> bool:
+    """Reject absent/generic visit requests. Does not prove arbitrary text is caller-grounded."""
+    text = given(issue or "").strip()
+    if not text:
+        return True
+    if SERVICE_DETAIL.search(text):
+        return False
+    if HVAC_EQUIPMENT.search(text) and re.search(
+        r"\b(?:not working|broken|stopped|failed|won.t|problem|issue)\b", text, re.IGNORECASE
+    ):
+        return False
+    return bool(GENERIC_VISIT.search(text)) or bool(
+        re.fullmatch(r"(?:my |the )?(?:unit|system|ac|furnace|boiler)[.! ]*", text, re.IGNORECASE)
+    )

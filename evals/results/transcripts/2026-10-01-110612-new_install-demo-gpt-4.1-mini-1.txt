@@ -1,0 +1,31 @@
+# new_install / demo / openai/gpt-4.1-mini / run 1
+FAIL: 0 bookings, expected 1
+style: {'bundled': 2, 'reasked_type': 0, 'lists': 0, 'words': 16.0}
+cost: $0.0055
+
+AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?
+CALLER: Hello?
+AGENT : What can we help you with?
+CALLER: Hi, I'm looking to get central AC installed in my house.
+AGENT : Got it, a central AC install. When would you like us to come for a free estimate visit?
+CALLER: Sam Rivera.
+AGENT : Thanks, Sam. What number can we reach you at, please?
+CALLER: Yes, this number is fine.
+AGENT : Thanks, Sam. What's the address for the installation?
+CALLER: 48 Bergen Street, Brooklyn, 11201
+  tool  check_address({"street": "48 Bergen Street", "town": "Brooklyn", "zip_code": "11201"})
+  ->    In the service area. The caller gave the whole address in one go, so don't read it back: the booking confirmation repeats it at the end. First clarify the service need and assess urgency if unresolved; only then call check_availability and offer windows.
+AGENT : Thanks, Sam. Can you confirm if the central AC is for a new system where none exists yet or replacing an old one?
+CALLER: Yes, that's right.
+AGENT : Is there any heating or cooling issue now making it urgent, or is this just for a routine install visit?
+Sorry, I asked two questions. Let me ask just one: Is this just a routine install estimate visit?
+CALLER: The first one works.
+AGENT : Okay, no current issue then. What days and times work best for your free estimate visit? Morning or afternoon?
+CALLER: No, that's all.
+  tool  end_call({})
+  ->    
+AGENT : Thanks for calling Summit Air. Goodbye.
+  [outcome] info_only
+
+bookings: []
+tasks: []

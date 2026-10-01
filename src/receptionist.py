@@ -73,6 +73,7 @@ from rules import (
     spoken_numbers,
     street_key,
     street_problem,
+    unresolved_service_request,
     urgent_reason,
 )
 from speech import (
@@ -685,12 +686,16 @@ class SummitAirAgent(Agent):
         if not read_back:
             return (
                 f"{checked} The caller gave the whole address in one go, so don't read it back: "
-                "the booking confirmation repeats it at the end. Call check_availability now and "
-                "offer windows in this reply."
+                "the booking confirmation repeats it at the end. First clarify the service need "
+                "only if it is missing. A stated symptom, maintenance, install or replacement "
+                "already resolves it: do not ask again. Risk questions are only for failed "
+                "heating/cooling, not noise or installs. Then call check_availability and "
+                "offer windows."
             )
         return (
             f"{checked} Say only the read-back this turn, no times. After they confirm it, call "
-            "check_availability; if they correct it, check it again."
+            "check_availability only once the service need and urgency are understood; "
+            "if they correct it, check it again."
         )
 
     @function_tool
@@ -765,8 +770,9 @@ class SummitAirAgent(Agent):
             callback_number: The confirmed number to reach them.
             address: Street address with any unit, and the town.
             zip_code: The five-digit ZIP code.
-            issue: The problem in the caller's words, or maintenance, or a replacement or
-                install estimate.
+            issue: The caller-reported HVAC symptom and equipment, or explicit maintenance,
+                replacement or installation. A request to visit or look at a unit is incomplete;
+                ask what is happening first. Never invent a symptom.
             priority: True for an urgent call: someone vulnerable is without heat or cooling, or
                 the heat is out in the cold, whoever is home.
             note: What dispatch needs: access the caller mentioned for commercial, a membership the
@@ -780,6 +786,12 @@ class SummitAirAgent(Agent):
         ):
             raise ToolError(
                 "An emergency is active. Do not book a visit; follow the safety instructions."
+            )
+        if unresolved_service_request(issue):
+            raise ToolError(
+                "The service need is unresolved. A request to visit or look at a unit is not an "
+                "HVAC issue. Ask what is happening with the equipment before booking; do not "
+                "invent a symptom. If they cannot explain, offer a dispatch callback."
             )
         if not is_real_name(name):
             raise ToolError(

@@ -1,6 +1,6 @@
 {
   "cap": 3.6,
-  "total": 3.206786,
+  "total": 3.29716,
   "runs": [
     {
       "at": "2026-09-28T16:28:29-04:00",
@@ -61,6 +61,76 @@
       "estimate": 0.0468,
       "cost": 0.058945,
       "results": "evals/results/2026-09-30-220411-8d5098e.json"
+    },
+    {
+      "at": "2026-10-01T11:05:16-04:00",
+      "commit": "b1339b1",
+      "kind": "pytest-llm",
+      "label": "openai/gpt-4.1-mini",
+      "conversations": 0,
+      "estimate": 0.06,
+      "cost": 0.006251,
+      "results": ""
+    },
+    {
+      "at": "2026-10-01T11:06:03-04:00",
+      "commit": "b1339b1",
+      "kind": "pytest-llm",
+      "label": "openai/gpt-4.1-mini",
+      "conversations": 0,
+      "estimate": 0.04,
+      "cost": 0.006986,
+      "results": ""
+    },
+    {
+      "at": "2026-10-01T11:06:35-04:00",
+      "commit": "b1339b1",
+      "kind": "eval",
+      "label": "Paul feedback: clarify service need before scheduling",
+      "conversations": 4,
+      "estimate": 0.0235,
+      "cost": 0.0287,
+      "results": "evals/results/2026-10-01-110612-b1339b1-dirty.json"
+    },
+    {
+      "at": "2026-10-01T11:07:07-04:00",
+      "commit": "b1339b1",
+      "kind": "pytest-llm",
+      "label": "openai/gpt-4.1-mini",
+      "conversations": 0,
+      "estimate": 0.08,
+      "cost": 0.013712,
+      "results": ""
+    },
+    {
+      "at": "2026-10-01T11:07:39-04:00",
+      "commit": "b1339b1",
+      "kind": "eval",
+      "label": "Clarification without redundant diagnosis or risk questions",
+      "conversations": 3,
+      "estimate": 0.0176,
+      "cost": 0.018409,
+      "results": "evals/results/2026-10-01-110725-b1339b1-dirty.json"
+    },
+    {
+      "at": "2026-10-01T11:08:05-04:00",
+      "commit": "b1339b1",
+      "kind": "pytest-llm",
+      "label": "openai/gpt-4.1-mini",
+      "conversations": 0,
+      "estimate": 0.08,
+      "cost": 0.012672,
+      "results": ""
+    },
+    {
+      "at": "2026-10-01T11:09:09-04:00",
+      "commit": "b1339b1",
+      "kind": "pytest-llm",
+      "label": "openai/gpt-4.1-mini",
+      "conversations": 0,
+      "estimate": 0.03,
+      "cost": 0.003644,
+      "results": ""
     }
   ]
 }

@@ -3202,3 +3202,39 @@ async def test_an_address_correction_after_booking_keeps_the_window(db):
     result = await agent.check_address(ctx, "92 2nd Avenue, Apartment 4", "New York", "10003")
     assert "slot_id 2026-09-29-0800" in result and "don't offer times again" in result
     assert "Read it back once" in result  # the correction came on its own, so it is read back
+
+
+@pytest.mark.parametrize(
+    "issue",
+    [
+        "",
+        "unknown",
+        "look at my unit",
+        "take a look at my furnace",
+        "send someone out",
+        "unit not working",
+        "service request",
+        "my unit",
+    ],
+)
+async def test_unresolved_service_request_cannot_create_booking(db, issue):
+    with pytest.raises(ToolError, match="service need is unresolved"):
+        await booked_call(db, "+19145550100", issue=issue)
+    assert store.booking_for(db, "call-a") is None
+
+
+@pytest.mark.parametrize(
+    "issue",
+    [
+        "furnace won't start",
+        "AC not working",
+        "no heat",
+        "AC leaking",
+        "annual maintenance",
+        "new heat pump installation",
+        "replacement estimate",
+    ],
+)
+async def test_identified_service_need_can_book(db, issue):
+    await booked_call(db, "+19145550100", issue=issue)
+    assert store.booking_for(db, "call-a")["issue"] == issue

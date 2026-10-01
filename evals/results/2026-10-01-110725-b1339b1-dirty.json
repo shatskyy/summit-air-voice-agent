@@ -1,0 +1,220 @@
+{
+  "meta": {
+    "started": "2026-10-01T11:07:25-04:00",
+    "stamp": "2026-10-01-110725",
+    "commit": "b1339b1-dirty",
+    "models": [
+      "openai/gpt-4.1-mini"
+    ],
+    "runs": "1 run(s) per scenario and clock",
+    "scenarios": [
+      "new_install",
+      "plumbing",
+      "vague_visit"
+    ],
+    "compare": "",
+    "estimate": 0.0176
+  },
+  "results": [
+    {
+      "scenario": "vague_visit",
+      "title": "Vague visit request clarified before scheduling",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 14.0
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 45861,
+          "cached": 43008,
+          "output": 247,
+          "requests": 9,
+          "cost": 0.005837
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 1973,
+          "cached": 0,
+          "output": 52,
+          "requests": 6,
+          "cost": 0.000872
+        }
+      },
+      "cost": 0.006709,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: I just need someone to come out here and take a look at my unit.",
+        "AGENT : What is happening with the unit?",
+        "CALLER: It's rattling while it's running, though it still seems to be cooling fine.",
+        "AGENT : Got it. What\u2019s the address there?",
+        "CALLER: 48 Bergen Street, Brooklyn, 11201.",
+        "  tool  check_address({\"street\": \"48 Bergen Street\", \"town\": \"Brooklyn\", \"zip_code\": \"11201\"})",
+        "  ->    In the service area. The caller gave the whole address in one go, so don't read it back: the booking confirmation repeats it at the end. First clarify the service need only if it is missing. A stated symptom, maintenance, install or replacement already resolves it: do not ask again. Risk questions are only for failed heating/cooling, not noise or installs. Then call check_availability and offer windows.",
+        "  tool  check_availability({\"earliest_date\": \"2026-09-29\", \"part_of_day\": null, \"latest_date\": null})",
+        "  ->    Open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200)",
+        "AGENT : I can offer a visit Wednesday, September 30, morning or afternoon. Which works better for you?",
+        "CALLER: Morning would be great.",
+        "AGENT : May I have your name for the booking?",
+        "CALLER: Paul Appleby.",
+        "AGENT : Is 914-555-0100 the best number to reach you?\n",
+        "CALLER: Yes, that number is fine.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"Paul Appleby\", \"callback_number\": \"914-555-0100\", \"address\": \"48 Bergen Street, Brooklyn, 11201\", \"zip_code\": \"11201\", \"issue\": \"Rattling noise while running, cooling works fine\", \"priority\": null, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001 (say \"one oh oh one\"): Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn, 11201. The caller has been told this, with the reference; add nothing this turn.",
+        "AGENT : You're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn, 11201, under the name Paul Appleby. Your reference number is one oh oh one. If any of that is wrong, just tell me. Otherwise, is there anything else I can help with?",
+        "CALLER: No, that's everything. Thanks for your help.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] booked"
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-vague_visit-demo-1",
+          "slot_id": "2026-09-30-0800",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "Paul Appleby",
+          "phone": "914-555-0100",
+          "address": "48 Bergen Street, Brooklyn, 11201",
+          "zip": "11201",
+          "issue": "Rattling noise while running, cooling works fine",
+          "note": "",
+          "created_at": "2026-10-01 15:07:37"
+        }
+      ],
+      "tasks": []
+    },
+    {
+      "scenario": "new_install",
+      "title": "A6. A new central AC install",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 16.9
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 50946,
+          "cached": 39296,
+          "output": 289,
+          "requests": 10,
+          "cost": 0.009052
+        }
+      },
+      "cost": 0.009052,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hello?",
+        "AGENT : What can we help you with?",
+        "CALLER: Hi, I'm looking to get central AC installed in my house.",
+        "AGENT : Got it, you want central AC installed. When would you be available for a free estimate visit?",
+        "CALLER: Sam Rivera.",
+        "AGENT : Thanks, Sam. What phone number should we use to reach you?",
+        "CALLER: Yes, this number is fine.",
+        "AGENT : Great, 914-555-0100 is the best number to reach you. What's the address for the installation?",
+        "CALLER: 48 Bergen Street, Brooklyn, 11201",
+        "  tool  check_address({\"street\": \"48 Bergen Street\", \"town\": \"Brooklyn\", \"zip_code\": \"11201\"})",
+        "  ->    In the service area. The caller gave the whole address in one go, so don't read it back: the booking confirmation repeats it at the end. First clarify the service need only if it is missing. A stated symptom, maintenance, install or replacement already resolves it: do not ask again. Risk questions are only for failed heating/cooling, not noise or installs. Then call check_availability and offer windows.",
+        "  tool  check_availability({\"earliest_date\": \"2026-09-29\", \"part_of_day\": null, \"latest_date\": null})",
+        "  ->    Open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200)",
+        "AGENT : I can offer you Wednesday, September 30, morning or afternoon for your install estimate. Which works better?\n",
+        "CALLER: Yes, that's right.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"Sam Rivera\", \"callback_number\": \"914-555-0100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"central AC install estimate\", \"priority\": null, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001 (say \"one oh oh one\"): Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. The caller has been told this, with the reference; add nothing this turn.",
+        "AGENT : You're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn, under the name Sam Rivera. Your reference number is one oh oh one. If any of that is wrong, just tell me. Otherwise, is there anything else I can help with?",
+        "CALLER: The first one works.",
+        "AGENT : Okay, your visit is set for Wednesday morning then. Is there anything else you need today?",
+        "CALLER: No, that's all.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] booked"
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-new_install-demo-1",
+          "slot_id": "2026-09-30-0800",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "Sam Rivera",
+          "phone": "914-555-0100",
+          "address": "48 Bergen Street, Brooklyn",
+          "zip": "11201",
+          "issue": "central AC install estimate",
+          "note": "",
+          "created_at": "2026-10-01 15:07:32"
+        }
+      ],
+      "tasks": []
+    },
+    {
+      "scenario": "plumbing",
+      "title": "A6. A plumbing job",
+      "category": "adversarial",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 0,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 14.0
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 9760,
+          "cached": 4736,
+          "output": 37,
+          "requests": 2,
+          "cost": 0.002542
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 225,
+          "cached": 0,
+          "output": 10,
+          "requests": 1,
+          "cost": 0.000106
+        }
+      },
+      "cost": 0.002648,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hi, my water heater stopped making hot water. Can you send someone?",
+        "AGENT : Summit Air only works on heating and cooling, not water heaters. Is there a heating or cooling issue you need help with?",
+        "CALLER: Okay, thanks. No, there's nothing else.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] info_only"
+      ],
+      "bookings": [],
+      "tasks": []
+    }
+  ]
+}

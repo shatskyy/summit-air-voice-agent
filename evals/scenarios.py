@@ -1211,7 +1211,49 @@ SCENARIOS = [
     ),
 ]
 
+
 # Two existing core scenarios gain the no-risk-question check (nothing is broken on either).
+def check_vague_visit(c):
+    failures = check_routine_furnace(c)
+    if c.bookings and "rattl" not in c.bookings[0]["issue"].lower():
+        failures.append("booking lacks the caller's clarified rattling symptom")
+    lines = c.transcript
+    first_reply = next(
+        (line for line in lines if line.startswith("AGENT") and GREETING not in line), ""
+    )
+    if not re.search(r"\?", first_reply) or not re.search(
+        r"happening|wrong|trouble|problem|issue|service|need|going on", first_reply, re.IGNORECASE
+    ):
+        failures.append("first reply did not clarify the service need")
+    first_availability = next(
+        (i for i, line in enumerate(lines) if "tool  check_availability" in line), len(lines)
+    )
+    symptom_turn = next(
+        (
+            i
+            for i, line in enumerate(lines)
+            if line.startswith("CALLER") and "rattl" in line.lower()
+        ),
+        len(lines),
+    )
+    if symptom_turn >= first_availability:
+        failures.append("availability checked before the caller supplied a symptom")
+    return failures
+
+
+SCENARIOS.append(
+    Scenario(
+        "vague_visit",
+        "Vague visit request clarified before scheduling",
+        "core",
+        "I just need someone to come out here and take a look at my unit.",
+        check_vague_visit,
+        brief=f"Your AC is rattling but still cools. Only explain this when asked what is happening. "
+        f"Your name is Paul Appleby. Your home address is {HOME}. Nobody is at risk. "
+        "The calling number is fine. Accept the first window offered.",
+    )
+)
+
 BY_NAME = {s.name: s for s in SCENARIOS}
 BY_NAME["new_install"].check = check_new_install_without_risk_question
 BY_NAME["member"].check = check_member_without_risk_question

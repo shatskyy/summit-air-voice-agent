@@ -66,3 +66,12 @@ in [scenarios.md](scenarios.md); simulated-call results are in [the eval report]
 - **Callback tasks have no idempotency key.** One booking per call is enforced by the database;
   a model that files the same routine callback twice creates two tasks.
 - **Nobody is actually on call.** Pages reach one test phone, and callback targets are targets.
+
+
+### Service-need clarification (October 1)
+
+A generic request to look at a unit previously booked without identifying the HVAC issue.
+The prompt and address-tool result now require clarification before scheduling; the booking tool
+rejects missing/common generic issue strings. This lexical backstop does not verify all possible
+symptoms, supported service categories, or whether an issue was invented by the model. Unknown
+phrasing still relies on model judgment. Phone validation of this change is pending.

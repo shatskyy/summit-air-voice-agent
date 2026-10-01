@@ -174,3 +174,29 @@ async def test_a_caller_who_wants_a_person_gets_a_callback_without_argument(mode
                 intent="Gives a specific callback target time and does not argue or try to talk the caller out of speaking to a person.",
             )
         )
+
+
+@pytest.mark.parametrize(
+    "opening",
+    [
+        "I just need someone to come out here and take a look at my unit.",
+        "Send someone today. It's 900 Broadway, New York. I'm Paul Appleby.",
+        "Can someone check my furnace? Do you have anything today?",
+    ],
+)
+async def test_vague_visit_request_is_clarified_before_scheduling(model, call, judge, opening):
+    async with conversation(model, call) as session:
+        result = await session.run(user_input=opening)
+        assert not any(
+            getattr(e.item, "name", "") in {"check_availability", "book_appointment"}
+            for e in result.events
+        )
+        await (
+            result.expect[-1]
+            .is_message(role="assistant")
+            .judge(
+                judge,
+                intent="Asks what is happening with the equipment or what service is needed. "
+                "Does not offer appointment windows or assume maintenance or a symptom.",
+            )
+        )

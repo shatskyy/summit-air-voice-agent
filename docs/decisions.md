@@ -831,3 +831,53 @@ the cold is urgent (ADR-018) even when the caller never said the word. Third, a 
 the confirmation keeps the booked window instead of offering times again. Six targeted simulated
 calls passed 6 of 6 after the fixes ([eval report](../evals/REPORT.md)); none has been heard on a
 phone yet.
+
+
+## ADR-025: Resolve the service need before scheduling
+
+**Trigger.** Paul's October 1 call booked #1017 with issue "look at my unit", without a
+clarifying question. David reports Paul saw the same behavior consistently in his testing.
+A visit request is not a qualified HVAC service need.
+
+**Trace.** The transcript's first divergence was asking for an address after the vague request.
+The prompt listed what was needed but did not define an unresolved visit request. Its timing
+instruction prioritized immediate availability. `check_address` then explicitly instructed the
+model to offer windows, and `book_appointment` accepted any issue string. These are observable
+policy/tool gaps, not evidence of the model's private reasoning.
+
+**Change.** Define the distinction in the prompt, clarify before scheduling, retain explicitly
+stated symptoms without asking repair-versus-maintenance again, and keep service scope grounded
+in `config/business.yaml`. Address-tool instructions no longer force premature availability.
+Booking refuses missing and common generic issue strings and asks for clarification. A caller
+unable to explain after a follow-up can receive a dispatch callback. Maintenance, replacement
+and install requests do not require a malfunction or a risk question.
+
+**Limit.** The booking backstop is a narrow lexical check, not a complete semantic classifier or
+proof that arbitrary issue text is supported and caller-grounded. The model still interprets
+unfamiliar descriptions. We have not demonstrated every wording or phone behavior.
+
+**Validation.** 556 offline tests passed. Three new model-turn checks cover Paul's wording, a
+volunteered address plus same-day request, and a vague furnace check plus timing question.
+An initial model run exposed redundant address collection and an invented answer after the
+clarification; those failures were retained in the spend ledger and the instructions tightened.
+The first four full simulations passed vague visit, routine furnace and maintenance, but failed
+the fixed-line install case with redundant questions. After tightening the address-tool result,
+the second three simulations passed vague visit, new install and unsupported plumbing. Full
+transcripts and exact dirty-build labels live under `evals/results/2026-10-01-*`. Simulations
+prove conversation/tool behavior and persisted results, not phone recognition or voice quality.
+
+
+A full eight-test model-turn run passed 8/8 before the final address-tool refinement. Repeating
+it on the refined build passed 6/8: a valid availability reply offered a window but asked for an
+address rather than acceptance; the callback reply added an offer of help that the judge rejected.
+All three vague-request checks passed in both runs. These failures are recorded, not excluded
+from an overall pass-rate claim. The deterministic suite and focused service-clarification checks
+are the release checks for this bounded fix; unrelated wording remains a limitation.
+
+
+The final focused repeat passed 2/3: Paul's exact request and the volunteered-address request
+passed; the furnace request clarified before scheduling but produced a duplicated question with
+symptom examples, which the judge rejected. Do not claim 3/3 on that final repeat. Deployment
+October 1 at 11:09 AM ET: no call rooms before restart, worker registered, source b1339b1 dirty,
+health check answered in 1.0 s on AC. David authorized committing the fix after deployment. Real-phone behavior of this fix remains
+unverified.

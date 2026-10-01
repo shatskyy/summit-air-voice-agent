@@ -1,0 +1,322 @@
+{
+  "meta": {
+    "started": "2026-10-01T11:06:12-04:00",
+    "stamp": "2026-10-01-110612",
+    "commit": "b1339b1-dirty",
+    "models": [
+      "openai/gpt-4.1-mini"
+    ],
+    "runs": "1 run(s) per scenario and clock",
+    "scenarios": [
+      "member",
+      "new_install",
+      "routine_furnace",
+      "vague_visit"
+    ],
+    "compare": "",
+    "estimate": 0.0235
+  },
+  "results": [
+    {
+      "scenario": "vague_visit",
+      "title": "Vague visit request clarified before scheduling",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 1,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 16.7
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 55303,
+          "cached": 53120,
+          "output": 298,
+          "requests": 11,
+          "cost": 0.006662
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 3104,
+          "cached": 0,
+          "output": 78,
+          "requests": 8,
+          "cost": 0.001366
+        }
+      },
+      "cost": 0.008028,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: I just need someone to come out here and take a look at my unit.",
+        "AGENT : What is happening with the unit that needs a look?",
+        "CALLER: It\u2019s making a rattling noise, but it\u2019s still cooling the house.",
+        "AGENT : Thanks. Is the address for the unit nearby? What is the street address?",
+        "CALLER: Yes, it's nearby. The address is 48 Bergen Street, Brooklyn, 11201.",
+        "  tool  check_address({\"street\": \"48 Bergen Street\", \"town\": \"Brooklyn\", \"zip_code\": \"11201\"})",
+        "  ->    In the service area. The caller gave the whole address in one go, so don't read it back: the booking confirmation repeats it at the end. First clarify the service need and assess urgency if unresolved; only then call check_availability and offer windows.",
+        "AGENT : Thanks. Is this a maintenance, replacement, or repair visit for the rattling noise?",
+        "CALLER: A repair visit, please.",
+        "AGENT : Is anyone at home who is older, a baby, or has a health issue that makes the noise a risk?",
+        "CALLER: No, nobody at risk here.",
+        "  tool  check_availability({\"earliest_date\": \"2026-09-29\", \"part_of_day\": \"any\", \"latest_date\": null})",
+        "  ->    Open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200)",
+        "AGENT : The earliest visit we can offer is Wednesday morning, September 30, between 8 and noon, or afternoon between noon and 4. Which works better?",
+        "CALLER: Wednesday morning between 8 and noon works fine.",
+        "AGENT : What name should I book the visit under?\n",
+        "CALLER: Paul Appleby.",
+        "AGENT : Is 914-555-0100 the best number to reach you at?",
+        "CALLER: Yes, that number is fine.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"Paul Appleby\", \"callback_number\": \"914-555-0100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"rattling noise repair\", \"priority\": false, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001 (say \"one oh oh one\"): Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. The caller has been told this, with the reference; add nothing this turn.",
+        "AGENT : You're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn, under the name Paul Appleby. Your reference number is one oh oh one. If any of that is wrong, just tell me. Otherwise, is there anything else I can help with?",
+        "CALLER: No, that\u2019s all, thank you.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] booked"
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-vague_visit-demo-1",
+          "slot_id": "2026-09-30-0800",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "Paul Appleby",
+          "phone": "914-555-0100",
+          "address": "48 Bergen Street, Brooklyn",
+          "zip": "11201",
+          "issue": "rattling noise repair",
+          "note": "",
+          "created_at": "2026-10-01 15:06:26"
+        }
+      ],
+      "tasks": []
+    },
+    {
+      "scenario": "routine_furnace",
+      "title": "10. Routine furnace (naturalness)",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 2,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 18.4
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 50112,
+          "cached": 43264,
+          "output": 299,
+          "requests": 10,
+          "cost": 0.007544
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 2532,
+          "cached": 0,
+          "output": 79,
+          "requests": 7,
+          "cost": 0.001139
+        }
+      },
+      "cost": 0.008683,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hi. My furnace stopped working.",
+        "AGENT : Is it cold where you are, or do you have anyone at risk in the home needing heat?",
+        "CALLER: It's just me here, and I'm okay. But it's getting chilly.",
+        "AGENT : What is the address where the furnace is?",
+        "CALLER: It's 48 Bergen Street, Brooklyn, 11201.",
+        "  tool  check_address({\"street\": \"48 Bergen Street\", \"town\": \"Brooklyn\", \"zip_code\": \"11201\"})",
+        "  ->    In the service area. The caller gave the whole address in one go, so don't read it back: the booking confirmation repeats it at the end. First clarify the service need and assess urgency if unresolved; only then call check_availability and offer windows.",
+        "AGENT : When do you need a technician to come for your furnace? What days or times work for you?",
+        "CALLER: The sooner, the better. I can take the first available appointment.",
+        "  tool  check_availability({\"earliest_date\": \"2026-09-29\", \"part_of_day\": \"any\", \"latest_date\": null})",
+        "  ->    Open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200)",
+        "AGENT : The earliest available slots are Wednesday morning or afternoon. Which one do you prefer?\nAre you interested in a maintenance visit, a repair for the furnace not working, or a replacement or new install?",
+        "CALLER: Wednesday morning works. I need a repair since the furnace stopped working.",
+        "AGENT : What's your name for the booking?",
+        "CALLER: Sam Rivera.",
+        "AGENT : Is 914-555-0100 the best number to reach you at?",
+        "CALLER: No, please call me back at this number I am calling from.",
+        "AGENT : Got it, I'll use this number to reach you. I'll book a repair visit for your furnace on Wednesday morning.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"Sam Rivera\", \"callback_number\": \"914-555-0100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"furnace stopped working, repair\", \"priority\": false, \"note\": null, \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001 (say \"one oh oh one\"): Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. The caller has been told this, with the reference; add nothing this turn.",
+        "AGENT : You're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn, under the name Sam Rivera. Your reference number is one oh oh one. If any of that is wrong, just tell me. Otherwise, is there anything else I can help with?",
+        "CALLER: No, that's all. Thank you!",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] booked"
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-routine_furnace-demo-1",
+          "slot_id": "2026-09-30-0800",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "Sam Rivera",
+          "phone": "914-555-0100",
+          "address": "48 Bergen Street, Brooklyn",
+          "zip": "11201",
+          "issue": "furnace stopped working, repair",
+          "note": "",
+          "created_at": "2026-10-01 15:06:26"
+        }
+      ],
+      "tasks": []
+    },
+    {
+      "scenario": "member",
+      "title": "5. Member with a covered tune-up",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": true,
+      "failures": [],
+      "error": "",
+      "style": {
+        "bundled": 1,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 19.3
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 45096,
+          "cached": 43008,
+          "output": 272,
+          "requests": 9,
+          "cost": 0.005571
+        },
+        "caller": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 2152,
+          "cached": 0,
+          "output": 54,
+          "requests": 6,
+          "cost": 0.000947
+        }
+      },
+      "cost": 0.006518,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: I'm on your maintenance plan and I'm due for my fall tune-up.",
+        "AGENT : Great, we'll get that scheduled. What's the address for the service visit?",
+        "CALLER: 48 Bergen Street, Brooklyn, 11201.",
+        "  tool  check_address({\"street\": \"48 Bergen Street\", \"town\": \"Brooklyn\", \"zip_code\": \"11201\"})",
+        "  ->    In the service area. The caller gave the whole address in one go, so don't read it back: the booking confirmation repeats it at the end. First clarify the service need and assess urgency if unresolved; only then call check_availability and offer windows.",
+        "AGENT : Got it. Just to confirm, is this for your annual maintenance tune-up visit?\nSince you said fall tune-up, is there anything else needing repair or service while we are there?",
+        "CALLER: Yes, it's the annual fall tune-up, and I don't need anything else checked or fixed right now.",
+        "  tool  check_availability({\"earliest_date\": \"2026-09-29\", \"part_of_day\": \"any\", \"latest_date\": null})",
+        "  ->    Open windows: Wednesday, September 30, between 8 AM and noon (slot_id 2026-09-30-0800); Wednesday, September 30, between noon and 4 PM (slot_id 2026-09-30-1200)",
+        "AGENT : We can do your fall tune-up Wednesday, September 30. Would you prefer morning or afternoon?",
+        "CALLER: Morning, please.",
+        "AGENT : What's the best name for the booking?\nWhat's the name for the booking?",
+        "CALLER: Sam Rivera.",
+        "AGENT : Can I reach you at 914-555-0100 to confirm or update this appointment?",
+        "CALLER: Yes, that number works for me.",
+        "  tool  book_appointment({\"slot_id\": \"2026-09-30-0800\", \"customer_type\": \"residential\", \"name\": \"Sam Rivera\", \"callback_number\": \"914-555-0100\", \"address\": \"48 Bergen Street, Brooklyn\", \"zip_code\": \"11201\", \"issue\": \"annual fall tune-up maintenance plan member\", \"priority\": false, \"note\": \"maintenance plan member\", \"business_name\": null, \"site_contact\": null})",
+        "  ->    Booked. Reference 1001 (say \"one oh oh one\"): Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn. The caller has been told this, with the reference; add nothing this turn.",
+        "AGENT : You're booked for Wednesday, September 30, between 8 AM and noon at 48 Bergen Street, Brooklyn, under the name Sam Rivera. Your reference number is one oh oh one. If any of that is wrong, just tell me. Otherwise, is there anything else I can help with?",
+        "CALLER: No, that's all. Thank you!",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] booked"
+      ],
+      "bookings": [
+        {
+          "ref": 1001,
+          "call_id": "eval-member-demo-1",
+          "slot_id": "2026-09-30-0800",
+          "customer_type": "residential",
+          "priority": 0,
+          "name": "Sam Rivera",
+          "phone": "914-555-0100",
+          "address": "48 Bergen Street, Brooklyn",
+          "zip": "11201",
+          "issue": "annual fall tune-up maintenance plan member",
+          "note": "maintenance plan member",
+          "created_at": "2026-10-01 15:06:24"
+        }
+      ],
+      "tasks": []
+    },
+    {
+      "scenario": "new_install",
+      "title": "A6. A new central AC install",
+      "category": "core",
+      "clock": "demo",
+      "model": "openai/gpt-4.1-mini",
+      "run": 1,
+      "passed": false,
+      "failures": [
+        "0 bookings, expected 1"
+      ],
+      "error": "",
+      "style": {
+        "bundled": 2,
+        "reasked_type": 0,
+        "lists": 0,
+        "words": 16.0
+      },
+      "usage": {
+        "agent": {
+          "model": "openai/gpt-4.1-mini",
+          "input": 44114,
+          "cached": 41600,
+          "output": 191,
+          "requests": 9,
+          "cost": 0.005471
+        }
+      },
+      "cost": 0.005471,
+      "transcript": [
+        "AGENT : Thanks for calling Summit Air. This is the automated assistant. How can I help?",
+        "CALLER: Hello?",
+        "AGENT : What can we help you with?",
+        "CALLER: Hi, I'm looking to get central AC installed in my house.",
+        "AGENT : Got it, a central AC install. When would you like us to come for a free estimate visit?",
+        "CALLER: Sam Rivera.",
+        "AGENT : Thanks, Sam. What number can we reach you at, please?",
+        "CALLER: Yes, this number is fine.",
+        "AGENT : Thanks, Sam. What's the address for the installation?",
+        "CALLER: 48 Bergen Street, Brooklyn, 11201",
+        "  tool  check_address({\"street\": \"48 Bergen Street\", \"town\": \"Brooklyn\", \"zip_code\": \"11201\"})",
+        "  ->    In the service area. The caller gave the whole address in one go, so don't read it back: the booking confirmation repeats it at the end. First clarify the service need and assess urgency if unresolved; only then call check_availability and offer windows.",
+        "AGENT : Thanks, Sam. Can you confirm if the central AC is for a new system where none exists yet or replacing an old one?",
+        "CALLER: Yes, that's right.",
+        "AGENT : Is there any heating or cooling issue now making it urgent, or is this just for a routine install visit?\nSorry, I asked two questions. Let me ask just one: Is this just a routine install estimate visit?",
+        "CALLER: The first one works.",
+        "AGENT : Okay, no current issue then. What days and times work best for your free estimate visit? Morning or afternoon?",
+        "CALLER: No, that's all.",
+        "  tool  end_call({})",
+        "  ->    ",
+        "AGENT : Thanks for calling Summit Air. Goodbye.",
+        "  [outcome] info_only"
+      ],
+      "bookings": [],
+      "tasks": [],
+      "transcript_file": "results/transcripts/2026-10-01-110612-new_install-demo-gpt-4.1-mini-1.txt"
+    }
+  ]
+}
