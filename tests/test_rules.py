@@ -1513,8 +1513,13 @@ async def test_a_clear_no_cancels_the_page_and_marks_a_false_alarm(db, monkeypat
 
 
 @pytest.mark.parametrize(
-    "said", ["no", "Nope.", "No, it's not.", "No I said I don't smell gas", "No, just dusty."]
-)
+    "said",
+    [
+        "no", "Nope.", "No, it's not.", "No I said I don't smell gas", "No, just dusty.",
+        "No. No gas. It's just dusty. The heat just came on for the first time.",
+        "No, nothing like that, I think it's just the dust burning off since the heat kicked on",
+    ],
+)  # fmt: skip
 def test_short_negatives_are_clear_nos(said):
     assert receptionist.clear_no(said)
 
@@ -1522,7 +1527,9 @@ def test_short_negatives_are_clear_nos(said):
 @pytest.mark.parametrize(
     "said", ["Yes.", "No, but the CO alarm is beeping", "I'm not sure", "What do you mean?",
              "No no no, I smell it everywhere, it's really strong in the kitchen",
-             "No heat either, and my mother is 80."],
+             "No heat either, and my mother is 80.", "No, I'm not sure",
+             "No, but I do feel dizzy", "No, it's not gas, I just have a headache and feel sick",
+             "No no no, it's really strong now, it smells like it's burning everywhere in here"],
 )  # fmt: skip
 def test_anything_else_is_not_a_clear_no(said):
     assert not receptionist.clear_no(said)

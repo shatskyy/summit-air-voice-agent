@@ -129,11 +129,29 @@ CONFIRM = re.compile(
 )
 
 
+# A long no counts only when it names a harmless cause. "No. No gas. It's just dusty. The heat just
+# came on for the first time." (15 words, Sept 30 8:12 PM call) was held as an emergency and paged
+# on-call, while "No no no, I smell it everywhere" must stay one: length alone can't tell them apart.
+BENIGN_CAUSE = re.compile(
+    r"\b(?:dust\w*|first time|(?:just )?(?:came|come|turned|kicked) on|burn(?:ing|s)? off|batter(?:y|ies)"
+    r"|chirp\w*|cooking|toast\w*|candles?|new filter)\b",
+    re.IGNORECASE,
+)
+# Doubt or a carbon monoxide symptom keeps the emergency standing, however the answer starts.
+UNSURE_OR_SYMPTOM = re.compile(
+    r"\b(?:not sure|unsure|don'?t know|dunno|maybe|dizz\w*|headaches?|nause\w*|throw\w* up"
+    r"|vomit\w*|faint\w*|light.?headed|drowsy)\b",
+    re.IGNORECASE,
+)
+
+
 def clear_no(text: str) -> bool:
+    words = len(text.split())
     return (
         bool(CLEAR_NO.match(text))
-        and len(text.split()) <= 8
+        and (words <= 8 or (words <= 30 and bool(BENIGN_CAUSE.search(text))))
         and not NOT_ONLY_NO.search(text)
+        and not UNSURE_OR_SYMPTOM.search(text)
         and not hazard_in(text, after_script=True)
     )
 
