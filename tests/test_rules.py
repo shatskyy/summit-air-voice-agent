@@ -3133,11 +3133,14 @@ def test_a_zip_added_to_a_borough_only_booking_is_the_same_visit():
         (["My heat's out.", "92 2nd Avenue, Apartment 3. New York, New York 10003."], "10003", "New York"),
         (["48 Bergen Street, Brooklyn, one one two oh one."], "11201", "Brooklyn"),
         (["It's 48 Bergen Street in Brooklyn."], "", "Brooklyn"),
+        (["48 Bergen Street, Brooklyn, 11201. I'm Sam.", NUMBER_ASKED, "Yes, that's fine."], "11201", "Brooklyn"),
     ],
 )  # fmt: skip
 async def test_an_address_said_whole_is_not_read_back(db, said, zip_code, town):
     ctx = SpokenContext(Call(call_id="call-a", db=db), said)
-    street = "92 2nd Avenue, Apartment 3" if said[-1].startswith("92") else "48 Bergen Street"
+    street = (
+        "92 2nd Avenue, Apartment 3" if "92" in said[-1] or "92" in said[0] else "48 Bergen Street"
+    )
     result = await SummitAirAgent("").check_address(ctx, street, town, zip_code)
     assert result.startswith("In the service area")
     assert "don't read it back" in result and "Read it back once" not in result
@@ -3148,6 +3151,7 @@ async def test_an_address_said_whole_is_not_read_back(db, said, zip_code, town):
     [
         ["48 Bergen", "Street, in Brooklyn, 11201."],  # the house number came a turn earlier
         ["48 Bergen Street in Brooklyn.", ZIP_ASKED, "11201."],  # the ZIP on its own
+        ["40 Bergen Street, Brooklyn, 11201.", "Sorry, it's 48, not 40."],  # a correction
     ],
 )
 async def test_an_address_in_pieces_is_read_back(db, said):

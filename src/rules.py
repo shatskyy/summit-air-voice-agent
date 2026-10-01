@@ -509,20 +509,28 @@ def caller_digits(items) -> str:
 
 
 def address_in_one_turn(items, street: str, zip_code: str, town: str) -> bool:
-    """Whether the caller's latest turn held the whole address: the house number and the ZIP, or the
-    borough when there is no ZIP. Then the booking confirmation at the end is the read-back. An
-    address that arrived in pieces, or a house number said without digits, is read back now."""
-    said = [
-        i.text_content or ""
-        for i in items or []
-        if getattr(i, "type", None) == "message" and i.role == "user"
-    ]
-    house = re.match(r"\s*(\d+)", street)
-    if not said or house is None or house.group(1) not in spoken_numbers(said[-1]):
+    """Whether one caller turn held the whole address: the house number and the ZIP, or the borough
+    when there is no ZIP. Then the booking confirmation at the end is the read-back. An address that
+    arrived in pieces, a correction ("52, not 48"), or a house number said without digits is read
+    back now. Any turn counts, not just the latest: the model often asks for the name and number
+    before it checks the address (simulated calls, Sept 30)."""
+    # Every number in the street, the apartment's included: "it's apartment four" changes nothing
+    # else, so the turn that held "Apartment 3" doesn't count for it.
+    needed = re.findall(r"\d+", street)
+    if not re.match(r"\s*\d", street):
         return False
-    if zip_code:
-        return zip_code in "".join(spoken_numbers(said[-1]))
-    return town.strip().lower() in said[-1].lower()
+    for item in items or []:
+        if getattr(item, "type", None) != "message" or item.role != "user":
+            continue
+        text = item.text_content or ""
+        numbers = spoken_numbers(text)
+        if any(n not in numbers for n in needed):
+            continue
+        if zip_code and zip_code in "".join(numbers):
+            return True
+        if not zip_code and town.strip().lower() in text.lower():
+            return True
+    return False
 
 
 def history_of(context) -> list | None:

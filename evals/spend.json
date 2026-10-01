@@ -1,6 +1,6 @@
 {
   "cap": 3.6,
-  "total": 2.991868,
+  "total": 3.052324,
   "runs": [
     {
       "at": "2026-09-28T16:28:29-04:00",
@@ -21,6 +21,16 @@
       "estimate": 0.3,
       "cost": 0.04454,
       "results": ""
+    },
+    {
+      "at": "2026-09-30T20:44:41-04:00",
+      "commit": "4ee9e2c",
+      "kind": "eval",
+      "label": "tonight text check",
+      "conversations": 12,
+      "estimate": 0.07,
+      "cost": 0.060456,
+      "results": "evals/results/2026-09-30-204352-4ee9e2c.json"
     }
   ]
 }
