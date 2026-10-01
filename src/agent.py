@@ -33,6 +33,7 @@ from livekit.plugins import deepgram, noise_cancellation, openai
 
 import store
 from models import make_llm
+from paging import spawn
 from receptionist import (
     CONFIG,
     DEFAULT_DB,
@@ -257,12 +258,9 @@ async def entrypoint(ctx: JobContext) -> None:
                 keep_promise(call, item.text_content),
                 flag_fabricated_confirmation(agent, call, item.text_content),
             ):
-                task = asyncio.create_task(check)
-                background.add(task)
-                task.add_done_callback(background.discard)
+                spawn(check)
 
     agent = SummitAirAgent(render_instructions(now(), call.caller_number))
-    background: set[asyncio.Task] = set()
     session.on("conversation_item_added", check_promise)
 
     patience = {"max_delay": MAX_DELAY}

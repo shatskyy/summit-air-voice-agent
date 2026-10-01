@@ -40,7 +40,6 @@ from guards import (
 )
 from paging import (
     HeldPage,
-    _background,
     address_escalation,
     confirmed,
     first_name,
@@ -48,6 +47,7 @@ from paging import (
     push,
     push_text,
     release_held_page,
+    spawn,
     start_hold_after,
     start_page,
     zip_of,
@@ -482,9 +482,7 @@ class SummitAirAgent(Agent):
             await self.add_note(turn_ctx, note)
         if await flag_hazard(call, text):
             handle = await self.speak_over(SAFETY_SCRIPT, new_message)
-            hold = asyncio.create_task(start_hold_after(call.held_page, handle))
-            _background.add(hold)
-            hold.add_done_callback(_background.discard)
+            spawn(start_hold_after(call.held_page, handle))
             raise StopResponse()
         call.caller_turns += 1
         if call.caller_turns <= 2 and not call.spanish and SPANISH.search(text):
@@ -520,9 +518,7 @@ class SummitAirAgent(Agent):
             else "Okay. Get everyone outside now and call 911 from there. Please hang up and go."
         )
         handle = await self.speak_over(line, new_message)
-        task = asyncio.create_task(hang_up_after(call, handle))
-        _background.add(task)
-        task.add_done_callback(_background.discard)
+        spawn(hang_up_after(call, handle))
         raise StopResponse()
 
     async def answer_in_spanish(self, call: Call, new_message: llm.ChatMessage) -> None:
@@ -624,7 +620,6 @@ class SummitAirAgent(Agent):
         zip_code = re.sub(r"\D", "", zip_code)
         if not town.strip():
             raise ToolError("Ask which borough the address is in, then check the address again.")
-        call = context.userdata
         if not zip_code:
             # No ZIP. A borough or a Queens town places the address on its own. Anywhere else, the
             # ZIP decides, so the model asks for it once and "don't know" is outside the area.
@@ -1070,9 +1065,7 @@ class FailureLadder:
         if self.task is not None or self._call.emergency == "closing":
             return
         logger.error("unrecoverable %s; ending the call with a callback", kind)
-        self.task = asyncio.create_task(self._end(spoken=kind != "tts_error"))
-        _background.add(self.task)
-        self.task.add_done_callback(_background.discard)
+        self.task = spawn(self._end(spoken=kind != "tts_error"))
 
     async def _end(self, spoken: bool) -> None:
         call = self._call

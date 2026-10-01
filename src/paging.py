@@ -22,6 +22,16 @@ NTFY_URL = "https://ntfy.sh"
 
 _background: set[asyncio.Task] = set()
 
+
+def spawn(coro) -> asyncio.Task:
+    """Run `coro` in the background. asyncio keeps only a weak reference to a task, so the set
+    holds it until it finishes; without that a running task can be garbage-collected."""
+    task = asyncio.create_task(coro)
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+    return task
+
+
 # ntfy topics are readable by anyone who knows the name, so a push carries no caller's words, number
 # or street: a first name, the ZIP, what happened and where to look. The rest stays in the database.
 ZIP_IN = re.compile(r"\b\d{5}\b")
@@ -80,9 +90,7 @@ class HeldPage:
         self._go = asyncio.Event()
         self._started = asyncio.Event()
         self.cancelled = False
-        self.task = asyncio.create_task(self._send(title, message, wait, cap))
-        _background.add(self.task)
-        self.task.add_done_callback(_background.discard)
+        self.task = spawn(self._send(title, message, wait, cap))
 
     async def _countdown(self, wait: float) -> None:
         await self._started.wait()
@@ -142,10 +150,7 @@ async def release_held_page(call: Call) -> None:
 
 def start_page(title: str, message: str) -> asyncio.Task[bool]:
     """Page the on-call phone in the background. The task's result is whether ntfy accepted it."""
-    page = asyncio.create_task(page_on_call(title, message))
-    _background.add(page)
-    page.add_done_callback(_background.discard)
-    return page
+    return spawn(page_on_call(title, message))
 
 
 async def confirmed(page: asyncio.Task[bool]) -> bool:
