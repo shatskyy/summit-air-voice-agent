@@ -503,14 +503,18 @@ DENIAL_WORDS = {
 }  # fmt: skip
 
 
+def last_agent_said(items) -> str:
+    """The agent's most recent message in a chat history, or "" before it has said anything."""
+    messages = [i for i in items or [] if getattr(i, "type", None) == "message"]
+    return next((m.text_content or "" for m in reversed(messages) if m.role == "assistant"), "")
+
+
 def risk_denied_last(items) -> bool:
     """Whether the caller's latest turn is a plain denial of risk and nothing more: "no, it's just
     me", "nobody, I'm fine". "No, she just had a stroke" or "no, but my son is sick" is not, and a
     bare "No." counts only as the answer to the agent's at-risk question."""
     messages = [i for i in items or [] if getattr(i, "type", None) == "message"]
-    last_agent = next(
-        (m.text_content or "" for m in reversed(messages) if m.role == "assistant"), ""
-    )
+    last_agent = last_agent_said(messages)
     for item in reversed(messages):
         if item.role == "user":
             text = item.text_content or ""
@@ -554,10 +558,7 @@ SPANISH = re.compile(
 def note_urgency(call: Call, turn_ctx: llm.ChatContext, text: str) -> None:
     """Update the two urgency flags from a caller turn. Every turn counts, the one that fired the
     safety script included, so a false alarm doesn't lose "the heat's out"."""
-    messages = [i for i in turn_ctx.items if i.type == "message"]
-    last_agent = next(
-        (m.text_content or "" for m in reversed(messages) if m.role == "assistant"), ""
-    )
+    last_agent = last_agent_said(turn_ctx.items)
     call.system_down = call.system_down or down_in(SYSTEM_DOWN, text)
     at_risk = at_risk_in(text, last_agent)
     # The prompt has the agent ask who is at risk only once heating or cooling has failed, so a yes
