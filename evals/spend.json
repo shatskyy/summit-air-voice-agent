@@ -1,6 +1,6 @@
 {
   "cap": 3.6,
-  "total": 3.052324,
+  "total": 3.09372,
   "runs": [
     {
       "at": "2026-09-28T16:28:29-04:00",
@@ -31,6 +31,16 @@
       "estimate": 0.07,
       "cost": 0.060456,
       "results": "evals/results/2026-09-30-204352-4ee9e2c.json"
+    },
+    {
+      "at": "2026-09-30T20:46:18-04:00",
+      "commit": "eca09a7",
+      "kind": "eval",
+      "label": "tonight rerun",
+      "conversations": 6,
+      "estimate": 0.0349,
+      "cost": 0.041396,
+      "results": "evals/results/2026-09-30-204548-eca09a7.json"
     }
   ]
 }
