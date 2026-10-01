@@ -74,8 +74,11 @@ turn-taking.
 541 offline tests cover the rules, the tools and the store without any keys or credit, and CI runs
 them on every push.
 
-Routine booking, urgent escalation and the gas response have been tested by phone, most recently
-on this build, where a call about an elderly parent at home paged on-call on the first reply. The [call notes](docs/scenarios.md) record every call, failures included.
+Routine booking, urgent escalation and the gas response have been tested by phone. My last two
+calls, on September 30 on the build before this one, covered a false alarm, a booking corrected
+after it was confirmed, and a gas report that paged on-call. They found two bugs, which this build
+fixes and which so far are checked in simulation rather than by phone. The
+[call notes](docs/scenarios.md) record every call, failures included.
 
 ## Run locally
 

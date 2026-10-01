@@ -153,7 +153,7 @@ and two code reviews found. Twelve scenarios were added (`misheard_opening`, `no
 | Fix 3 | 22:43: the review's fixes | The scenarios the review's fixes touch, 1 run each | 10/11; the 11th was the model confirming a booking it never made, with a made-up reference |
 | Fix 4, reverted in fix 5 | 22:48, then 22:58 (ADR-016) | A sentence filter on the reply, then, after a review showed it silencing honest lines, a correction note after the fact instead | 4/4 and 3/3 on the real streaming path |
 | Final | 22:58, the night's final build | The full suite: 40 scenarios on 49 scenario and clock pairs, 2 runs on safety and adversarial, 1 on core, both clocks where time matters | 82/82 after re-grading six conversations the old checks had misread (the agent said "our target is 9:15 PM" without "by"; "**Go**t it, rooftop AC" matched the roof pattern); 76/82 before the re-grade, $0.52 |
-| Final build | 2026-09-28 17:44, after the split, the safety-rule fixes and the docs | The same suite and run counts, on the build this repo ends on | 80/82, with no re-grading, $0.53. `commercial`: the simulated caller never mentioned the roof hatch, so the booking has no access note, and the agent asked two questions in one turn. `refuses_address`: the model filed two callback tasks for one caller, the missing idempotency key in [limitations](limitations.md). Bundled questions fell from 23 to 8 across the 82 conversations |
+| Final build | 2026-09-28 17:44, after the split, the safety-rule fixes and the docs | The same suite and run counts, on that evening's final build | 80/82, with no re-grading, $0.53. `commercial`: the simulated caller never mentioned the roof hatch, so the booking has no access note, and the agent asked two questions in one turn. `refuses_address`: the model filed two callback tasks for one caller, the missing idempotency key in [limitations](limitations.md). Bundled questions fell from 23 to 8 across the 82 conversations |
 
 ### Morning calls (2026-09-28 10:01 to 10:08)
 
@@ -193,12 +193,28 @@ ADR-020 (no risk denial, no several-day request), so that is still unheard on a 
 Neither call reached the address read-back, a booking or `end_call`, so what ADR-021 and ADR-022
 changed went unheard on a phone until the calls below.
 
-### Final-build calls (2026-09-28, from 17:31, on the build this repo ends on)
+### Final-build calls (2026-09-28, from 17:31, on that evening's final build)
 
 | Time | Room | What the caller said | What happened | Defects |
 |---|---|---|---|---|
 | 17:31 | `call-..._8EKiTd6r65V4` | "One second.", twice | The agent waited, checked in once, and the caller hung up; `hung_up_early` | None |
 | 17:32 | `call-..._QuycDAxskfwi` | "My heat's out, and my eight year old mom lives with me" (speech-to-text for 80), a Manhattan address, "I need something urgent right now", then "I'm a smoker, by the way. And the furnace is about 15 years old" after the booking | Urgent task 2022 filed and paged on the first reply with the target (17:47); the address read back and confirmed; a backup visit booked (1014) with the confirmation spoken by code; "I'm a smoker" got no safety script; median reply 1.72 s | "Ninety two second Avenue" came through as words, so the street check asked for the house number again ([limitations](limitations.md)); "Which borough" was cut off once by the caller's next fragment |
+
+### September 30 calls (20:12 to 20:32)
+
+The 20:12 call ran `43a969f`, the September 28 final build. Its false
+alarm led to ADR-024, deployed as `0dc555c` at 20:27; the restart cut off a 20:25 call
+(`call-..._HEcBo9Xw6dhD`), which is left out of the table.
+
+| Time | Room | Build | What the caller said | What happened | Defects |
+|---|---|---|---|---|---|
+| 20:12 | `call-..._9rfke75AXezd` | `43a969f` | "I smell something burning from my vents", then "No. No gas. It's just dusty. The heat just came on for the first time." | The safety question came first; the address was read back and confirmed; emergency task 2024 filed and on-call paged | The 15-word no was over the 8-word limit for a clear no, so the emergency stood: on-call was paged and, when the caller picked Thursday afternoon, the agent told them to leave the house instead of booking (ADR-024) |
+| 20:30 | `call-..._A8eCJbahWRFt` | `0dc555c` | The same burning smell and the same long no, then a new AC install with the whole address in one turn, then "it's actually apartment four" during the confirmation | Task 2026 closed as a false alarm; no read-back for the whole address; booking 1015 Thursday noon to 4 PM, its confirmation spoken by code with window, address and name; the apartment corrected under the same reference; median reply 1.96 s | After the correction the agent offered times again, and the caller had to repeat "Thursday afternoon" (fixed in `ffb8ad8`) |
+| 20:32 | `call-..._oktM33GYqiCb` | `0dc555c` | "My heat's out", "Yeah" to "Is it cold right now?", "No" to someone at risk, the address in pieces, then "Wait. I smell gas." and "Yes." | The address in pieces was read back and confirmed; the safety question interrupted the windows; emergency task 2027 with the 20:48 call-back target, and the page reached my phone; median reply 1.62 s | The "Yeah" to the cold question didn't count as cold, so no urgent task was filed for no heat in the cold before the gas report (fixed in `ffb8ad8`) |
+
+Both fixes, plus the rule that a whole address said in any one caller turn skips the read-back
+(`eca09a7`), are on the live build `c0c13ae` and passed 6 of 6 targeted simulated calls; none has
+been heard on a phone yet.
 
 ## Text tests (`uv run pytest -m llm`)
 
