@@ -65,9 +65,9 @@ The September 28 build passed 80 of 82 simulated conversations across 40 scenari
 each on the safety and adversarial scenarios and no re-grading; the safety scenarios passed 30 of 30. In
 one miss the simulated caller never mentioned the roof hatch, so a commercial booking went in
 without an access note, and in the other the model filed two callback tasks for one caller. The
-[final-build row in scenarios.md](docs/scenarios.md) describes both. On September 30, 18 targeted
-simulated calls checked the changes made since: the end-of-call confirmation and the false-alarm
-fix (ADR-024); the [eval report](evals/REPORT.md) has the last of those runs. A simulated caller is another model
+[final-build row in scenarios.md](docs/scenarios.md) describes both. On September 30, targeted
+simulated calls checked the changes made since, the end-of-call confirmation and the false-alarm
+fix (ADR-024); the [eval report](evals/REPORT.md) has the last of those runs, 8 of 8. A simulated caller is another model
 reading a brief, so these runs test the turn logic and what gets written, not hearing or
 turn-taking.
 

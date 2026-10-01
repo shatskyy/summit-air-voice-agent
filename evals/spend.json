@@ -1,6 +1,6 @@
 {
   "cap": 3.6,
-  "total": 3.147841,
+  "total": 3.206786,
   "runs": [
     {
       "at": "2026-09-28T16:28:29-04:00",
@@ -51,6 +51,16 @@
       "estimate": 0.0466,
       "cost": 0.054121,
       "results": "evals/results/2026-09-30-220317-7d9780e-dirty.json"
+    },
+    {
+      "at": "2026-09-30T22:04:53-04:00",
+      "commit": "8d5098e",
+      "kind": "eval",
+      "label": "cold_no_risk_night tonight_cold_yes tonight_correction tonight_long_no",
+      "conversations": 8,
+      "estimate": 0.0468,
+      "cost": 0.058945,
+      "results": "evals/results/2026-09-30-220411-8d5098e.json"
     }
   ]
 }
