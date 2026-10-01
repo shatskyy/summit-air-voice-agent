@@ -87,19 +87,20 @@ def confirmation_line(booking: dict, name: str, address: str) -> str:
     digits = speak_digits(booking["ref"])
     if booking["change"] == "moved":
         return (
-            f"Done, you're now booked for {window}. Your reference number stays {digits}. "
-            "Is there anything else I can help with?"
+            f"Done, you're now booked for {window} at {address}. Your reference number stays "
+            f"{digits}. Is there anything else I can help with?"
         )
+    who = name.strip(" ,.")
+    under = f", under the name {who}" if who else ""
     if booking["change"] == "updated":
         return (
-            f"I've updated your visit on {window}. Same reference, {digits}. "
+            f"Updated: {window} at {address}{under}. Same reference, {digits}. "
             "Is there anything else I can help with?"
         )
-    first = name.split()[0].strip(",.") if name.split() else ""
-    opening = f"{first}, you're" if first else "You're"
+    # The one confirmation of the call: name, address and window together, with room to correct.
     return (
-        f"{opening} booked for {window} at {address}. Your reference number is {digits}. "
-        "Is there anything else I can help with?"
+        f"You're booked for {window} at {address}{under}. Your reference number is {digits}. "
+        "If any of that is wrong, just tell me. Otherwise, is there anything else I can help with?"
     )
 
 

@@ -56,6 +56,7 @@ from rules import (
     GENERIC_BUSINESS,
     SPANISH,
     SYSTEM_DOWN,
+    address_in_one_turn,
     at_risk_in,
     caller_digits,
     clear_no,
@@ -620,6 +621,9 @@ class SummitAirAgent(Agent):
         zip_code = re.sub(r"\D", "", zip_code)
         if not town.strip():
             raise ToolError("Ask which borough the address is in, then check the address again.")
+        # Read back only an address that came in pieces; one said whole is repeated by the booking
+        # confirmation at the end, which saves a turn (David, Sept 30).
+        read_back = not address_in_one_turn(history_of(context), street, zip_code, town)
         if not zip_code:
             # No ZIP. A borough or a Queens town places the address on its own. Anywhere else, the
             # ZIP decides, so the model asks for it once and "don't know" is outside the area.
@@ -634,10 +638,9 @@ class SummitAirAgent(Agent):
             call.checked_zip = ""
             call.checked_street = street_key(street)
             await address_escalation(call, f"{street}, {town}")
-            checked = (
-                f"In the service area ({town}), no ZIP needed. Read it back once as {street}, "
-                f"{town}, and wait for a yes. Book with the ZIP left blank."
-            )
+            checked = f"In the service area ({town}), no ZIP needed. Book with the ZIP left blank."
+            if read_back:
+                checked += f" Read it back once as {street}, {town}, and wait for a yes."
         else:
             if len(zip_code) != 5:
                 raise ToolError("Ask for the five-digit ZIP code, then check the address again.")
@@ -660,13 +663,20 @@ class SummitAirAgent(Agent):
             call.checked_zip = zip_code
             call.checked_street = street_key(street)
             await address_escalation(call, f"{street}, {town} {zip_code}")
-            checked = (
-                f"In the service area. Read it back once as {street}, {town}, ZIP {zip_code}, and "
-                "wait for a yes."
-            )
+            checked = "In the service area."
+            if read_back:
+                checked += (
+                    f" Read it back once as {street}, {town}, ZIP {zip_code}, and wait for a yes."
+                )
         # Times come from check_availability after the caller's yes, not with this result: handed
         # over with the read-back, the model offered them in the same breath (the 10:01 call), and
         # code that released them on "a yes" took the wrong yes (3:51 PM call, ADR-022).
+        if not read_back:
+            return (
+                f"{checked} The caller gave the whole address in one go, so don't read it back: "
+                "the booking confirmation repeats it at the end. Call check_availability now and "
+                "offer windows in this reply."
+            )
         return (
             f"{checked} Say only the read-back this turn, no times. After they confirm it, call "
             "check_availability; if they correct it, check it again."

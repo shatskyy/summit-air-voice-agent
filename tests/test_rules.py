@@ -1354,9 +1354,9 @@ async def test_the_booking_tool_tells_the_caller_the_confirmation_itself(db):
     result = await agent.book_appointment(ctx, "2026-09-29-0800", *BOOK_ARGS)
     assert ctx.said == [
         (
-            "Maria, you're booked for Tuesday, September 29, between 8 AM and noon at 14 Maple "
-            "Street, Brooklyn. Your reference number is one oh oh one. Is there anything else I "
-            "can help with?"
+            "You're booked for Tuesday, September 29, between 8 AM and noon at 14 Maple Street, "
+            "Brooklyn, under the name Maria Lopez. Your reference number is one oh oh one. If any "
+            "of that is wrong, just tell me. Otherwise, is there anything else I can help with?"
         )
     ]
     assert ctx.userdata.confirmation_spoken
@@ -1708,7 +1708,7 @@ async def test_a_session_speaks_the_booking_once_with_one_model_request(db):
         said = [i.text_content for i in session.history.items
                 if i.type == "message" and i.role == "assistant"]  # fmt: skip
     assert model.requests == 1
-    assert said[-1].startswith("Maria, you're booked for Tuesday, September 29")
+    assert said[-1].startswith("You're booked for Tuesday, September 29")
     assert not any("SECOND ROUND" in s for s in said)
 
 
@@ -3121,3 +3121,44 @@ def test_a_zip_added_to_a_borough_only_booking_is_the_same_visit():
     assert not receptionist.same_visit(
         {"zip": "11201", "address": "48 Bergen Street"}, "48 Bergen Street", "11225"
     )
+
+
+# One confirmation at the end (David, Sept 30): an address said whole isn't read back mid-call;
+# the booking confirmation repeats it. An address that came in pieces still is.
+
+
+@pytest.mark.parametrize(
+    ("said", "zip_code", "town"),
+    [
+        (["My heat's out.", "92 2nd Avenue, Apartment 3. New York, New York 10003."], "10003", "New York"),
+        (["48 Bergen Street, Brooklyn, one one two oh one."], "11201", "Brooklyn"),
+        (["It's 48 Bergen Street in Brooklyn."], "", "Brooklyn"),
+    ],
+)  # fmt: skip
+async def test_an_address_said_whole_is_not_read_back(db, said, zip_code, town):
+    ctx = SpokenContext(Call(call_id="call-a", db=db), said)
+    street = "92 2nd Avenue, Apartment 3" if said[-1].startswith("92") else "48 Bergen Street"
+    result = await SummitAirAgent("").check_address(ctx, street, town, zip_code)
+    assert result.startswith("In the service area")
+    assert "don't read it back" in result and "Read it back once" not in result
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        ["48 Bergen", "Street, in Brooklyn, 11201."],  # the house number came a turn earlier
+        ["48 Bergen Street in Brooklyn.", ZIP_ASKED, "11201."],  # the ZIP on its own
+    ],
+)
+async def test_an_address_in_pieces_is_read_back(db, said):
+    ctx = SpokenContext(Call(call_id="call-a", db=db), said)
+    result = await SummitAirAgent("").check_address(ctx, "48 Bergen Street", "Brooklyn", "11201")
+    assert "Read it back once as 48 Bergen Street, Brooklyn, ZIP 11201" in result
+
+
+def test_the_booking_confirmation_carries_name_address_and_window():
+    booking = {"ref": 1001, "change": "booked", "slot_id": "2026-09-29-0800",
+               "day": "2026-09-29", "start": "08:00", "end": "12:00"}  # fmt: skip
+    line = receptionist.confirmation_line(booking, "David Shatsky", "92 2nd Avenue, New York 10003")
+    assert "92 2nd Avenue" in line and "under the name David Shatsky" in line
+    assert "If any of that is wrong, just tell me." in line

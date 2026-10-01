@@ -792,3 +792,30 @@ patch it where it now lives.
 
 **Evidence.** The tests are unchanged except their patch targets for paging
 (`monkeypatch.setattr(paging, "page_on_call", ...)` in place of `receptionist`).
+
+## ADR-024: One confirmation at the end of the call; a long no counts when it names a harmless cause
+
+**Decision.** `check_address` no longer asks for a read-back when the caller's latest turn held the
+whole address (the house number and the ZIP, or the borough without one). The model goes straight
+to times, and the booking confirmation says the window, address and name together and asks the
+caller to say if any of it is wrong. An address that arrived in pieces, or a ZIP given on its own,
+is still read back first. A correction after the confirmation goes through `check_address` and
+books again, which updates the same booking (`same_visit`).
+
+Separately, a no to the safety script longer than eight words now counts as a clear no when it
+names a harmless cause (dust, the heat coming on, a battery, cooking), up to 30 words. Doubt ("not
+sure", "don't know") or a carbon monoxide symptom (dizzy, headache, nausea) never counts.
+
+**Why.** Reading the address back mid-call costs a turn on every booking, and the confirmation
+already repeated the address, so a whole address was confirmed twice (David, September 30). On the
+September 30 8:12 PM call, "No. No gas. It's just dusty. The heat just came on for the first time."
+(15 words) failed the old eight-word cap: the emergency stood, on-call was paged, and the booking
+was refused with "leave the house". The cap was what kept "No no no, I smell it everywhere" an
+emergency, so it stays for answers that name no cause.
+
+**Cost.** A misheard address is caught one turn later, at the confirmation, after a booking row
+exists; the correction updates it. "No, I'm not sure" passed the old check and no longer does, so
+a hedging caller keeps the emergency standing, which is the safe side.
+
+**Evidence.** Six new offline tests for the address path and the confirmation, seven new
+`clear_no` cases including the call's exact words. Phone check pending.

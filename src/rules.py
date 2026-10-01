@@ -504,6 +504,23 @@ def caller_digits(items) -> str:
     return "".join(out)
 
 
+def address_in_one_turn(items, street: str, zip_code: str, town: str) -> bool:
+    """Whether the caller's latest turn held the whole address: the house number and the ZIP, or the
+    borough when there is no ZIP. Then the booking confirmation at the end is the read-back. An
+    address that arrived in pieces, or a house number said without digits, is read back now."""
+    said = [
+        i.text_content or ""
+        for i in items or []
+        if getattr(i, "type", None) == "message" and i.role == "user"
+    ]
+    house = re.match(r"\s*(\d+)", street)
+    if not said or house is None or house.group(1) not in spoken_numbers(said[-1]):
+        return False
+    if zip_code:
+        return zip_code in "".join(spoken_numbers(said[-1]))
+    return town.strip().lower() in said[-1].lower()
+
+
 def history_of(context) -> list | None:
     session = getattr(context, "session", None)
     history = getattr(session, "history", None)
